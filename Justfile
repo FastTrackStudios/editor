@@ -1,29 +1,52 @@
-# Convenience recipes. Run `just` (no args) for the menu.
-# Requires `just` (https://github.com/casey/just) — pre-installed in the nix shell.
+# editor — root workspace recipes. Run `just` (no args) for the menu.
+# Requires `just` — pre-installed in the nix shell.
 
 # Default: list recipes
 default:
     @just --list
 
+# ── Rust ─────────────────────────────────────────────────────────────
+
+check:
+    cargo check --workspace
+
+# nextest: parallel per-test binaries. Does NOT run doctests.
+rust-test:
+    cargo nextest run --workspace
+
+fmt:
+    cargo fmt --all
+
+fmt-check:
+    cargo fmt --all --check
+
+# The gate CI runs, in CI's order.
+ci: fmt-check check rust-test
+
+# The dogfooding app — the fastest way to see a change.
+play *ARGS:
+    cargo run -p playground {{ARGS}}
+
+# ── Browser tests (playwright, against the playground) ───────────────
 # Run the full playwright suite (headless Chromium).
 test:
-    cd tests && pnpm install --silent && pnpm test
+    cd tests/browser && pnpm install --silent && pnpm test
 
 # Run with a visible browser window — debug-mode.
 test-headed:
-    cd tests && pnpm install --silent && pnpm test:headed
+    cd tests/browser && pnpm install --silent && pnpm test:headed
 
 # Open Playwright's interactive UI runner.
 test-ui:
-    cd tests && pnpm install --silent && pnpm test:ui
+    cd tests/browser && pnpm install --silent && pnpm test:ui
 
 # Run only one test by name fragment, e.g.: `just test-only "cursor stays"`.
 test-only PATTERN:
-    cd tests && pnpm install --silent && npx playwright test -g "{{PATTERN}}"
+    cd tests/browser && pnpm install --silent && npx playwright test -g "{{PATTERN}}"
 
 # Re-run a previously failed test with its trace open.
 trace:
-    cd tests && npx playwright show-trace test-results/*/trace.zip
+    cd tests/browser && npx playwright show-trace test-results/*/trace.zip
 
 # Workspace-wide Rust tests.
 unit:

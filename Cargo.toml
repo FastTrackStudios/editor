@@ -1,0 +1,189 @@
+# editor — one root workspace.
+#
+# Split out of FastTrackStudios/task (see docs/SPLIT.md). A text and
+# markdown editor: document model, live-preview decorations, vim bindings,
+# tree-sitter syntax, CRDT collaboration, LSP, and a Dioxus view.
+#
+# It exists as its own repo because it is *embeddable*. The whole stack
+# depends on `dioxus` and crates.io and nothing else — no framework, no
+# RPC layer, no product. That is deliberate and worth protecting: Task,
+# Keyflow and Session all embed it, and a dependency on any one of them
+# would make it useless to the others.
+#
+# Fence languages the editor cannot own are plugged in rather than linked.
+# `editor-state::fence_renderer` is the seam; `editor-keyflow` (in the
+# keyflow repo) is the reference implementation. Do NOT add a dependency
+# on a language that sits above this repo — register it instead.
+
+[workspace]
+resolver = "3"
+
+members = [
+    "crates/editor",
+    "crates/editor-crdt",
+    "crates/editor-lsp",
+    "crates/editor-mermaid",
+    "crates/editor-state",
+    "crates/editor-syntax",
+    "crates/editor-typst",
+    "crates/editor-view",
+    "crates/editor-vim",
+    "crates/mermaid-rs-renderer",
+    "apps/playground",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.87"
+authors = ["FastTrack Studio"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/FastTrackStudios/editor"
+
+[workspace.dependencies]
+# ── Internal ──────────────────────────────────────────────────────────
+# `editor` is the facade. `editor-state` is the document model and the
+# markdown pass; everything else hangs off it.
+editor = { path = "crates/editor" }
+editor-crdt = { path = "crates/editor-crdt" }
+editor-lsp = { path = "crates/editor-lsp" }
+editor-mermaid = { path = "crates/editor-mermaid" }
+editor-state = { path = "crates/editor-state" }
+editor-syntax = { path = "crates/editor-syntax" }
+editor-typst = { path = "crates/editor-typst" }
+editor-view = { path = "crates/editor-view" }
+editor-vim = { path = "crates/editor-vim" }
+mermaid-rs-renderer = { path = "crates/mermaid-rs-renderer" }
+
+# ── External ──────────────────────────────────────────────────────────
+dioxus-test = { git = "https://github.com/FastTrackStudios/FastTrackStudio", tag = "v0.1.0" }
+
+# ── UI framework ──────────────────────────────────────────────────────
+# dioxus 0.8 line — git rev pinned; it must stay in lockstep across every
+# dioxus-* entry AND the FTS fork branches that pin the same rev.
+dioxus = { git = "https://github.com/DioxusLabs/dioxus", rev = "f717a8e184a522d078b70bb4b4d62a5f9a99ddfc", default-features = false, features = ["lib"] }
+dioxus-native = { git = "https://github.com/DioxusLabs/dioxus", rev = "f717a8e184a522d078b70bb4b4d62a5f9a99ddfc", features = ["prelude", "system-fonts", "svg", "autofocus", "incremental", "data-uri"] }
+
+# ── Editor stack externals ────────────────────────────────────────────
+arborium = { version = "2.16.0", default-features = false }
+arborium-theme = "2.16.0"
+arborium-tree-sitter = "2.16.0"
+ropey = "1.6"
+
+# ── Async runtime ─────────────────────────────────────────────────────
+tokio = { version = "1.48", features = ["full"] }
+
+# ── Serialization ─────────────────────────────────────────────────────
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+
+# ── Observability ─────────────────────────────────────────────────────
+tracing = { version = "0.1", features = ["std"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+
+[patch.crates-io]
+# Blitz from the FTS fork (0.3.0-beta.1 line, upstream 02523b83 +
+# fts-focus: focus-follows-pointerdown for all focusable content —
+# upstream only click-focuses text inputs, leaving the editor's tabindex
+# div unfocusable by mouse). dioxus git pins `=0.3.0-beta.1`, and
+# `dioxus-test` needs post-beta.1 APIs (`Node::outer_html_pretty`), so
+# without this the snapshot tests do not compile. One rev across all
+# blitz crates; it moves together with the dioxus rev.
+blitz-dom = { git = "https://github.com/FastTrackStudios/blitz", rev = "c82dd238000515c44c758845b9a17e9b48eb0087" }
+blitz-traits = { git = "https://github.com/FastTrackStudios/blitz", rev = "c82dd238000515c44c758845b9a17e9b48eb0087" }
+blitz-paint = { git = "https://github.com/FastTrackStudios/blitz", rev = "c82dd238000515c44c758845b9a17e9b48eb0087" }
+blitz-shell = { git = "https://github.com/FastTrackStudios/blitz", rev = "c82dd238000515c44c758845b9a17e9b48eb0087" }
+blitz-net = { git = "https://github.com/FastTrackStudios/blitz", rev = "c82dd238000515c44c758845b9a17e9b48eb0087" }
+blitz-html = { git = "https://github.com/FastTrackStudios/blitz", rev = "c82dd238000515c44c758845b9a17e9b48eb0087" }
+# task also patches styx-format / phon / phon-jit / facet-core to the
+# vendor repo. None of them resolves into this graph — the editor has no
+# RPC or reflection layer — so they are deliberately absent rather than
+# carried as unused-patch warnings on every build.
+
+[workspace.lints.rust]
+dead_code = "warn"
+unused = "warn"
+unused_unsafe = "warn"
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "allow"
+private_intra_doc_links = "allow"
+redundant_explicit_links = "allow"
+
+[workspace.lints.clippy]
+field_reassign_with_default = "allow"
+redundant_closure = "allow"
+nonminimal_bool = "allow"
+clone_on_copy = "allow"
+useless_vec = "allow"
+type_complexity = "allow"
+manual_clamp = "allow"
+needless_range_loop = "allow"
+not_unsafe_ptr_arg_deref = "allow"
+only_used_in_recursion = "allow"
+unnecessary_sort_by = "allow"
+unusual_byte_groupings = "allow"
+manual_c_str_literals = "allow"
+branches_sharing_code = "allow"
+needless_borrow = "allow"
+needless_borrows_for_generic_args = "allow"
+collapsible_if = "allow"
+map_clone = "allow"
+unnecessary_map_or = "allow"
+if_same_then_else = "allow"
+redundant_locals = "allow"
+large_enum_variant = "allow"
+explicit_counter_loop = "allow"
+manual_strip = "allow"
+too_many_arguments = "allow"
+double_must_use = "allow"
+vec_init_then_push = "allow"
+collapsible_match = "allow"
+filter_next = "allow"
+
+# ── Profiles ──────────────────────────────────────────────────────────
+[profile.dev]
+opt-level = 1
+
+# Debuginfo discipline. Full DWARF was the single biggest cost in the
+# monorepo: a `debug` test binary measured 1.62 GB, of which 98% was
+# `.debug_*` sections, copied into every artifact on every relink.
+#
+#   line-tables-only  keeps file:line in backtraces + profiler symbols
+#                     (samply/perf still work); drops variable/type DWARF,
+#                     so a *debugger* can't inspect locals.
+#   unpacked          leaves the remaining DWARF in the .o files under
+#                     deps/ instead of copying it into each artifact.
+#
+# Need a real debugger session? Build with `--profile dev-dbg`.
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+
+# Escape hatch: full DWARF for stepping in gdb/lldb.
+[profile.dev-dbg]
+inherits = "dev"
+debug = 2
+split-debuginfo = "packed"
+
+# dx web builds: native debuginfo in the wasm module blew past Chrome's
+# 1 GiB WebAssembly module cap (1.14 GB observed). Wasm dev builds don't
+# need it — strip it and dev bundles come back to a loadable size.
+[profile.wasm-dev]
+inherits = "dev"
+debug = false
+strip = "debuginfo"
+
+[profile.wasm-dev.package."*"]
+opt-level = 3
+
+# Dependencies at opt-level 1: gets rid of the pathological O0 debug
+# codegen at a fraction of the compile cost. Applies to dependencies only
+# — workspace members are governed by profile.dev's base opt-level.
+[profile.dev.package."*"]
+opt-level = 1
+
+[profile.dev.build-override]
+opt-level = 3
+debug = false

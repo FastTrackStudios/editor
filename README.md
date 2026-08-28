@@ -12,6 +12,66 @@ A small library of crates that provide:
   selection and decoration system (`editor-view`)
 - An umbrella crate (`editor`) that re-exports the common surface
 
+## Where this sits
+
+```
+        architect
+            │
+        ▶ editor ◀        this repo — dioxus + crates.io, nothing else
+            │
+         keyflow
+            │
+    task / session / signal
+```
+
+Split out of [task](https://github.com/FastTrackStudios/task) in August
+2026. It is its own repo because it is **embeddable**: the whole stack
+depends on `dioxus` and crates.io and nothing more — no framework, no RPC
+layer, no product. Task, Keyflow and Session all embed it, and a
+dependency on any one of them would make it useless to the others.
+
+That constraint is the repo's reason for existing, so it is worth stating
+plainly: **do not add a dependency on anything above this layer.**
+
+### Fence languages are plugged in, not linked
+
+The markdown pass renders fenced blocks it understands. `editor-typst` and
+`editor-mermaid` are ordinary dependencies — they sit at this layer and
+travel with the editor.
+
+Anything *above* this layer registers itself instead, through
+`editor_state::fence_renderer`:
+
+```rust
+editor_state::fence_renderer::register_fence_renderer(
+    "kf",
+    std::sync::Arc::new(editor_keyflow::Fences),
+);
+```
+
+`editor-keyflow` (in the [keyflow](https://github.com/FastTrackStudios/keyflow)
+repo) is the reference implementation — it renders ```` ```kf ```` chart
+fences via the Keyflow parser and Engraver. Nothing registered is not an
+error: an unrenderable fence falls back to showing its source, which is
+what the editor already does for any language it does not know.
+
+## Build
+
+```bash
+nix develop        # or direnv: `use flake`
+just check
+just rust-test
+just ci            # what CI runs, in CI's order
+just play          # the dogfooding playground app
+just test          # the playwright browser suite
+```
+
+One test fails on a clean clone —
+`mermaid-rs-renderer … dense_flowchart_keeps_mid_span_edge_reasonably_direct`
+— a layout-quality assertion that also fails in `task` at the commit this
+was split from. It is not split damage; fix the layout, not the assertion.
+
+
 ## Why CodeMirror 6 as a reference
 
 CM6 is the editor under Obsidian, Replit, JupyterLab, Marimo, and many others.

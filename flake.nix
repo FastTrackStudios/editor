@@ -1,5 +1,5 @@
 {
-  description = "Task — local-first vault + tasks/projects/calendar: server, web, desktop, mobile, CLI";
+  description = "editor — an embeddable Rust/Dioxus text and markdown editor";
 
   # Dendritic layout (den): every .nix under nix/modules/ is a
   # flake-parts module, auto-loaded by import-tree — one file per
