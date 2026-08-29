@@ -2142,6 +2142,112 @@ fn collect_table_cells(text: &str, rows: &[(usize, usize)]) -> Vec<Vec<String>> 
         .collect()
 }
 
+/// Render inline markdown inside one table cell.
+///
+/// Tables are the one construct the live preview replaces with a widget
+/// rather than decorating in place, so the inline pass that handles
+/// `**bold**`, `` `code` `` and links everywhere else never reaches a
+/// cell's contents. Without this a table renders its own source: the
+/// keyflow guide's notation-systems table showed a literal
+/// `**Letter name**` and `` `C`, `F#`, `Bb` ``.
+///
+/// Deliberately small — the subset that actually turns up in a table:
+/// code spans, wikilinks, inline links, bold, italic. Code spans are
+/// resolved first so their contents are never treated as markup, which
+/// is what lets a cell document `` `**` `` without going bold.
+///
+/// Emits the same `md-*` classes the decoration path uses, so a table
+/// cell and a paragraph style identically.
+fn render_table_cell(cell: &str) -> String {
+    let b = cell.as_bytes();
+    let mut out = String::with_capacity(cell.len());
+    let mut i = 0;
+
+    while i < b.len() {
+        // `code` — first, so nothing inside is interpreted.
+        if b[i] == b'`' {
+            if let Some(end) = cell[i + 1..].find('`') {
+                let body = &cell[i + 1..i + 1 + end];
+                out.push_str(r#"<code class="md-code">"#);
+                out.push_str(&html_escape(body));
+                out.push_str("</code>");
+                i += end + 2;
+                continue;
+            }
+        }
+
+        // [[wikilink]] and [[target|label]]
+        if cell[i..].starts_with("[[") {
+            if let Some(end) = cell[i + 2..].find("]]") {
+                let body = &cell[i + 2..i + 2 + end];
+                let (target, label) = body.split_once('|').unwrap_or((body, body));
+                out.push_str(&format!(
+                    r#"<span class="md-wikilink" data-href="{}">{}</span>"#,
+                    html_escape(target.trim()),
+                    html_escape(label.trim())
+                ));
+                i += end + 4;
+                continue;
+            }
+        }
+
+        // [text](url)
+        if b[i] == b'[' {
+            if let Some(close) = cell[i + 1..].find(']') {
+                let rest = &cell[i + 1 + close + 1..];
+                if rest.starts_with('(') {
+                    if let Some(paren) = rest.find(')') {
+                        let text = &cell[i + 1..i + 1 + close];
+                        let href = &rest[1..paren];
+                        out.push_str(&format!(
+                            r#"<a class="md-link" href="{}" data-href="{}">{}</a>"#,
+                            html_escape(href),
+                            html_escape(href),
+                            html_escape(text)
+                        ));
+                        i += 1 + close + 1 + paren + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // **bold** before *italic*, or the opening `**` reads as an
+        // empty emphasis followed by a stray `*`.
+        if cell[i..].starts_with("**") {
+            if let Some(end) = cell[i + 2..].find("**") {
+                out.push_str(r#"<span class="md-bold">"#);
+                out.push_str(&html_escape(&cell[i + 2..i + 2 + end]));
+                out.push_str("</span>");
+                i += end + 4;
+                continue;
+            }
+        }
+
+        if b[i] == b'*' || b[i] == b'_' {
+            let marker = b[i] as char;
+            if let Some(end) = cell[i + 1..].find(marker) {
+                let body = &cell[i + 1..i + 1 + end];
+                if !body.is_empty() {
+                    out.push_str(r#"<span class="md-italic">"#);
+                    out.push_str(&html_escape(body));
+                    out.push_str("</span>");
+                    i += end + 2;
+                    continue;
+                }
+            }
+        }
+
+        // Ordinary text. Step by char, not byte, so multi-byte
+        // characters are not split.
+        let ch = cell[i..].chars().next().expect("i is a char boundary");
+        out.push_str(&html_escape(&ch.to_string()));
+        i += ch.len_utf8();
+    }
+
+    out
+}
+
 fn render_table_html(cells: &[Vec<String>]) -> String {
     if cells.is_empty() {
         return String::new();
@@ -2152,7 +2258,7 @@ fn render_table_html(cells: &[Vec<String>]) -> String {
         s.push_str("<thead><tr>");
         for c in header {
             s.push_str(r"<th>");
-            s.push_str(&html_escape(c));
+            s.push_str(&render_table_cell(c));
             s.push_str("</th>");
         }
         s.push_str("</tr></thead>");
@@ -2162,7 +2268,7 @@ fn render_table_html(cells: &[Vec<String>]) -> String {
         s.push_str("<tr>");
         for c in row {
             s.push_str(r"<td>");
-            s.push_str(&html_escape(c));
+            s.push_str(&render_table_cell(c));
             s.push_str("</td>");
         }
         s.push_str("</tr>");
@@ -3055,6 +3161,82 @@ mod tests {
             &d.kind,
             crate::decoration::DecorationKind::Mark { class, .. } if class == "md-italic"
         )));
+    }
+
+    #[test]
+    fn table_cells_render_inline_markdown() {
+        // Tables are replaced by a widget rather than decorated in place,
+        // so the inline pass never reaches a cell. Before this, the
+        // keyflow guide's notation-systems table rendered a literal
+        // `**Letter name**` and `` `C`, `F#`, `Bb` ``.
+        let html = render_table_cell("**Letter name**");
+        assert!(
+            html.contains(r#"<span class="md-bold">Letter name</span>"#),
+            "{html}"
+        );
+
+        let html = render_table_cell("`C`, `F#`, `Bb`");
+        assert_eq!(
+            html,
+            r#"<code class="md-code">C</code>, <code class="md-code">F#</code>, <code class="md-code">Bb</code>"#
+        );
+    }
+
+    #[test]
+    fn table_cells_render_links_and_wikilinks() {
+        let html = render_table_cell("[[chords|Chords]]");
+        assert!(html.contains(r#"class="md-wikilink""#), "{html}");
+        assert!(html.contains(r#"data-href="chords""#), "{html}");
+        assert!(html.contains(">Chords<"), "{html}");
+
+        let html = render_table_cell("[docs](https://example.com)");
+        assert!(html.contains(r#"href="https://example.com""#), "{html}");
+        assert!(html.contains(">docs<"), "{html}");
+    }
+
+    #[test]
+    fn a_code_span_is_not_further_interpreted() {
+        // A cell documenting the bold marker must not go bold.
+        let html = render_table_cell("`**`");
+        assert_eq!(html, r#"<code class="md-code">**</code>"#);
+    }
+
+    #[test]
+    fn table_cells_escape_html() {
+        let html = render_table_cell("<script>alert(1)</script>");
+        assert!(!html.contains("<script"), "{html}");
+        assert!(html.contains("&lt;script&gt;"), "{html}");
+    }
+
+    #[test]
+    fn unterminated_markers_stay_literal() {
+        // A lone marker is text, not the start of a run to the end of the
+        // cell — and must not panic.
+        assert_eq!(render_table_cell("2 * 3"), "2 * 3");
+        assert_eq!(render_table_cell("`unclosed"), "`unclosed");
+        assert_eq!(render_table_cell("**unclosed"), "**unclosed");
+    }
+
+    #[test]
+    fn multibyte_cells_are_not_split() {
+        // The scanner walks bytes; stepping by one on a multi-byte char
+        // would panic on a non-boundary index.
+        for cell in ["♭ and ♯", "café — nö", "🎹 **keys**", "→ `x`"] {
+            let _ = render_table_cell(cell);
+        }
+        assert!(render_table_cell("🎹 **keys**").contains("md-bold"));
+    }
+
+    #[test]
+    fn the_guide_table_row_renders_as_intended() {
+        // The exact row that exposed this, end to end.
+        let cells = vec![
+            vec!["System".into(), "Example".into()],
+            vec!["**Letter name**".into(), "`C`, `F#`, `Bb`".into()],
+        ];
+        let html = render_table_html(&cells);
+        assert!(!html.contains("**"), "raw bold markers survived: {html}");
+        assert!(!html.contains('`'), "raw code markers survived: {html}");
     }
 
     #[test]
