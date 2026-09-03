@@ -12,6 +12,7 @@ use crate::state::EditorState;
 const PAIRS: &[(u8, u8)] = &[(b'(', b')'), (b'[', b']'), (b'{', b'}')];
 
 /// Decoration source — registers in `editor_view::DecorationSource`.
+///
 /// Walks at most [`SCAN_LIMIT`] bytes from the caret looking for
 /// the matching bracket. Stops if the doc is malformed or the
 /// match falls outside the scan window.
@@ -29,17 +30,15 @@ pub fn bracket_match(state: &EditorState) -> Vec<DecoratedRange> {
     // Try the byte to the LEFT first (CM6 does the same — a
     // caret right after `)` matches its `(`), falling back to
     // the byte to the RIGHT.
-    if caret > 0 {
-        if let Some((from, to, matched)) = match_at(bytes, caret - 1) {
+    if caret > 0
+        && let Some((from, to, matched)) = match_at(bytes, caret.saturating_sub(1)) {
             push_pair(&mut out, from, to, matched);
             return out;
         }
-    }
-    if caret < bytes.len() {
-        if let Some((from, to, matched)) = match_at(bytes, caret) {
+    if caret < bytes.len()
+        && let Some((from, to, matched)) = match_at(bytes, caret) {
             push_pair(&mut out, from, to, matched);
         }
-    }
     out
 }
 
@@ -49,9 +48,9 @@ fn push_pair(out: &mut Vec<DecoratedRange>, from: usize, to: usize, matched: boo
     } else {
         "md-bracket-mismatch"
     };
-    out.push(Decoration::mark(from..from + 1, class));
+    out.push(Decoration::mark(from..from.saturating_add(1), class));
     if to != from {
-        out.push(Decoration::mark(to..to + 1, class));
+        out.push(Decoration::mark(to..to.saturating_add(1), class));
     }
 }
 
@@ -73,19 +72,18 @@ fn match_at(bytes: &[u8], at: usize) -> Option<(usize, usize, bool)> {
 }
 
 fn scan_forward(bytes: &[u8], at: usize, open: u8, close: u8) -> Option<usize> {
-    let mut depth = 1;
-    let end = (at + 1 + SCAN_LIMIT).min(bytes.len());
+    let mut depth: u32 = 1;
+    let end = at.saturating_add(1).saturating_add(SCAN_LIMIT).min(bytes.len());
     // Bracket scan walks a tight inner loop; the `for i in
     // start..end` shape is the natural one even though
     // clippy's `needless_range_loop` would prefer a slice
     // iter. We need `i` itself for the `Some(i)` return.
-    #[allow(clippy::needless_range_loop)]
-    for i in (at + 1)..end {
-        let b = bytes[i];
+    for i in at.saturating_add(1)..end {
+        let Some(&b) = bytes.get(i) else { continue };
         if b == open {
-            depth += 1;
+            depth = depth.saturating_add(1);
         } else if b == close {
-            depth -= 1;
+            depth = depth.saturating_sub(1);
             if depth == 0 {
                 return Some(i);
             }
@@ -95,16 +93,16 @@ fn scan_forward(bytes: &[u8], at: usize, open: u8, close: u8) -> Option<usize> {
 }
 
 fn scan_backward(bytes: &[u8], at: usize, open: u8, close: u8) -> Option<usize> {
-    let mut depth = 1;
+    let mut depth: u32 = 1;
     let start = at.saturating_sub(SCAN_LIMIT);
     let mut i = at;
     while i > start {
-        i -= 1;
-        let b = bytes[i];
+        i = i.saturating_sub(1);
+        let Some(&b) = bytes.get(i) else { continue };
         if b == close {
-            depth += 1;
+            depth = depth.saturating_add(1);
         } else if b == open {
-            depth -= 1;
+            depth = depth.saturating_sub(1);
             if depth == 0 {
                 return Some(i);
             }

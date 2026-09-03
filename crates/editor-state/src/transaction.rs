@@ -59,7 +59,7 @@ impl TransactionSpec {
     }
 
     #[must_use]
-    pub fn reading_mode(mut self, on: bool) -> Self {
+    pub const fn reading_mode(mut self, on: bool) -> Self {
         self.reading_mode = Some(on);
         self
     }
@@ -73,7 +73,7 @@ pub struct Transaction {
 
 impl Transaction {
     #[must_use]
-    pub fn new(before: EditorState, spec: TransactionSpec) -> Self {
+    pub const fn new(before: EditorState, spec: TransactionSpec) -> Self {
         Self { before, spec }
     }
 
@@ -86,30 +86,33 @@ impl Transaction {
             .clone()
             .unwrap_or_else(|| self.before.selection.map(&self.spec.changes));
         let new_doc_len = new_doc.len();
-        let new_folds = if let Some(folds) = self.spec.folds.clone() {
-            folds
-                .into_iter()
-                .filter(|r| r.end <= new_doc_len && r.start < r.end)
-                .collect()
-        } else {
-            self.before
-                .folds
-                .iter()
-                .filter_map(|r| {
-                    let from = self
-                        .spec
-                        .changes
-                        .map_position(r.start, crate::change::Assoc::Before)
-                        .min(new_doc_len);
-                    let to = self
-                        .spec
-                        .changes
-                        .map_position(r.end, crate::change::Assoc::After)
-                        .min(new_doc_len);
-                    if to > from { Some(from..to) } else { None }
-                })
-                .collect()
-        };
+        let new_folds = self.spec.folds.clone().map_or_else(
+            || {
+                self.before
+                    .folds
+                    .iter()
+                    .filter_map(|r| {
+                        let from = self
+                            .spec
+                            .changes
+                            .map_position(r.start, crate::change::Assoc::Before)
+                            .min(new_doc_len);
+                        let to = self
+                            .spec
+                            .changes
+                            .map_position(r.end, crate::change::Assoc::After)
+                            .min(new_doc_len);
+                        if to > from { Some(from..to) } else { None }
+                    })
+                    .collect()
+            },
+            |folds| {
+                folds
+                    .into_iter()
+                    .filter(|r| r.end <= new_doc_len && r.start < r.end)
+                    .collect()
+            },
+        );
         let new_reading_mode = self.spec.reading_mode.unwrap_or(self.before.reading_mode);
         EditorState {
             doc: new_doc,
@@ -128,7 +131,7 @@ mod tests {
 
     fn st(text: &str, head: usize) -> EditorState {
         EditorState {
-            doc: Doc::from_str(text),
+            doc: Doc::new(text),
             selection: Selection::caret(head),
             folds: Vec::new(),
             reading_mode: false,

@@ -28,7 +28,7 @@ pub struct EditorState {
 impl EditorState {
     pub fn new(text: impl Into<String>) -> Self {
         Self {
-            doc: Doc::from_str(&text.into()),
+            doc: Doc::new(&text.into()),
             selection: Selection::caret(0),
             folds: Vec::new(),
             reading_mode: false,
@@ -36,7 +36,7 @@ impl EditorState {
     }
 
     #[must_use]
-    pub fn update(&self, spec: TransactionSpec) -> EditorState {
+    pub fn update(&self, spec: TransactionSpec) -> Self {
         Transaction::new(self.clone(), spec).apply()
     }
 }

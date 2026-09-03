@@ -31,7 +31,7 @@
 use std::cell::Cell;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub(crate) enum TypstKind {
+pub enum TypstKind {
     MathInline,
     MathBlock,
     /// ```` ```typst …``` ```` fence body, compiled as a full
@@ -52,7 +52,7 @@ thread_local! {
 
 /// Re-arm the per-pass compile budget. Call once at the top of
 /// every `live_preview` pass before any [`render_typst`] calls.
-pub(crate) fn reset_compile_budget() {
+pub fn reset_compile_budget() {
     COMPILE_BUDGET.with(|c| c.set(COMPILE_BUDGET_PER_PASS));
 }
 
@@ -60,7 +60,7 @@ pub(crate) fn reset_compile_budget() {
 /// when (a) compile fails, or (b) the per-pass budget is
 /// exhausted and the body isn't cached. The caller shows the
 /// raw source in either case — the user can keep editing.
-pub(crate) fn render_typst(kind: TypstKind, body: &str) -> Option<String> {
+pub fn render_typst(kind: TypstKind, body: &str) -> Option<String> {
     if let Some(cached) = with_typst_cache(|c| c.get(kind, body)) {
         return Some(cached);
     }
@@ -68,7 +68,7 @@ pub(crate) fn render_typst(kind: TypstKind, body: &str) -> Option<String> {
     if budget == 0 {
         return None;
     }
-    COMPILE_BUDGET.with(|c| c.set(budget - 1));
+    COMPILE_BUDGET.with(|c| c.set(budget.saturating_sub(1)));
 
     // Wrap the fragment in a Typst preamble so each compiles
     // as a standalone document. `page(fill: none)` keeps the

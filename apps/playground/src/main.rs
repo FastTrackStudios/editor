@@ -60,6 +60,10 @@ fn demo_completion(
 // Web/desktop link this bundled asset; native inlines the CSS via
 // `include_str!` (see `App`), so the asset handle is unused there.
 #[cfg(not(feature = "native"))]
+#[expect(
+    clippy::volatile_composites,
+    reason = "fires inside dioxus's `asset!` expansion; no hand-written code to change"
+)]
 const STYLE: Asset = asset!("/assets/playground.css");
 
 fn main() {
@@ -72,6 +76,18 @@ fn main() {
     dioxus_native::launch(App);
     #[cfg(not(feature = "native"))]
     dioxus::launch(App);
+}
+
+/// Vim `:q` / `:wq` — ask the shell to shut down.
+///
+/// `std::process::exit` is denied repo-wide: it skips destructors and takes
+/// the decision away from whoever owns `main`. On desktop the equivalent is
+/// closing the window, which unwinds the event loop and lets `main` return
+/// normally. On web and under the native renderer there is no process to end,
+/// so this does nothing.
+fn request_quit() {
+    #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
+    dioxus::desktop::window().close();
 }
 
 /// Initialize tracing for the desktop binary: stdout + a rolling
@@ -97,9 +113,11 @@ fn init_tracing() {
     std::mem::forget(guard);
 
     let env_filter = || {
+        // Both parses are of constants, so neither realistically fails; fall
+        // back to EnvFilter's own default rather than asserting that.
         EnvFilter::try_from_env("EDITOR_LOG")
             .or_else(|_| EnvFilter::try_new("info,editor=debug,editor_view=debug,playground=debug"))
-            .unwrap()
+            .unwrap_or_default()
     };
 
     let stdout_layer = fmt::layer()
@@ -161,7 +179,7 @@ fn read_seed_query() -> Option<String> {
 
 /// Look for `?flag` or `?flag=1` etc. — returns true when the
 /// query string contains the named flag with a truthy value.
-fn read_query_flag(_name: &str) -> bool {
+const fn read_query_flag(_name: &str) -> bool {
     #[cfg(target_arch = "wasm32")]
     {
         let window = match web_sys::window() {
@@ -208,7 +226,7 @@ fn percent_decode(s: &str) -> String {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn read_seed_query() -> Option<String> {
+const fn read_seed_query() -> Option<String> {
     None
 }
 
@@ -427,15 +445,15 @@ fn App() -> Element {
     // `insertParagraph` never sneaks a stray `\n` in alongside
     // our authored change.
     let keymap = Keymap::new()
-        .with("Mod-a", commands::select_all as _)
-        .with("Mod-b", commands::toggle_bold as _)
-        .with("Mod-i", commands::toggle_italic as _)
-        .with("Mod-k", commands::toggle_link as _)
+        .with("Mod-a", |s: &_| commands::select_all(s))
+        .with("Mod-b", |s: &_| commands::toggle_bold(s))
+        .with("Mod-i", |s: &_| commands::toggle_italic(s))
+        .with("Mod-k", |s: &_| commands::toggle_link(s))
         .with("Mod-Shift-k", |s: &_| {
             commands::add_block_id(s).map(|(t, _)| t)
         })
-        .with("Mod-l", commands::cycle_list as _)
-        .with("Mod-t", commands::toggle_task as _)
+        .with("Mod-l", |s: &_| commands::cycle_list(s))
+        .with("Mod-t", |s: &_| commands::toggle_task(s))
         .with("Mod-1", |s: &_| commands::set_heading(s, 1))
         .with("Mod-2", |s: &_| commands::set_heading(s, 2))
         .with("Mod-3", |s: &_| commands::set_heading(s, 3))
@@ -443,19 +461,19 @@ fn App() -> Element {
         .with("Mod-5", |s: &_| commands::set_heading(s, 5))
         .with("Mod-6", |s: &_| commands::set_heading(s, 6))
         .with("Mod-0", |s: &_| commands::set_heading(s, 0))
-        .with("Mod-e", commands::toggle_reading_mode as _)
+        .with("Mod-e", |s: &_| commands::toggle_reading_mode(s))
         .with("Tab", |s: &_| {
             commands::tab_list_indent(s, false).or_else(|| commands::indent_more(s))
         })
         .with("Shift-Tab", |s: &_| {
             commands::tab_list_indent(s, true).or_else(|| commands::indent_less(s))
         })
-        .with("Backspace", commands::delete_backward as _)
-        .with("Delete", commands::delete_forward as _)
+        .with("Backspace", |s: &_| commands::delete_backward(s))
+        .with("Delete", |s: &_| commands::delete_forward(s))
         // Word-wise deletes — same shared commands the native path
         // wires as its Ctrl-Backspace/Delete default action.
-        .with("Mod-Backspace", commands::delete_word_backward as _)
-        .with("Mod-Delete", commands::delete_word_forward as _);
+        .with("Mod-Backspace", |s: &_| commands::delete_word_backward(s))
+        .with("Mod-Delete", |s: &_| commands::delete_word_forward(s));
 
     // Vim modal state. Default-on per user preference — toggle
     // with `?novim=1` in the URL to fall back to plain editing.
@@ -504,17 +522,17 @@ fn App() -> Element {
         let events = lsp_bridge.borrow().as_ref().map(|b| b.events.clone());
         Callback::new(move |ev: editor::TransactionEvent| {
             match ev.user_event.as_deref() {
-                Some("save") | Some("save-quit") => {
+                Some("save" | "save-quit") => {
                     let path = std::path::Path::new("target/playground-saved.md");
                     match std::fs::write(path, ev.doc_after.to_string()) {
                         Ok(()) => tracing::info!("vim :w — saved to {}", path.display()),
                         Err(e) => tracing::error!("vim :w failed: {e}"),
                     }
                     if ev.user_event.as_deref() == Some("save-quit") {
-                        std::process::exit(0);
+                        request_quit();
                     }
                 }
-                Some("quit") => std::process::exit(0),
+                Some("quit") => request_quit(),
                 _ => {}
             }
             if let Some(tx) = &events {
@@ -577,7 +595,7 @@ fn App() -> Element {
                         if read_query_flag("nodeco") {
                             Editor {
                                 state,
-                                keymap: keymap.clone(),
+                                keymap,
                                 vim: if vim_enabled { Some(vim) } else { None },
                                 slash: Some(slash),
                                 on_transaction: on_tx,
@@ -585,8 +603,8 @@ fn App() -> Element {
                         } else {
                             Editor {
                                 state,
-                                keymap: keymap.clone(),
-                                decorations: deco_source.clone(),
+                                keymap,
+                                decorations: deco_source,
                                 vim: if vim_enabled { Some(vim) } else { None },
                                 slash: Some(slash),
                                 completion: editor_view::trigger::CompletionSource::ptr(
@@ -632,7 +650,7 @@ fn VimStatus(vim: Signal<editor::editor_vim::VimState>) -> Element {
             .map(|r| format!("\"{r:?}"))
             .unwrap_or_default(),
         v.pending_operator
-            .map(|op| format!("{op:?}").chars().next().unwrap().to_string())
+            .and_then(|op| format!("{op:?}").chars().next().map(|c| c.to_string()))
             .unwrap_or_default(),
     );
     // Live `:`/`/`/`?` buffer — what a vim user sees at the

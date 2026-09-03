@@ -21,14 +21,14 @@ thread_local! {
 
 /// Re-arm the per-pass budget. Call at the top of every
 /// `live_preview` pass.
-pub(crate) fn reset_compile_budget() {
+pub fn reset_compile_budget() {
     COMPILE_BUDGET.with(|c| c.set(COMPILE_BUDGET_PER_PASS));
 }
 
 /// Render keyflow chart source to SVG. Returns `None` on a cache
 /// miss when the budget is exhausted (caller falls back to source)
 /// or when the source can't be parsed / laid out.
-pub(crate) fn render_keyflow(body: &str) -> Option<String> {
+pub fn render_keyflow(body: &str) -> Option<String> {
     if let Some(cached) = with_keyflow_cache(|c| c.get(body)) {
         return Some(cached);
     }
@@ -36,7 +36,7 @@ pub(crate) fn render_keyflow(body: &str) -> Option<String> {
     if budget == 0 {
         return None;
     }
-    COMPILE_BUDGET.with(|c| c.set(budget - 1));
+    COMPILE_BUDGET.with(|c| c.set(budget.saturating_sub(1)));
 
     // Resolved through the fence registry rather than a direct dependency:
     // the chart renderer lives above this crate (it needs `keyflow-text`
@@ -46,28 +46,26 @@ pub(crate) fn render_keyflow(body: &str) -> Option<String> {
     // Nothing registered means charts render as source, which is the same
     // fallback any unknown fence language gets.
     let renderer = crate::fence_renderer::fence_renderer(LANGUAGE)?;
-    match renderer.render_svg(body) {
-        Some(svg) => {
-            with_keyflow_cache(|c| c.put(body.to_string(), svg.clone()));
-            Some(svg)
-        }
-        None => {
+    renderer.render_svg(body).map_or_else(
+        || {
             tracing::debug!(body_len = body.len(), "keyflow render declined");
             None
-        }
-    }
+        },
+        |svg| {
+            with_keyflow_cache(|c| c.put(body.to_string(), svg.clone()));
+            Some(svg)
+        },
+    )
 }
 
 /// Registry key for the keyflow fence family (`kf`, `kf+`, `kf-`).
-pub(crate) const LANGUAGE: &str = "kf";
+pub const LANGUAGE: &str = "kf";
 
 /// Syntax-highlight a keyflow fence body, falling back to escaped source
 /// when no chart renderer is registered.
-pub(crate) fn highlight_keyflow(body: &str) -> String {
-    match crate::fence_renderer::fence_renderer(LANGUAGE) {
-        Some(r) => r.highlight_html(body),
-        None => super::escape_html(body),
-    }
+pub fn highlight_keyflow(body: &str) -> String {
+    crate::fence_renderer::fence_renderer(LANGUAGE)
+        .map_or_else(|| super::escape_html(body), |r| r.highlight_html(body))
 }
 
 struct KeyflowCache {

@@ -22,14 +22,14 @@ thread_local! {
 
 /// Re-arm the per-pass budget. Call at the top of every
 /// `live_preview` pass.
-pub(crate) fn reset_compile_budget() {
+pub fn reset_compile_budget() {
     COMPILE_BUDGET.with(|c| c.set(COMPILE_BUDGET_PER_PASS));
 }
 
 /// Render a Mermaid source string to SVG. Returns `None` on
 /// cache miss when the budget is exhausted (caller falls back
 /// to source) or when the renderer rejects the source.
-pub(crate) fn render_mermaid(body: &str) -> Option<String> {
+pub fn render_mermaid(body: &str) -> Option<String> {
     if let Some(cached) = with_mermaid_cache(|c| c.get(body)) {
         return Some(cached);
     }
@@ -37,7 +37,7 @@ pub(crate) fn render_mermaid(body: &str) -> Option<String> {
     if budget == 0 {
         return None;
     }
-    COMPILE_BUDGET.with(|c| c.set(budget - 1));
+    COMPILE_BUDGET.with(|c| c.set(budget.saturating_sub(1)));
 
     match editor_mermaid::render_svg(body) {
         Ok(svg) => {

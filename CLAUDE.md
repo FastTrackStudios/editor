@@ -43,22 +43,36 @@ repo.
 
 ## Layout
 
+Follows architect's shape: `crates/` is what an embedder reaches for,
+`features/` is one capability per directory. A feature is a single crate
+at `features/<name>`; it only nests a level deeper when it genuinely
+needs more than one crate. Directory names are bare capabilities, package
+names keep the `editor-` prefix — so `features/vim` builds `editor-vim`,
+and downstream `use editor_vim::…` is unaffected by where it sits.
+
 ```
 crates/
   editor              the facade — re-exports the common surface
   editor-state        document model, transactions, the markdown pass,
                       decorations, the fence registry
-  editor-view         the Dioxus component
-  editor-vim          vim bindings
-  editor-syntax       tree-sitter highlighting (arborium)
-  editor-crdt         collaborative editing
-  editor-lsp          language-server client (native only — spawns a child)
-  editor-typst        Typst math fragments
-  editor-mermaid      Mermaid diagrams
-  mermaid-rs-renderer vendored mermaid layout/render (web_time for wasm)
+features/
+  ui                  editor-view — the Dioxus component
+  vim                 editor-vim — vim bindings
+  syntax              editor-syntax — tree-sitter highlighting (arborium)
+  crdt                editor-crdt — collaborative editing
+  lsp                 editor-lsp — language-server client (native only)
+  typst               editor-typst — Typst math fragments
+  mermaid/            two crates, hence the extra level:
+    mermaid           editor-mermaid — the fence adapter
+    mermaid-rs-renderer  vendored layout/render (web_time for wasm)
 apps/playground       the dogfooding app — the fastest way to see a change
 tests/browser         playwright suite, driven against the playground
 ```
+
+`crates/` never depends on an app; `features/` never depends on
+`crates/`. `editor-state` is the one thing features may depend on
+upward-looking — it is the model, and it lives in `crates/` because it is
+half of what an embedder actually imports.
 
 ## Build
 

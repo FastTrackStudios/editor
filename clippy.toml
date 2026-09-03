@@ -2,3 +2,17 @@ msrv = "1.90"
 
 # Common patterns we accept across the workspace.
 allow-comparison-to-zero = true
+
+# Fast prototyping belongs in tests: panicking there is just a failing test.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+
+# A keystroke has five independent modifiers (ctrl/alt/shift/meta, plus `Mod`
+# resolved per-platform), so `KeySpec` carries five bools. That is the domain,
+# not a design smell: packing them into a bitflag set would trade a clear
+# public struct for an opaque one and break every downstream `.ctrl` read.
+# Raising the threshold to 5 keeps the lint working for genuine cases —
+# a sixth bool on any struct still gets flagged.
+max-struct-bools = 5

@@ -1,5 +1,6 @@
-//! YAML frontmatter — parser, serializer, and properties widget
-//! renderer. Sees only the document text and decoration system;
+//! YAML frontmatter — parser, serializer, and properties widget renderer.
+//!
+//! Sees only the document text and decoration system;
 //! the live-preview entry point and the edit dispatcher (in
 //! `editor-view`) call into this module via the public
 //! [`parse_frontmatter`] / [`serialize_property`] helpers.
@@ -17,7 +18,10 @@
 //! later — the byte-range-per-property contract is what the
 //! edit path depends on, not the parser.
 
+use std::fmt::Write as _;
+
 use super::escape_html;
+use crate::text::TextSlice;
 
 #[derive(Debug, Clone)]
 pub struct FrontMatter {
@@ -51,14 +55,13 @@ pub enum PropValue {
 }
 
 impl PropValue {
-    pub(crate) fn type_name(&self) -> &'static str {
+    pub(crate) const fn type_name(&self) -> &'static str {
         match self {
-            PropValue::Text(_) => "text",
-            PropValue::Bool(_) => "bool",
-            PropValue::Number(_) => "number",
-            PropValue::Date(_) => "date",
-            PropValue::List(_) => "list",
-            PropValue::Empty => "text",
+            Self::Bool(_) => "bool",
+            Self::Number(_) => "number",
+            Self::Date(_) => "date",
+            Self::List(_) => "list",
+            Self::Text(_) | Self::Empty => "text",
         }
     }
 }
@@ -72,33 +75,33 @@ pub fn parse_frontmatter(text: &str) -> Option<FrontMatter> {
         return None;
     }
     let opener_end = bytes.iter().position(|&b| b == b'\n')?;
-    let first_line = &text[..opener_end];
+    let first_line = text.before(opener_end);
     if first_line.trim_end() != "---" {
         return None;
     }
-    let body_start = opener_end + 1;
+    let body_start = opener_end.saturating_add(1);
     // Find the closing `---` line.
     let mut i = body_start;
     let mut closer_line_start = None;
     while i < bytes.len() {
         let line_from = i;
-        while i < bytes.len() && bytes[i] != b'\n' {
-            i += 1;
+        while bytes.get(i).is_some_and(|&b| b != b'\n') {
+            i = i.saturating_add(1);
         }
-        let line = &text[line_from..i];
+        let line = text.slice(line_from..i);
         if line.trim_end() == "---" || line.trim_end() == "..." {
             closer_line_start = Some(line_from);
             break;
         }
         if i < bytes.len() {
-            i += 1;
+            i = i.saturating_add(1);
         }
     }
     let closer_start = closer_line_start?;
-    let closer_end = bytes[closer_start..]
-        .iter()
-        .position(|&b| b == b'\n')
-        .map_or(bytes.len(), |n| closer_start + n + 1);
+    let closer_end = bytes
+        .get(closer_start..)
+        .and_then(|rest| rest.iter().position(|&b| b == b'\n'))
+        .map_or(bytes.len(), |n| closer_start.saturating_add(n).saturating_add(1));
     let props = parse_frontmatter_body(text, body_start, closer_start);
     Some(FrontMatter {
         outer: 0..closer_end,
@@ -119,12 +122,12 @@ fn parse_frontmatter_body(text: &str, body_start: usize, body_end: usize) -> Vec
     let mut i = body_start;
     while i < body_end {
         let line_from = i;
-        while i < body_end && bytes[i] != b'\n' {
-            i += 1;
+        while i < body_end && bytes.get(i).is_some_and(|&b| b != b'\n') {
+            i = i.saturating_add(1);
         }
         let line_to = i;
-        let line_with_nl = if i < body_end { i + 1 } else { i };
-        let line = &text[line_from..line_to];
+        let line_with_nl = if i < body_end { i.saturating_add(1) } else { i };
+        let line = text.slice(line_from..line_to);
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             i = line_with_nl;
@@ -139,91 +142,29 @@ fn parse_frontmatter_body(text: &str, body_start: usize, body_end: usize) -> Vec
             i = line_with_nl;
             continue;
         };
-        let key = line[..colon].trim().to_string();
+        let key = line.before(colon).trim().to_string();
         if key.is_empty() {
             i = line_with_nl;
             continue;
         }
-        let rest = line[colon + 1..].trim();
+        let rest = line.after(colon.saturating_add(1)).trim();
         let mut prop_end = line_with_nl;
         // YAML `|` literal block scalar: `key: |` followed by
         // indented lines preserves the line breaks as the value.
         // Strip the leading indent (whichever depth the first
         // line uses) from each continuation line.
         let value = if rest == "|" {
-            let mut lines: Vec<String> = Vec::new();
-            let mut indent: Option<usize> = None;
-            let mut j = line_with_nl;
-            while j < body_end {
-                let sub_from = j;
-                while j < body_end && bytes[j] != b'\n' {
-                    j += 1;
-                }
-                let sub_line = &text[sub_from..j];
-                let sub_nl = if j < body_end { j + 1 } else { j };
-                let sub_indent = sub_line
-                    .bytes()
-                    .take_while(|&b| b == b' ' || b == b'\t')
-                    .count();
-                if sub_line.trim().is_empty() {
-                    // Blank line: part of the block if any
-                    // content follows at the right indent.
-                    if indent.is_some() {
-                        lines.push(String::new());
-                        prop_end = sub_nl;
-                    }
-                    j = sub_nl;
-                    continue;
-                }
-                let need = *indent.get_or_insert(sub_indent);
-                if sub_indent < need {
-                    break;
-                }
-                lines.push(sub_line[need..].to_string());
-                prop_end = sub_nl;
-                j = sub_nl;
-            }
+            let (value, end) = parse_block_scalar(text, body_end, line_with_nl);
+            prop_end = end;
             i = prop_end;
-            // Drop trailing blank lines so the value isn't padded
-            // by whatever blank lines sat between the block and
-            // the next key (or the closing `---`).
-            while lines.last().is_some_and(std::string::String::is_empty) {
-                lines.pop();
-            }
-            PropValue::Text(lines.join("\n"))
+            value
         } else if rest.is_empty() {
             // Block list: peek indented `- item` lines and pull
             // them into this property.
-            let mut items: Vec<String> = Vec::new();
-            let mut j = line_with_nl;
-            while j < body_end {
-                let sub_from = j;
-                while j < body_end && bytes[j] != b'\n' {
-                    j += 1;
-                }
-                let sub_line = &text[sub_from..j];
-                let sub_nl = if j < body_end { j + 1 } else { j };
-                if sub_line.starts_with([' ', '\t']) && sub_line.trim_start().starts_with("- ") {
-                    let item = sub_line.trim_start()[2..]
-                        .trim()
-                        .trim_matches('"')
-                        .trim_matches('\'')
-                        .to_string();
-                    items.push(item);
-                    prop_end = sub_nl;
-                    j = sub_nl;
-                } else if sub_line.trim().is_empty() {
-                    j = sub_nl;
-                } else {
-                    break;
-                }
-            }
+            let (value, end) = parse_block_list(text, body_end, line_with_nl);
+            prop_end = end;
             i = prop_end;
-            if items.is_empty() {
-                PropValue::Empty
-            } else {
-                PropValue::List(items)
-            }
+            value
         } else {
             i = line_with_nl;
             classify_scalar(rest)
@@ -242,7 +183,7 @@ fn parse_frontmatter_body(text: &str, body_start: usize, body_end: usize) -> Vec
 /// number heuristics so `true` doesn't become a string.
 fn classify_scalar(rest: &str) -> PropValue {
     if rest.starts_with('[') && rest.ends_with(']') {
-        let inner = &rest[1..rest.len() - 1];
+        let inner = rest.slice(1..rest.len().saturating_sub(1));
         let items: Vec<String> = inner
             .split(',')
             .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
@@ -259,8 +200,8 @@ fn classify_scalar(rest: &str) -> PropValue {
     // YYYY-MM-DD heuristic — 10 chars, two dashes at fixed
     // positions, digits elsewhere.
     if cleaned.len() == 10
-        && cleaned.as_bytes()[4] == b'-'
-        && cleaned.as_bytes()[7] == b'-'
+        && cleaned.as_bytes().get(4) == Some(&b'-')
+        && cleaned.as_bytes().get(7) == Some(&b'-')
         && cleaned.bytes().enumerate().all(|(idx, b)| {
             if idx == 4 || idx == 7 {
                 b == b'-'
@@ -277,11 +218,9 @@ fn classify_scalar(rest: &str) -> PropValue {
         && cleaned
             .chars()
             .all(|c| c.is_ascii_digit() || c == '.' || c == '-' || c == '+' || c == 'e' || c == 'E')
-    {
-        if let Ok(n) = cleaned.parse::<f64>() {
+        && let Ok(n) = cleaned.parse::<f64>() {
             return PropValue::Number(n);
         }
-    }
     PropValue::Text(cleaned)
 }
 
@@ -301,13 +240,14 @@ pub(crate) fn render_properties_html(props: &[Property], active_idx: Option<usiz
         } else {
             ""
         };
-        html.push_str(&format!(
+        let _ = write!(
+            html,
             r#"<div class="md-property-row{active_class}" data-prop-key="{key}" data-prop-from="{from}" data-prop-to="{to}" data-prop-type="{ty}">"#,
             key = key_attr,
             from = p.range.start,
             to = p.range.end,
             ty = p.value.type_name(),
-        ));
+        );
         html.push_str(r#"<div class="md-property-key">"#);
         html.push_str(&key_attr);
         html.push_str("</div>");
@@ -325,39 +265,44 @@ pub(crate) fn render_properties_html(props: &[Property], active_idx: Option<usiz
                 );
             }
             PropValue::Text(s) => {
-                html.push_str(&format!(
+                let _ = write!(
+                    html,
                     r#"<span class="md-property-text" contenteditable="plaintext-only" spellcheck="false" data-edit-role="text">{}</span>"#,
                     escape_html(s),
-                ));
+                );
             }
             PropValue::Number(n) => {
                 let txt = format_number(*n);
-                html.push_str(&format!(
+                let _ = write!(
+                    html,
                     r#"<span class="md-property-number" contenteditable="plaintext-only" spellcheck="false" data-edit-role="number" inputmode="decimal">{}</span>"#,
                     escape_html(&txt),
-                ));
+                );
             }
             PropValue::Date(s) => {
-                html.push_str(&format!(
+                let _ = write!(
+                    html,
                     r#"<input type="date" class="md-property-date" data-edit-role="date" value="{}"/>"#,
                     escape_html(s),
-                ));
+                );
             }
             PropValue::Bool(b) => {
-                html.push_str(&format!(
+                let _ = write!(
+                    html,
                     r#"<span class="md-property-bool" role="checkbox" tabindex="0" data-edit-role="bool" data-checked="{}" aria-checked="{}">{}</span>"#,
                     b,
                     b,
                     if *b { "✓" } else { "✗" },
-                ));
+                );
             }
             PropValue::List(items) => {
                 html.push_str(r#"<span class="md-property-list" data-edit-role="list">"#);
                 for item in items {
-                    html.push_str(&format!(
+                    let _ = write!(
+                        html,
                         r#"<span class="md-property-chip" data-chip-value="{val}"><span class="md-chip-text">{val}</span><span class="md-chip-remove" data-edit-role="chip-remove" tabindex="0">×</span></span>"#,
                         val = escape_html(item),
-                    ));
+                    );
                 }
                 html.push_str(
                     r#"<span class="md-property-chip-add" contenteditable="plaintext-only" spellcheck="false" data-edit-role="chip-add" data-placeholder="add…"></span>"#,
@@ -382,7 +327,15 @@ pub(crate) fn render_properties_html(props: &[Property], active_idx: Option<usiz
 /// source we parsed.
 fn format_number(n: f64) -> String {
     if n.fract() == 0.0 && n.abs() < 1e16 {
-        format!("{}", n as i64)
+        // Print the integral value without a trailing ".0". `{:.0}` does this
+        // directly — going via `as i64` would be a truncating cast for the
+        // sake of formatting, and this crate has no non-`as` way to spell it.
+        // `-0.0` formats as "-0", so send every zero down the same path.
+        if n == 0.0 {
+            "0".to_owned()
+        } else {
+            format!("{n:.0}")
+        }
     } else {
         format!("{n}")
     }
@@ -463,4 +416,96 @@ fn yaml_quote_if_needed(s: &str) -> String {
     } else {
         cleaned
     }
+}
+
+/// Parse a YAML `|` literal block scalar — the indented lines following a
+/// `key: |` header, with the first line's indent stripped from each.
+///
+/// `start` is the offset just past the header line. Returns the value and the
+/// offset just past the block.
+fn parse_block_scalar(text: &str, body_end: usize, start: usize) -> (PropValue, usize) {
+    let bytes = text.as_bytes();
+    let mut lines: Vec<String> = Vec::new();
+    let mut indent: Option<usize> = None;
+    let mut end = start;
+    let mut j = start;
+    while j < body_end {
+        let sub_from = j;
+        while j < body_end && bytes.get(j).is_some_and(|&b| b != b'\n') {
+            j = j.saturating_add(1);
+        }
+        let sub_line = text.slice(sub_from..j);
+        let sub_nl = if j < body_end { j.saturating_add(1) } else { j };
+        let sub_indent = sub_line
+            .bytes()
+            .take_while(|&b| b == b' ' || b == b'\t')
+            .count();
+        if sub_line.trim().is_empty() {
+            // Blank line: part of the block if any content follows at the
+            // right indent.
+            if indent.is_some() {
+                lines.push(String::new());
+                end = sub_nl;
+            }
+            j = sub_nl;
+            continue;
+        }
+        let need = *indent.get_or_insert(sub_indent);
+        if sub_indent < need {
+            break;
+        }
+        lines.push(sub_line.after(need).to_string());
+        end = sub_nl;
+        j = sub_nl;
+    }
+    // Drop trailing blank lines so the value isn't padded by whatever blank
+    // lines sat between the block and the next key (or the closing `---`).
+    while lines.last().is_some_and(std::string::String::is_empty) {
+        lines.pop();
+    }
+    (PropValue::Text(lines.join("\n")), end)
+}
+
+/// Parse a YAML block list — the indented `- item` lines following a bare
+/// `key:` header.
+///
+/// `start` is the offset just past the header line. Returns the value
+/// ([`PropValue::Empty`] if no items were found) and the offset just past the
+/// list.
+fn parse_block_list(text: &str, body_end: usize, start: usize) -> (PropValue, usize) {
+    let bytes = text.as_bytes();
+    let mut end = start;
+    let mut items: Vec<String> = Vec::new();
+    let mut j = start;
+    while j < body_end {
+        let sub_from = j;
+        while j < body_end && bytes.get(j).is_some_and(|&b| b != b'\n') {
+            j = j.saturating_add(1);
+        }
+        let sub_line = text.slice(sub_from..j);
+        let sub_nl = if j < body_end { j.saturating_add(1) } else { j };
+        if sub_line.starts_with([' ', '\t']) && sub_line.trim_start().starts_with("- ") {
+            let item = sub_line
+                .trim_start()
+                .after(2)
+                .trim()
+                .trim_matches('"')
+                .trim_matches('\'')
+                .to_string();
+            items.push(item);
+            end = sub_nl;
+            j = sub_nl;
+        } else if sub_line.trim().is_empty() {
+            j = sub_nl;
+        } else {
+            break;
+        }
+    }
+
+    let value = if items.is_empty() {
+        PropValue::Empty
+    } else {
+        PropValue::List(items)
+    };
+    (value, end)
 }

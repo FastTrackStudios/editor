@@ -107,13 +107,13 @@ impl History {
 
     /// `true` when there is something to undo.
     #[must_use]
-    pub fn can_undo(&self) -> bool {
+    pub const fn can_undo(&self) -> bool {
         !self.done.is_empty()
     }
 
     /// `true` when there is something to redo.
     #[must_use]
-    pub fn can_redo(&self) -> bool {
+    pub const fn can_redo(&self) -> bool {
         !self.undone.is_empty()
     }
 
@@ -134,11 +134,10 @@ impl History {
         if spec.changes.is_empty() {
             // Selection-only movement: a caret jump means the next
             // keystroke should start a fresh undo group.
-            if spec.selection.is_some() {
-                if let Some(top) = self.done.last_mut() {
+            if spec.selection.is_some()
+                && let Some(top) = self.done.last_mut() {
                     top.coalesce = None;
                 }
-            }
             return;
         }
 
@@ -159,7 +158,7 @@ impl History {
             single_change(&spec.changes).map(|c| Coalesce {
                 doc_before: before.doc.clone(),
                 from_cur: c.from,
-                to_cur: c.from + c.inserted.len(),
+                to_cur: c.from.saturating_add(c.inserted.len()),
                 from_orig: c.from,
                 to_orig: c.to,
             })
@@ -172,7 +171,7 @@ impl History {
             coalesce,
         });
         if self.done.len() > self.max_depth {
-            let overflow = self.done.len() - self.max_depth;
+            let overflow = self.done.len().saturating_sub(self.max_depth);
             self.done.drain(..overflow);
         }
     }
@@ -244,8 +243,8 @@ impl History {
         // reaches *outside* the current region — those bytes are
         // untouched, so they line up 1:1 with `doc_before` (see
         // the invariant on [`Coalesce`]).
-        co.from_orig -= co.from_cur.saturating_sub(c.from);
-        co.to_orig += c.to.saturating_sub(co.to_cur);
+        co.from_orig = co.from_orig.saturating_sub(co.from_cur.saturating_sub(c.from));
+        co.to_orig = co.to_orig.saturating_add(c.to.saturating_sub(co.to_cur));
         // Map the current-doc region through the new change and
         // union it with the change's own footprint.
         co.from_cur = spec
@@ -255,7 +254,7 @@ impl History {
         co.to_cur = spec
             .changes
             .map_position(co.to_cur, Assoc::After)
-            .max(c.from + c.inserted.len());
+            .max(c.from.saturating_add(c.inserted.len()));
 
         // Rebuild the group's single inverted change from scratch:
         // restore the original bytes over the current region.
@@ -305,7 +304,7 @@ mod tests {
 
     fn st(text: &str, head: usize) -> EditorState {
         EditorState {
-            doc: Doc::from_str(text),
+            doc: Doc::new(text),
             selection: Selection::caret(head),
             folds: Vec::new(),
             reading_mode: false,
@@ -515,13 +514,13 @@ mod tests {
         );
         let s2 = apply_undo(&mut h, &s1);
         assert!(h.can_redo());
-        let _s3 = edit(
+        let s3 = edit(
             &mut h,
             &s2,
             TransactionSpec::new().changes(Changes::insert(1, "c")),
         );
         assert!(!h.can_redo());
-        assert!(h.redo(&_s3).is_none());
+        assert!(h.redo(&s3).is_none());
     }
 
     #[test]

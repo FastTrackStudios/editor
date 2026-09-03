@@ -23,6 +23,10 @@ use crate::{
 /// `assets/playground.css` so consumers don't have to vendor it.
 /// `asset!` lets Dioxus serve it through the bundled-assets path
 /// on web + desktop alike.
+#[expect(
+    clippy::volatile_composites,
+    reason = "fires inside dioxus's `asset!` expansion; no hand-written code to change"
+)]
 pub const EDITOR_STYLE: Asset = asset!("/assets/editor.css");
 
 /// Zero-config markdown editor component. Wraps [`Editor`] with
@@ -69,27 +73,31 @@ pub fn EditorApp() -> Element {
 /// Live-preview pass plus bracket-pair highlighting. The two
 /// builders dedupe nothing, but their mark ranges don't
 /// conflict in practice.
+#[must_use]
 pub fn combined_decorations(state: &EditorState) -> Vec<DecoratedRange> {
     let mut out = markdown::live_preview(state);
     out.extend(bracket_match::bracket_match(state));
     out
 }
 
-/// Bindings the playground exercises — kept narrow on purpose,
-/// since the view's `beforeinput` bridge already handles the
-/// common typing path (Enter / Backspace / Delete go through
-/// commands so list-continuation + atomic-line tracking work).
+/// Bindings the playground exercises.
+///
+/// Kept narrow on purpose, since the view's `beforeinput` bridge
+/// already handles the common typing path (Enter / Backspace /
+/// Delete go through commands so list-continuation + atomic-line
+/// tracking work).
+#[must_use]
 pub fn standard_markdown_keymap() -> Keymap {
     Keymap::new()
-        .with("Mod-a", commands::select_all as _)
-        .with("Mod-b", commands::toggle_bold as _)
-        .with("Mod-i", commands::toggle_italic as _)
-        .with("Mod-k", commands::toggle_link as _)
+        .with("Mod-a", |s: &_| commands::select_all(s))
+        .with("Mod-b", |s: &_| commands::toggle_bold(s))
+        .with("Mod-i", |s: &_| commands::toggle_italic(s))
+        .with("Mod-k", |s: &_| commands::toggle_link(s))
         .with("Mod-Shift-k", |s: &_| {
             commands::add_block_id(s).map(|(t, _)| t)
         })
-        .with("Mod-l", commands::cycle_list as _)
-        .with("Mod-t", commands::toggle_task as _)
+        .with("Mod-l", |s: &_| commands::cycle_list(s))
+        .with("Mod-t", |s: &_| commands::toggle_task(s))
         .with("Mod-1", |s: &_| commands::set_heading(s, 1))
         .with("Mod-2", |s: &_| commands::set_heading(s, 2))
         .with("Mod-3", |s: &_| commands::set_heading(s, 3))
@@ -97,7 +105,7 @@ pub fn standard_markdown_keymap() -> Keymap {
         .with("Mod-5", |s: &_| commands::set_heading(s, 5))
         .with("Mod-6", |s: &_| commands::set_heading(s, 6))
         .with("Mod-0", |s: &_| commands::set_heading(s, 0))
-        .with("Mod-e", commands::toggle_reading_mode as _)
+        .with("Mod-e", |s: &_| commands::toggle_reading_mode(s))
         // List lines get the smart Tab (indent the item + renumber the
         // ordered sequences it leaves/joins); everything else keeps the
         // plain block indent.
@@ -107,8 +115,8 @@ pub fn standard_markdown_keymap() -> Keymap {
         .with("Shift-Tab", |s: &_| {
             commands::tab_list_indent(s, true).or_else(|| commands::indent_less(s))
         })
-        .with("Backspace", commands::delete_backward as _)
-        .with("Delete", commands::delete_forward as _)
+        .with("Backspace", |s: &_| commands::delete_backward(s))
+        .with("Delete", |s: &_| commands::delete_forward(s))
 }
 
 const WELCOME: &str = "# Welcome to Task\n\nStart typing. Markdown live-preview, vim, and `/` slash commands are wired in.\n";

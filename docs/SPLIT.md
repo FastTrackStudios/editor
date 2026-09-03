@@ -60,7 +60,7 @@ dependency` in task's history.
 
 | was | is |
 |---|---|
-| `features/editor/<crate>` | `crates/<crate>` |
+| `features/editor/<crate>` | `crates/<crate>`, later `features/<name>` |
 | `features/editor/playground` | `apps/playground` |
 | `features/editor/tests` | `tests/browser` |
 | `features/editor/docs` | `docs/` |

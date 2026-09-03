@@ -1,0 +1,39 @@
+[package]
+name = "editor-syntax"
+description = "Token-level syntax highlighting for code fences via Arborium tree-sitter."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+arborium = { workspace = true }
+arborium-tree-sitter = { workspace = true }
+arborium-theme = { workspace = true }
+
+[features]
+# A highlighter with no grammars compiled in can only return empty token
+# lists, and every consumer already opted into `default-langs`. Making it
+# the default is what the crate actually is; `--no-default-features` is
+# still there for an embedder that wants to pick grammars by hand.
+default = ["default-langs"]
+default-langs = [
+    "lang-rust",
+    "lang-typescript",
+    "lang-javascript",
+    "lang-python",
+    "lang-json",
+    "lang-bash",
+    "lang-markdown",
+]
+lang-rust = ["arborium/lang-rust"]
+lang-typescript = ["arborium/lang-typescript"]
+lang-javascript = ["arborium/lang-javascript"]
+lang-python = ["arborium/lang-python"]
+lang-json = ["arborium/lang-json"]
+lang-bash = ["arborium/lang-bash"]
+lang-markdown = ["arborium/lang-markdown"]
+
+[lints]
+workspace = true
