@@ -22,7 +22,7 @@ pub struct Range {
 impl Range {
     /// A caret at `pos`.
     #[must_use]
-    pub fn caret(pos: usize) -> Self {
+    pub const fn caret(pos: usize) -> Self {
         Self {
             anchor: pos,
             head: pos,
@@ -32,13 +32,13 @@ impl Range {
     /// A range with explicit endpoints. `anchor` is where the
     /// selection started, `head` is where the caret is.
     #[must_use]
-    pub fn new(anchor: usize, head: usize) -> Self {
+    pub const fn new(anchor: usize, head: usize) -> Self {
         Self { anchor, head }
     }
 
     /// `true` when `anchor == head`.
     #[must_use]
-    pub fn is_caret(self) -> bool {
+    pub const fn is_caret(self) -> bool {
         self.anchor == self.head
     }
 
@@ -111,8 +111,10 @@ impl Selection {
         Self::single(Range::caret(pos))
     }
 
-    /// Multi-range selection. Panics if `ranges` is empty or
-    /// `primary` is out of bounds.
+    /// Multi-range selection.
+    ///
+    /// # Panics
+    /// Panics if `ranges` is empty or `primary` is out of bounds.
     #[must_use]
     pub fn many(ranges: Vec<Range>, primary: usize) -> Self {
         assert!(!ranges.is_empty(), "Selection must have at least one range");
@@ -124,7 +126,10 @@ impl Selection {
     /// behaviors (active-line highlight, format-text!, etc.).
     #[must_use]
     pub fn primary(&self) -> Range {
-        self.ranges[self.primary]
+        self.ranges
+            .get(self.primary)
+            .copied()
+            .unwrap_or_else(|| Range::caret(0))
     }
 
     /// All ranges in order.
@@ -135,7 +140,7 @@ impl Selection {
 
     /// Index of the primary range in `ranges()`.
     #[must_use]
-    pub fn primary_index(&self) -> usize {
+    pub const fn primary_index(&self) -> usize {
         self.primary
     }
 

@@ -15,8 +15,10 @@
 //! blocks never blocks typing.
 
 use std::cell::Cell;
+use std::fmt::Write as _;
 
 use super::escape_html;
+use crate::text::TextSlice;
 
 const CACHE_CAP: usize = 64;
 /// Tab rendering is pure string work (no external compiler), so
@@ -30,7 +32,7 @@ thread_local! {
 
 /// Re-arm the per-pass budget. Call at the top of every
 /// `live_preview` pass.
-pub(crate) fn reset_render_budget() {
+pub fn reset_render_budget() {
     RENDER_BUDGET.with(|c| c.set(RENDER_BUDGET_PER_PASS));
 }
 
@@ -99,7 +101,7 @@ fn parse_tabs(body: &str) -> Vec<Tab> {
     // Fill in default titles for untitled tabs.
     for (i, t) in tabs.iter_mut().enumerate() {
         if t.title.is_empty() {
-            t.title = format!("Tab {}", i + 1);
+            t.title = format!("Tab {}", i.saturating_add(1));
         }
     }
     tabs
@@ -114,7 +116,7 @@ fn parse_tabs(body: &str) -> Vec<Tab> {
 /// per-pass budget is exhausted on a cache miss (caller then
 /// falls back to the raw source, exactly like the sibling
 /// renderers).
-pub(crate) fn render_tabs(body: &str, focus_pos: usize) -> Option<String> {
+pub fn render_tabs(body: &str, focus_pos: usize) -> Option<String> {
     let unique = scope_id(body, focus_pos);
     if let Some(cached) = with_cache(|c| c.get(&unique)) {
         return Some(cached);
@@ -123,7 +125,7 @@ pub(crate) fn render_tabs(body: &str, focus_pos: usize) -> Option<String> {
     if budget == 0 {
         return None;
     }
-    RENDER_BUDGET.with(|c| c.set(budget - 1));
+    RENDER_BUDGET.with(|c| c.set(budget.saturating_sub(1)));
 
     let tabs = parse_tabs(body);
     if tabs.is_empty() {
@@ -138,14 +140,14 @@ pub(crate) fn render_tabs(body: &str, focus_pos: usize) -> Option<String> {
 /// FNV-1a over the body plus the fence offset → a short hex tag
 /// used to scope every id/class/selector to this one block.
 fn scope_id(body: &str, focus_pos: usize) -> String {
-    let mut h: u64 = 0xcbf29ce484222325;
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in body.as_bytes() {
-        h ^= *b as u64;
-        h = h.wrapping_mul(0x100000001b3);
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0100_0000_01b3);
     }
     for b in focus_pos.to_le_bytes() {
-        h ^= b as u64;
-        h = h.wrapping_mul(0x100000001b3);
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0100_0000_01b3);
     }
     format!("{h:016x}")
 }
@@ -163,10 +165,11 @@ fn build_html(tabs: &[Tab], u: &str) -> String {
     // lights its sibling label, no script involved.
     let mut rules = String::new();
     for i in 0..n {
-        rules.push_str(&format!(
+        let _ = write!(
+            rules,
             "#tab-{u}-{i}:checked~.md-tabs-strip label[for=\"tab-{u}-{i}\"]{{opacity:1;border-bottom-color:currentColor;font-weight:600}}\
              #tab-{u}-{i}:checked~.md-tabs-panels .md-tabs-panel-{i}{{display:block}}"
-        ));
+        );
     }
 
     let css = format!(
@@ -185,17 +188,20 @@ fn build_html(tabs: &[Tab], u: &str) -> String {
     let mut panels = String::new();
     for (i, tab) in tabs.iter().enumerate() {
         let checked = if i == 0 { " checked" } else { "" };
-        inputs.push_str(&format!(
+        let _ = write!(
+            inputs,
             "<input type=\"radio\" class=\"md-tabs-radio\" name=\"tabs-{u}\" id=\"tab-{u}-{i}\"{checked}>"
-        ));
-        labels.push_str(&format!(
+        );
+        let _ = write!(
+            labels,
             "<label for=\"tab-{u}-{i}\">{title}</label>",
             title = escape_html(&tab.title),
-        ));
-        panels.push_str(&format!(
+        );
+        let _ = write!(
+            panels,
             "<div class=\"md-tabs-panel md-tabs-panel-{i}\">{content}</div>",
             content = render_panel_markdown(&tab.body),
-        ));
+        );
     }
 
     format!(
@@ -230,13 +236,13 @@ fn split_blocks(src: &str) -> Vec<&str> {
     let mut start: Option<usize> = None;
     let mut last_end = 0;
     let bytes = src;
-    let mut idx = 0;
+    let mut idx: usize = 0;
     for line in bytes.split_inclusive('\n') {
         let line_start = idx;
-        idx += line.len();
+        idx = idx.saturating_add(line.len());
         if line.trim().is_empty() {
             if let Some(s) = start.take() {
-                blocks.push(bytes[s..last_end].trim_matches('\n'));
+                blocks.push(bytes.slice(s..last_end).trim_matches('\n'));
             }
         } else {
             if start.is_none() {
@@ -246,7 +252,7 @@ fn split_blocks(src: &str) -> Vec<&str> {
         }
     }
     if let Some(s) = start.take() {
-        blocks.push(bytes[s..last_end].trim_matches('\n'));
+        blocks.push(bytes.slice(s..last_end).trim_matches('\n'));
     }
     blocks.into_iter().filter(|b| !b.is_empty()).collect()
 }
@@ -258,53 +264,60 @@ fn split_blocks(src: &str) -> Vec<&str> {
 /// input, the result stays XSS-safe.
 fn inline_md(escaped: &str) -> String {
     let chars: Vec<char> = escaped.chars().collect();
-    let n = chars.len();
     let mut out = String::new();
     let mut i = 0;
-    while i < n {
-        match chars[i] {
+    while let Some(&c) = chars.get(i) {
+        match c {
             '`' => {
-                if let Some(j) = find_char(&chars, i + 1, '`') {
+                if let Some(j) = find_char(&chars, i.saturating_add(1), '`') {
                     out.push_str("<code>");
-                    out.extend(chars[i + 1..j].iter());
+                    out.extend(chars.get(i.saturating_add(1)..j).unwrap_or(&[]).iter());
                     out.push_str("</code>");
-                    i = j + 1;
+                    i = j.saturating_add(1);
                     continue;
                 }
                 out.push('`');
-                i += 1;
+                i = i.saturating_add(1);
             }
-            '*' if i + 1 < n && chars[i + 1] == '*' => {
-                if let Some(j) = find_double(&chars, i + 2) {
-                    let inner: String = chars[i + 2..j].iter().collect();
+            '*' if chars.get(i.saturating_add(1)) == Some(&'*') => {
+                if let Some(j) = find_double(&chars, i.saturating_add(2)) {
+                    let inner: String = chars
+                        .get(i.saturating_add(2)..j)
+                        .unwrap_or(&[])
+                        .iter()
+                        .collect();
                     out.push_str("<strong>");
                     out.push_str(&inline_md(&inner));
                     out.push_str("</strong>");
-                    i = j + 2;
+                    i = j.saturating_add(2);
                     continue;
                 }
                 out.push_str("**");
-                i += 2;
+                i = i.saturating_add(2);
             }
             '*' => {
-                if let Some(j) = find_char(&chars, i + 1, '*') {
-                    let inner: String = chars[i + 1..j].iter().collect();
+                if let Some(j) = find_char(&chars, i.saturating_add(1), '*') {
+                    let inner: String = chars
+                        .get(i.saturating_add(1)..j)
+                        .unwrap_or(&[])
+                        .iter()
+                        .collect();
                     out.push_str("<em>");
                     out.push_str(&inline_md(&inner));
                     out.push_str("</em>");
-                    i = j + 1;
+                    i = j.saturating_add(1);
                     continue;
                 }
                 out.push('*');
-                i += 1;
+                i = i.saturating_add(1);
             }
             '\n' => {
                 out.push_str("<br>");
-                i += 1;
+                i = i.saturating_add(1);
             }
             c => {
                 out.push(c);
-                i += 1;
+                i = i.saturating_add(1);
             }
         }
     }
@@ -312,18 +325,18 @@ fn inline_md(escaped: &str) -> String {
 }
 
 fn find_char(chars: &[char], from: usize, needle: char) -> Option<usize> {
-    (from..chars.len()).find(|&k| chars[k] == needle)
+    (from..chars.len()).find(|&k| chars.get(k) == Some(&needle))
 }
 
 /// Find the next `**` at or after `from`, returning the index of
 /// its first `*`.
 fn find_double(chars: &[char], from: usize) -> Option<usize> {
     let mut k = from;
-    while k + 1 < chars.len() {
-        if chars[k] == '*' && chars[k + 1] == '*' {
+    while k.saturating_add(1) < chars.len() {
+        if chars.get(k) == Some(&'*') && chars.get(k.saturating_add(1)) == Some(&'*') {
             return Some(k);
         }
-        k += 1;
+        k = k.saturating_add(1);
     }
     None
 }

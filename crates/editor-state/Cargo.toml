@@ -8,7 +8,7 @@ authors.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-editor-syntax = { workspace = true, features = ["default-langs"] }
+editor-syntax = { workspace = true }
 editor-typst = { workspace = true }
 editor-mermaid = { workspace = true }
 ropey = { workspace = true }

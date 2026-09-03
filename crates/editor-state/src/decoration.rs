@@ -1,6 +1,7 @@
-//! Decorations — visual overlays on the document. The document
-//! itself is plain text; decorations say "wrap these characters
-//! in a `<strong>`", "hide these two characters from the
+//! Decorations — visual overlays on the document.
+//!
+//! The document itself is plain text; decorations say "wrap these
+//! characters in a `<strong>`", "hide these two characters from the
 //! rendered view", or "insert a widget here".
 //!
 //! Mirrors `@codemirror/view`'s `Decoration` (defined in
@@ -78,7 +79,7 @@ impl DecoratedRange {
     }
 
     #[must_use]
-    pub fn replace(range: std::ops::Range<usize>) -> Self {
+    pub const fn replace(range: std::ops::Range<usize>) -> Self {
         Self {
             from: range.start,
             to: range.end,
@@ -104,7 +105,7 @@ impl DecoratedRange {
         }
     }
     #[must_use]
-    pub fn atomic(range: std::ops::Range<usize>) -> Self {
+    pub const fn atomic(range: std::ops::Range<usize>) -> Self {
         Self {
             from: range.start,
             to: range.end,
@@ -113,13 +114,14 @@ impl DecoratedRange {
     }
 
     #[must_use]
-    pub fn byte_range(&self) -> std::ops::Range<usize> {
+    pub const fn byte_range(&self) -> std::ops::Range<usize> {
         self.from..self.to
     }
 }
 
-/// Snap `pos` out of any atomic range it lands strictly inside,
-/// preferring the nearer edge (CM6 picks the nearer edge when
+/// Snap `pos` out of any atomic range it lands strictly inside.
+///
+/// Prefers the nearer edge (CM6 picks the nearer edge when
 /// `bias == 0`). Used to keep callers' selections from landing
 /// in the middle of an atomic region. No-op when `pos` is at a
 /// range boundary or no atomic range contains it.
@@ -135,7 +137,11 @@ pub fn skip_atomic(decs: &[DecoratedRange], pos: usize) -> usize {
                 continue;
             }
             if p > d.from && p < d.to {
-                p = if p - d.from <= d.to - p { d.from } else { d.to };
+                p = if p.saturating_sub(d.from) <= d.to.saturating_sub(p) {
+                    d.from
+                } else {
+                    d.to
+                };
                 moved = true;
             }
         }
@@ -203,13 +209,13 @@ impl DecoRangeSet {
 
     /// Number of decorations in the set.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.ranges.len()
     }
 
     /// `true` when the set holds no decorations.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.ranges.is_empty()
     }
 
@@ -248,17 +254,22 @@ impl DecoRangeSet {
         // the window and we stop.
         let mut i = hi;
         while i > 0 {
-            i -= 1;
-            if self.max_end[i] <= from {
+            i = i.saturating_sub(1);
+            let Some(d) = self.ranges.get(i) else {
+                break;
+            };
+            let Some(&max_end) = self.max_end.get(i) else {
+                break;
+            };
+            if max_end <= from {
                 // A zero-width point exactly at `from` has `to == from`
                 // and would be excluded by the `<= from` cutoff, so
                 // check it explicitly before bailing.
-                if self.ranges[i].from == from && self.ranges[i].to == from && from < to {
-                    f(&self.ranges[i]);
+                if d.from == from && d.to == from && from < to {
+                    f(d);
                 }
                 break;
             }
-            let d = &self.ranges[i];
             let overlaps = if d.from == d.to {
                 // Zero-width point: inside the half-open window, or
                 // exactly at its start.
@@ -358,10 +369,11 @@ pub fn set_deco_phase(phase: DecoPhase) {
     DECO_PHASE.store(v, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// The current [`DecoPhase`]. Decoration sources read this to decide
-/// whether to run expensive analysis. Defaults to [`DecoPhase::Full`]
-/// so direct callers (tests, non-view consumers) get the complete set
-/// without opting in.
+/// The current [`DecoPhase`].
+///
+/// Decoration sources read this to decide whether to run expensive
+/// analysis. Defaults to [`DecoPhase::Full`] so direct callers (tests,
+/// non-view consumers) get the complete set without opting in.
 #[must_use]
 pub fn deco_phase() -> DecoPhase {
     if DECO_PHASE.load(std::sync::atomic::Ordering::Relaxed) == 0 {
@@ -387,7 +399,7 @@ impl Decoration {
         DecoratedRange::mark_with_attrs(range, class, attrs)
     }
     #[must_use]
-    pub fn replace(range: std::ops::Range<usize>) -> DecoratedRange {
+    pub const fn replace(range: std::ops::Range<usize>) -> DecoratedRange {
         DecoratedRange::replace(range)
     }
     pub fn widget(at: usize, html: impl Into<String>) -> DecoratedRange {
@@ -397,7 +409,7 @@ impl Decoration {
         DecoratedRange::line(at, class)
     }
     #[must_use]
-    pub fn atomic(range: std::ops::Range<usize>) -> DecoratedRange {
+    pub const fn atomic(range: std::ops::Range<usize>) -> DecoratedRange {
         DecoratedRange::atomic(range)
     }
 }

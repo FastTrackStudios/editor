@@ -18,6 +18,7 @@ pub mod hover;
 pub mod markdown;
 pub mod selection;
 pub mod state;
+pub mod text;
 pub mod transaction;
 
 pub use change::{Change, Changes};
@@ -31,4 +32,5 @@ pub use history::History;
 pub use hover::{HoverSource, HoverTooltip};
 pub use selection::{Range, Selection};
 pub use state::EditorState;
+pub use text::{ByteSlice, TextSlice};
 pub use transaction::{Transaction, TransactionSpec};

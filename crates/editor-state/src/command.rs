@@ -1,4 +1,6 @@
-//! Commands and keymaps. A **command** is a pure function from
+//! Commands and keymaps.
+//!
+//! A **command** is a pure function from
 //! the current state to an optional [`TransactionSpec`] —
 //! "if I want to do something, here's the transaction to apply;
 //! otherwise None and the runtime moves on."
@@ -14,7 +16,7 @@ use crate::transaction::TransactionSpec;
 /// the transaction to apply, or `None` to defer to the next
 /// binding / the browser default.
 ///
-/// Type alias so users can write `fn select_all(state: &State) -> Option<TransactionSpec>`
+/// Type alias so users can write `fn SELECT_ALL(state: &State) -> Option<TransactionSpec>`
 /// and pass it directly as a command — no boxing for the common case.
 pub type Command = fn(&EditorState) -> Option<TransactionSpec>;
 
@@ -62,7 +64,7 @@ impl Keymap {
 
     /// Build with a list of bindings.
     #[must_use]
-    pub fn from_bindings(bindings: Vec<KeyBinding>) -> Self {
+    pub const fn from_bindings(bindings: Vec<KeyBinding>) -> Self {
         Self { bindings }
     }
 
@@ -87,10 +89,10 @@ impl Keymap {
     #[must_use]
     pub fn dispatch(&self, key: &KeySpec, state: &EditorState) -> Option<TransactionSpec> {
         for b in &self.bindings {
-            if b.key.matches(key) {
-                if let Some(spec) = (b.run)(state) {
-                    return Some(spec);
-                }
+            if b.key.matches(key)
+                && let Some(spec) = (b.run)(state)
+            {
+                return Some(spec);
             }
         }
         None
@@ -132,7 +134,7 @@ impl KeySpec {
     /// This mirrors CM6's behavior where `"Mod-z"` resolves to
     /// the platform-appropriate modifier at parse / dispatch time.
     #[must_use]
-    pub fn matches(&self, other: &KeySpec) -> bool {
+    pub fn matches(&self, other: &Self) -> bool {
         let key_eq = if self.key.len() == 1 && other.key.len() == 1 {
             self.key.eq_ignore_ascii_case(&other.key)
         } else {
@@ -161,7 +163,7 @@ impl From<&str> for KeySpec {
     /// Unknown modifiers are silently ignored (so we can extend
     /// the syntax without breaking existing keymaps).
     fn from(s: &str) -> Self {
-        let mut spec = KeySpec {
+        let mut spec = Self {
             key: String::new(),
             ctrl: false,
             alt: false,
@@ -171,7 +173,7 @@ impl From<&str> for KeySpec {
         };
         let parts: Vec<&str> = s.split('-').collect();
         for (i, part) in parts.iter().enumerate() {
-            if i == parts.len() - 1 {
+            if i == parts.len().saturating_sub(1) {
                 spec.key = (*part).to_string();
             } else {
                 match *part {
@@ -280,13 +282,16 @@ mod tests {
     }
 
     /// Demo command: select the whole document.
-    fn select_all(state: &EditorState) -> Option<TransactionSpec> {
+    /// Typed as a fn pointer, not a plain `fn` item: `Keymap::with` takes
+    /// `fn(&EditorState) -> Option<TransactionSpec>`, so the `Option` is
+    /// required by the signature even though this one always returns `Some`.
+    const SELECT_ALL: fn(&EditorState) -> Option<TransactionSpec> = |state| {
         Some(TransactionSpec::new().selection(Selection::single(Range::new(0, state.doc.len()))))
-    }
+    };
 
     #[test]
     fn keymap_runs_matched_command() {
-        let km = Keymap::new().with("Mod-a", select_all);
+        let km = Keymap::new().with("Mod-a", SELECT_ALL);
         let state = EditorState::new("hello");
         // Press needs an actual platform mod (ctrl or meta)
         // for `Mod-` bindings to match — the keymap matcher
@@ -306,7 +311,7 @@ mod tests {
 
     #[test]
     fn keymap_skips_unmatched_keys() {
-        let km = Keymap::new().with("Mod-a", select_all);
+        let km = Keymap::new().with("Mod-a", SELECT_ALL);
         let state = EditorState::new("hello");
         let press = KeySpec {
             key: "b".into(),
@@ -324,15 +329,15 @@ mod tests {
         None
     }
 
-    fn insert_x(_state: &EditorState) -> Option<TransactionSpec> {
-        Some(TransactionSpec::new().changes(Changes::insert(0, "X")))
-    }
+    /// See [`SELECT_ALL`] for why this is a typed constant.
+    const INSERT_X: fn(&EditorState) -> Option<TransactionSpec> =
+        |_state| Some(TransactionSpec::new().changes(Changes::insert(0, "X")));
 
     #[test]
     fn keymap_falls_through_when_command_returns_none() {
         let km = Keymap::new()
             .with("Mod-a", fail_command)
-            .with("Mod-a", insert_x);
+            .with("Mod-a", INSERT_X);
         let state = EditorState::new("hello");
         let press = KeySpec {
             key: "a".into(),

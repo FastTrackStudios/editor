@@ -17,14 +17,15 @@ pub struct Doc {
 }
 
 impl Doc {
-    /// Create a doc from a string slice. Infallible — the
-    /// trait equivalent ([`std::str::FromStr`]) is also
-    /// implemented for `Doc` (`Err = Infallible`); we keep
-    /// the inherent so callers don't have to import the
-    /// trait or `.unwrap()` for the always-Ok path.
-    #[allow(clippy::should_implement_trait)]
+    /// Create a doc from a string slice. Infallible.
+    ///
+    /// Named `new` rather than `from_str`: `Doc` also implements
+    /// [`std::str::FromStr`] (`Err = Infallible`), and an inherent method
+    /// sharing that name shadows the trait, which is both confusing and a
+    /// `clippy::should_implement_trait` error. Use this for the always-Ok
+    /// path; use `.parse()` if you want the trait.
     #[must_use]
-    pub fn from_str(s: &str) -> Self {
+    pub fn new(s: &str) -> Self {
         Self {
             rope: Rope::from_str(s),
         }
@@ -41,7 +42,7 @@ impl Doc {
     /// offsets to unicode-scalar offsets via `byte_to_char` without
     /// materializing the document as a `String`.
     #[must_use]
-    pub fn rope(&self) -> &Rope {
+    pub const fn rope(&self) -> &Rope {
         &self.rope
     }
 
@@ -59,15 +60,6 @@ impl Doc {
         let start = self.rope.byte_to_char(range.start);
         let end = self.rope.byte_to_char(range.end);
         self.rope.slice(start..end).to_string()
-    }
-
-    /// Full doc as a `String`. Inherent method (mirrors the
-    /// `from_str` constructor); see `impl Display for Doc`
-    /// below for the trait equivalent.
-    #[allow(clippy::inherent_to_string)]
-    #[must_use]
-    pub fn to_string(&self) -> String {
-        self.rope.to_string()
     }
 
     /// Internal: insert text at a byte offset. Returns a new doc
@@ -92,19 +84,34 @@ impl Doc {
 impl std::str::FromStr for Doc {
     type Err = std::convert::Infallible;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self::from_str(s))
+        Ok(Self::new(s))
     }
 }
 
 impl From<&str> for Doc {
     fn from(s: &str) -> Self {
-        Doc::from_str(s)
+        Self::new(s)
     }
 }
 
 impl From<String> for Doc {
     fn from(s: String) -> Self {
-        Doc::from_str(&s)
+        Self::new(&s)
+    }
+}
+
+/// The doc's full text.
+///
+/// This is what supplies `Doc::to_string()`, via the blanket [`ToString`] impl
+/// — there used to be an inherent `to_string` here instead, which shadowed the
+/// trait method (`clippy::inherent_to_string`). The rope streams itself out
+/// chunk by chunk rather than materialising a second copy first.
+impl std::fmt::Display for Doc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for chunk in self.rope.chunks() {
+            f.write_str(chunk)?;
+        }
+        Ok(())
     }
 }
 
@@ -123,20 +130,20 @@ mod tests {
 
     #[test]
     fn from_str_and_len() {
-        let d = Doc::from_str("hello");
+        let d = Doc::new("hello");
         assert_eq!(d.len(), 5);
         assert_eq!(d.to_string(), "hello");
     }
 
     #[test]
     fn slice_byte_range() {
-        let d = Doc::from_str("hello world");
+        let d = Doc::new("hello world");
         assert_eq!(d.slice(6..11), "world");
     }
 
     #[test]
     fn insert_creates_new_doc_without_mutating_original() {
-        let a = Doc::from_str("hello");
+        let a = Doc::new("hello");
         let b = a.insert(5, " world");
         assert_eq!(a.to_string(), "hello");
         assert_eq!(b.to_string(), "hello world");
@@ -144,7 +151,7 @@ mod tests {
 
     #[test]
     fn delete_range() {
-        let d = Doc::from_str("hello world");
+        let d = Doc::new("hello world");
         let after = d.delete(5..6);
         assert_eq!(after.to_string(), "helloworld");
     }

@@ -8,6 +8,7 @@
 use crate::change::Changes;
 use crate::selection::{Range, Selection};
 use crate::state::EditorState;
+use crate::text::{ByteSlice, TextSlice};
 use crate::transaction::TransactionSpec;
 
 /// Select the entire document. Bound by convention to `Mod-a`.
@@ -57,8 +58,9 @@ pub fn toggle_reading_mode(state: &EditorState) -> Option<TransactionSpec> {
     Some(TransactionSpec::new().reading_mode(!state.reading_mode))
 }
 
-/// Try CM6-style "insertBracket" behavior for the given inserted
-/// character. Returns a [`TransactionSpec`] when the character
+/// Try CM6-style "insertBracket" behavior for the given inserted character.
+///
+/// Returns a [`TransactionSpec`] when the character
 /// should be handled specially (auto-close, skip-over, wrap-
 /// selection) and `None` for plain insertion. Mirrors
 /// `closebrackets/src/closebrackets.ts:129` (`insertBracket`).
@@ -71,12 +73,18 @@ pub fn toggle_reading_mode(state: &EditorState) -> Option<TransactionSpec> {
 ///   it instead of inserting (caret moves +1, no text change).
 /// - `'` / `"` / `` ` `` (same-char pairs): tap-to-skip when
 ///   the next char is already that quote.
+///
+/// # Panics
+///
+/// Panics if `input` is empty — callers only pass single-character input
+/// strings.
 #[must_use]
 pub fn insert_bracket(state: &EditorState, input: &str) -> Option<TransactionSpec> {
-    if input.chars().count() != 1 {
+    // Exactly one character, established without a second pass or an unwrap.
+    let mut chars = input.chars();
+    let (Some(ch), None) = (chars.next(), chars.next()) else {
         return None;
-    }
-    let ch = input.chars().next().unwrap();
+    };
     let (open, close, same) = match ch {
         '(' => ('(', ')', false),
         '[' => ('[', ']', false),
@@ -96,10 +104,10 @@ pub fn insert_bracket(state: &EditorState, input: &str) -> Option<TransactionSpe
     if from != to {
         let mut inserted = String::new();
         inserted.push(open);
-        inserted.push_str(&doc[from..to]);
+        inserted.push_str(doc.slice(from..to));
         inserted.push(close);
         let caret_anchor = from;
-        let caret_head = from + inserted.len();
+        let caret_head = from.saturating_add(inserted.len());
         return Some(
             TransactionSpec::new()
                 .changes(Changes::replace(from..to, &inserted))
@@ -112,8 +120,10 @@ pub fn insert_bracket(state: &EditorState, input: &str) -> Option<TransactionSpe
     // need to write).
     if same {
         let next_byte = doc.as_bytes().get(from).copied();
-        if next_byte == Some(ch as u8) {
-            return Some(TransactionSpec::new().selection(Selection::caret(from + 1)));
+        if next_byte == Some(u8::try_from(ch).unwrap_or(0)) {
+            return Some(
+                TransactionSpec::new().selection(Selection::caret(from.saturating_add(1))),
+            );
         }
     }
 
@@ -122,15 +132,12 @@ pub fn insert_bracket(state: &EditorState, input: &str) -> Option<TransactionSpe
     // `>`). Mirrors CM6's `before` config
     // (`closebrackets.ts:21`).
     let next_byte = doc.as_bytes().get(from).copied();
-    let can_close = match next_byte {
-        None => true,
-        Some(b) => {
-            b == b' '
-                || b == b'\n'
-                || b == b'\t'
-                || matches!(b, b')' | b']' | b'}' | b',' | b';' | b':' | b'>')
-        }
-    };
+    let can_close = next_byte.is_none_or(|b| {
+        b == b' '
+            || b == b'\n'
+            || b == b'\t'
+            || matches!(b, b')' | b']' | b'}' | b',' | b';' | b':' | b'>')
+    });
     if !can_close {
         return None;
     }
@@ -140,7 +147,7 @@ pub fn insert_bracket(state: &EditorState, input: &str) -> Option<TransactionSpe
     Some(
         TransactionSpec::new()
             .changes(Changes::insert(from, &pair))
-            .selection(Selection::caret(from + open.len_utf8())),
+            .selection(Selection::caret(from.saturating_add(open.len_utf8()))),
     )
 }
 
@@ -157,13 +164,14 @@ fn handle_close(state: &EditorState, close_char: char) -> Option<TransactionSpec
     }
     let from = p.head;
     let next = state.doc.to_string().as_bytes().get(from).copied();
-    if next == Some(close_char as u8) {
-        return Some(TransactionSpec::new().selection(Selection::caret(from + 1)));
+    if next == Some(u8::try_from(close_char).unwrap_or(0)) {
+        return Some(TransactionSpec::new().selection(Selection::caret(from.saturating_add(1))));
     }
     None
 }
 
-/// CM6's `deleteBracketPair`
+/// CM6's `deleteBracketPair`.
+///
 /// (`closebrackets/src/closebrackets.ts:96`). When Backspace is
 /// pressed on a caret sitting between a matching `()` / `[]` /
 /// `{}` / `''` / `""` / ` `` ` pair, delete both characters at
@@ -176,7 +184,7 @@ pub fn delete_bracket_pair(state: &EditorState) -> Option<TransactionSpec> {
     }
     let doc = state.doc.to_string();
     let bytes = doc.as_bytes();
-    let prev = bytes.get(p.head - 1).copied()?;
+    let prev = bytes.get(p.head.saturating_sub(1)).copied()?;
     let next = bytes.get(p.head).copied()?;
     let matches = matches!(
         (prev, next),
@@ -187,8 +195,10 @@ pub fn delete_bracket_pair(state: &EditorState) -> Option<TransactionSpec> {
     }
     Some(
         TransactionSpec::new()
-            .changes(Changes::delete(p.head - 1..p.head + 1))
-            .selection(Selection::caret(p.head - 1)),
+            .changes(Changes::delete(
+                p.head.saturating_sub(1)..p.head.saturating_add(1),
+            ))
+            .selection(Selection::caret(p.head.saturating_sub(1))),
     )
 }
 
@@ -212,18 +222,17 @@ pub fn enter_continue_list(state: &EditorState) -> Option<TransactionSpec> {
     }
     let doc = state.doc.to_string();
     let (line_from, line_to) = line_bounds(&doc, from);
-    let line = &doc[line_from..line_to];
-    let cont = match parse_list_continuation(line) {
-        Some(c) => c,
-        None => return insert_newline(state),
+    let line = doc.slice(line_from..line_to);
+    let Some(cont) = parse_list_continuation(line) else {
+        return insert_newline(state);
     };
     // Empty item: marker + (optional task box) + whitespace,
     // nothing after. Strip the marker, exit the list.
-    let content_starts_at = line_from + cont.marker_end;
+    let content_starts_at = line_from.saturating_add(cont.marker_end);
     if content_starts_at >= from {
         // Caret is on the marker itself or right after it; line
         // has no real content yet. Delete the marker.
-        let changes = Changes::delete(line_from..line_from + cont.marker_end);
+        let changes = Changes::delete(line_from..line_from.saturating_add(cont.marker_end));
         return Some(
             TransactionSpec::new()
                 .changes(changes)
@@ -241,7 +250,7 @@ pub fn enter_continue_list(state: &EditorState) -> Option<TransactionSpec> {
             marker.push_str(&cont.after);
         }
         ListKind::Ordered(n) => {
-            marker.push_str(&(n + 1).to_string());
+            marker.push_str(&(n.saturating_add(1)).to_string());
             marker.push('.');
             marker.push_str(&cont.after);
         }
@@ -254,11 +263,11 @@ pub fn enter_continue_list(state: &EditorState) -> Option<TransactionSpec> {
         marker.push_str("[ ] ");
     }
     let insert = format!("\n{marker}");
-    let caret = from + insert.len();
+    let caret = from.saturating_add(insert.len());
     let mut all_changes: Vec<crate::change::Change> = vec![crate::change::Change {
         from,
         to,
-        inserted: insert.clone(),
+        inserted: insert,
     }];
     // Ordered lists: bump each consecutive following item's
     // number by 1 so the inserted `(n+1).` doesn't duplicate the
@@ -268,7 +277,11 @@ pub fn enter_continue_list(state: &EditorState) -> Option<TransactionSpec> {
         // The newly inserted item has number `n + 1`. Pass that
         // as the starting expected value so the renumber walk
         // matches the displaced old-`n+1` item first.
-        all_changes.extend(renumber_following_ordered(&doc, line_to, n + 1));
+        all_changes.extend(renumber_following_ordered(
+            &doc,
+            line_to,
+            n.saturating_add(1),
+        ));
     }
     Some(
         TransactionSpec::new()
@@ -291,29 +304,29 @@ fn renumber_following_ordered(
     let mut out = Vec::new();
     let bytes = doc.as_bytes();
     // Skip the trailing `\n` of the current line.
-    let mut i = if after_line_to < bytes.len() && bytes[after_line_to] == b'\n' {
-        after_line_to + 1
+    let mut i = if bytes.get(after_line_to) == Some(&b'\n') {
+        after_line_to.saturating_add(1)
     } else {
         return out;
     };
     let mut expected_old = inserted_number;
     while i < bytes.len() {
         let mut line_end = i;
-        while line_end < bytes.len() && bytes[line_end] != b'\n' {
-            line_end += 1;
+        while bytes.get(line_end).is_some_and(|&b| b != b'\n') {
+            line_end = line_end.saturating_add(1);
         }
-        let line = &doc[i..line_end];
+        let line = doc.slice(i..line_end);
         // Find leading whitespace + digits + `.`.
         let leading = line.bytes().take_while(|&b| b == b' ').count();
-        let digit_start = i + leading;
+        let digit_start = i.saturating_add(leading);
         let mut digit_end = digit_start;
-        while digit_end < line_end && bytes[digit_end].is_ascii_digit() {
-            digit_end += 1;
+        while digit_end < line_end && bytes.get(digit_end).is_some_and(u8::is_ascii_digit) {
+            digit_end = digit_end.saturating_add(1);
         }
         if digit_end == digit_start || bytes.get(digit_end) != Some(&b'.') {
             break;
         }
-        let n: u32 = match doc[digit_start..digit_end].parse() {
+        let n: u32 = match doc.slice(digit_start..digit_end).parse() {
             Ok(v) => v,
             Err(_) => break,
         };
@@ -323,13 +336,13 @@ fn renumber_following_ordered(
         out.push(crate::change::Change {
             from: digit_start,
             to: digit_end,
-            inserted: (n + 1).to_string(),
+            inserted: (n.saturating_add(1)).to_string(),
         });
-        expected_old = n + 1;
+        expected_old = n.saturating_add(1);
         if line_end >= bytes.len() {
             break;
         }
-        i = line_end + 1;
+        i = line_end.saturating_add(1);
     }
     out
 }
@@ -370,13 +383,13 @@ pub fn indent_less(state: &EditorState) -> Option<TransactionSpec> {
     for &line_from in &lines {
         let bytes = doc.as_bytes();
         let mut leading = 0;
-        while leading < unit && bytes.get(line_from + leading) == Some(&b' ') {
-            leading += 1;
+        while leading < unit && bytes.get(line_from.saturating_add(leading)) == Some(&b' ') {
+            leading = leading.saturating_add(1);
         }
         if leading > 0 {
             changes.push(crate::change::Change {
                 from: line_from,
-                to: line_from + leading,
+                to: line_from.saturating_add(leading),
                 inserted: String::new(),
             });
         }
@@ -387,8 +400,9 @@ pub fn indent_less(state: &EditorState) -> Option<TransactionSpec> {
     Some(TransactionSpec::new().changes(Changes::from_sorted(changes)))
 }
 
-/// Byte offset of the previous word-group boundary from `pos` — CM6's
-/// "group" semantics (`Ctrl-ArrowLeft` / `Alt-ArrowLeft` on mac): skip
+/// Byte offset of the previous word-group boundary from `pos`.
+///
+/// CM6's "group" semantics (`Ctrl-ArrowLeft` / `Alt-ArrowLeft` on mac): skip
 /// any whitespace backward, then a run of same-class characters
 /// (word chars vs punctuation). Newlines count as whitespace, so the
 /// motion crosses line boundaries like the browser's does.
@@ -396,13 +410,13 @@ pub fn indent_less(state: &EditorState) -> Option<TransactionSpec> {
 pub fn word_boundary_left(state: &EditorState, pos: usize) -> usize {
     let rope = state.doc.rope();
     let mut ci = rope.byte_to_char(pos.min(rope.len_bytes()));
-    while ci > 0 && char_class(rope.char(ci - 1)) == CharClass::Space {
-        ci -= 1;
+    while ci > 0 && char_class(rope.char(ci.saturating_sub(1))) == CharClass::Space {
+        ci = ci.saturating_sub(1);
     }
     if ci > 0 {
-        let cls = char_class(rope.char(ci - 1));
-        while ci > 0 && char_class(rope.char(ci - 1)) == cls {
-            ci -= 1;
+        let cls = char_class(rope.char(ci.saturating_sub(1)));
+        while ci > 0 && char_class(rope.char(ci.saturating_sub(1))) == cls {
+            ci = ci.saturating_sub(1);
         }
     }
     rope.char_to_byte(ci)
@@ -416,12 +430,12 @@ pub fn word_boundary_right(state: &EditorState, pos: usize) -> usize {
     let len = rope.len_chars();
     let mut ci = rope.byte_to_char(pos.min(rope.len_bytes()));
     while ci < len && char_class(rope.char(ci)) == CharClass::Space {
-        ci += 1;
+        ci = ci.saturating_add(1);
     }
     if ci < len {
         let cls = char_class(rope.char(ci));
         while ci < len && char_class(rope.char(ci)) == cls {
-            ci += 1;
+            ci = ci.saturating_add(1);
         }
     }
     rope.char_to_byte(ci)
@@ -460,18 +474,19 @@ pub fn delete_word_forward(state: &EditorState) -> Option<TransactionSpec> {
     Some(TransactionSpec::new().changes(Changes::delete(to..target)))
 }
 
-/// The Tab default action on a markdown list/task line: indent the item
-/// (`dedent` = Shift-Tab, outdent) and renumber the surrounding ordered
-/// sequences — the level the item left closes its gap, the level it
-/// joined counts it in (an item opening a fresh sublevel restarts at
-/// `1.`). Returns `None` when the caret line isn't a list item — the
-/// caller inserts a literal tab (or nothing on Shift-Tab), matching
-/// Obsidian's behavior.
+/// The Tab default action on a markdown list/task line.
+///
+/// Indents the item (`dedent` = Shift-Tab, outdent) and renumbers the
+/// surrounding ordered sequences — the level the item left closes its gap,
+/// the level it joined counts it in (an item opening a fresh sublevel
+/// restarts at `1.`). Returns `None` when the caret line isn't a list
+/// item — the caller inserts a literal tab (or nothing on Shift-Tab),
+/// matching Obsidian's behavior.
 #[must_use]
 pub fn tab_list_indent(state: &EditorState, dedent: bool) -> Option<TransactionSpec> {
     let doc = state.doc.to_string();
     let (line_from, line_to) = line_bounds(&doc, state.selection.primary().head);
-    parse_list_continuation(&doc[line_from..line_to])?;
+    parse_list_continuation(doc.slice(line_from..line_to))?;
     let lines = selected_line_starts(state, &doc);
     if lines.is_empty() {
         return None;
@@ -486,16 +501,17 @@ pub fn tab_list_indent(state: &EditorState, dedent: bool) -> Option<TransactionS
     for &lf in &lines {
         if dedent {
             let mut leading = 0;
-            while leading < unit && bytes.get(lf + leading) == Some(&b' ') {
-                leading += 1;
+            while leading < unit && bytes.get(lf.saturating_add(leading)) == Some(&b' ') {
+                leading = leading.saturating_add(1);
             }
             if leading > 0 {
                 changes.push(crate::change::Change {
                     from: lf,
-                    to: lf + leading,
+                    to: lf.saturating_add(leading),
                     inserted: String::new(),
                 });
-                deltas.insert(lf, -(leading as isize));
+                let leading_signed = isize::try_from(leading).unwrap_or(isize::MAX);
+                deltas.insert(lf, leading_signed.saturating_neg());
             }
         } else {
             changes.push(crate::change::Change {
@@ -503,7 +519,7 @@ pub fn tab_list_indent(state: &EditorState, dedent: bool) -> Option<TransactionS
                 to: lf,
                 inserted: INDENT_UNIT.to_string(),
             });
-            deltas.insert(lf, unit as isize);
+            deltas.insert(lf, isize::try_from(unit).unwrap_or(isize::MAX));
         }
     }
     if changes.is_empty() {
@@ -532,6 +548,14 @@ fn is_renumberable_list_line(line: &str) -> bool {
 /// keep their number, so lists that deliberately start at `7.` stay
 /// put. Emitted ranges are original-doc coordinates, disjoint from the
 /// indent edits (digits sit after the leading whitespace).
+/// One open indentation level in the [`renumber_block_with_deltas`] walk.
+struct Level {
+    indent: usize,
+    ordered: bool,
+    counter: u32,
+    started: bool,
+}
+
 fn renumber_block_with_deltas(
     doc: &str,
     deltas: &std::collections::HashMap<usize, isize>,
@@ -545,35 +569,33 @@ fn renumber_block_with_deltas(
         lf
     };
     while block_start > 0 {
-        let newline = block_start - 1;
+        let newline = block_start.saturating_sub(1);
         let (prev_from, _) = line_bounds(doc, newline);
-        if is_renumberable_list_line(&doc[prev_from..newline]) {
+        if is_renumberable_list_line(doc.slice(prev_from..newline)) {
             block_start = prev_from;
         } else {
             break;
         }
     }
 
-    /// One open indentation level in the walk.
-    struct Level {
-        indent: usize,
-        ordered: bool,
-        counter: u32,
-        started: bool,
-    }
     let mut stack: Vec<Level> = Vec::new();
     let mut out = Vec::new();
     let bytes = doc.as_bytes();
     let mut i = block_start;
     loop {
         let (lf, lt) = line_bounds(doc, i);
-        let line = &doc[lf..lt];
+        let line = doc.slice(lf..lt);
         if !is_renumberable_list_line(line) {
             break;
         }
-        let cont = parse_list_continuation(line).expect("checked renumberable");
+        // `is_renumberable_list_line` above implies this parses; if the two
+        // ever disagree, stop renumbering rather than assert.
+        let Some(cont) = parse_list_continuation(line) else {
+            break;
+        };
         let moved = deltas.get(&lf).copied().unwrap_or(0);
-        let eff_indent = usize::try_from(cont.indent.len() as isize + moved).unwrap_or(0);
+        let indent_signed = isize::try_from(cont.indent.len()).unwrap_or(isize::MAX);
+        let eff_indent = usize::try_from(indent_signed.saturating_add(moved)).unwrap_or(0);
         let ordered = matches!(cont.kind, ListKind::Ordered(_));
 
         while stack.last().is_some_and(|l| l.indent > eff_indent) {
@@ -596,22 +618,27 @@ fn renumber_block_with_deltas(
                 started: false,
             }),
         }
-        let level = stack.last_mut().expect("level pushed above");
+        // The match above always leaves a level on the stack. `break` rather
+        // than `continue` if it somehow did not: the loop's advance is at the
+        // bottom, so skipping it would spin forever.
+        let Some(level) = stack.last_mut() else {
+            break;
+        };
         if let ListKind::Ordered(n) = cont.kind {
             let expected = if !level.started && moved == 0 {
                 n
             } else if !level.started {
                 1
             } else {
-                level.counter + 1
+                level.counter.saturating_add(1)
             };
             level.started = true;
             level.counter = expected;
             if n != expected {
-                let digit_start = lf + cont.indent.len();
+                let digit_start = lf.saturating_add(cont.indent.len());
                 let mut digit_end = digit_start;
-                while digit_end < lt && bytes[digit_end].is_ascii_digit() {
-                    digit_end += 1;
+                while digit_end < lt && bytes.get(digit_end).is_some_and(u8::is_ascii_digit) {
+                    digit_end = digit_end.saturating_add(1);
                 }
                 out.push(crate::change::Change {
                     from: digit_start,
@@ -625,7 +652,7 @@ fn renumber_block_with_deltas(
         if lt >= doc.len() {
             break;
         }
-        i = lt + 1;
+        i = lt.saturating_add(1);
     }
     out
 }
@@ -652,12 +679,16 @@ fn char_class(c: char) -> CharClass {
 fn line_bounds(doc: &str, pos: usize) -> (usize, usize) {
     let bytes = doc.as_bytes();
     let mut start = pos.min(bytes.len());
-    while start > 0 && bytes[start - 1] != b'\n' {
-        start -= 1;
+    while start > 0
+        && bytes
+            .get(start.saturating_sub(1))
+            .is_some_and(|&b| b != b'\n')
+    {
+        start = start.saturating_sub(1);
     }
     let mut end = pos.min(bytes.len());
-    while end < bytes.len() && bytes[end] != b'\n' {
-        end += 1;
+    while bytes.get(end).is_some_and(|&b| b != b'\n') {
+        end = end.saturating_add(1);
     }
     (start, end)
 }
@@ -669,8 +700,8 @@ fn selected_line_starts(state: &EditorState, doc: &str) -> Vec<usize> {
     let (last_line, _) = if to > from {
         // If selection ends exactly on a newline, don't include
         // the next line.
-        let probe = if to > 0 && doc.as_bytes()[to - 1] == b'\n' {
-            to - 1
+        let probe = if to > 0 && doc.as_bytes().get(to.saturating_sub(1)) == Some(&b'\n') {
+            to.saturating_sub(1)
         } else {
             to
         };
@@ -683,13 +714,13 @@ fn selected_line_starts(state: &EditorState, doc: &str) -> Vec<usize> {
     let mut i = first_line;
     while i <= last_line {
         out.push(i);
-        while i < bytes.len() && bytes[i] != b'\n' {
-            i += 1;
+        while i < bytes.len() && bytes.at(i) != b'\n' {
+            i = i.saturating_add(1);
         }
         if i >= bytes.len() {
             break;
         }
-        i += 1;
+        i = i.saturating_add(1);
     }
     out
 }
@@ -732,10 +763,10 @@ fn parse_list_continuation(line: &str) -> Option<ListContinuation> {
     let mut bq_prefix = String::new();
     while bytes.get(i) == Some(&b'>') {
         bq_prefix.push('>');
-        i += 1;
+        i = i.saturating_add(1);
         if bytes.get(i) == Some(&b' ') {
             bq_prefix.push(' ');
-            i += 1;
+            i = i.saturating_add(1);
         }
     }
     let after_indent_pos = i;
@@ -743,9 +774,9 @@ fn parse_list_continuation(line: &str) -> Option<ListContinuation> {
     // After any `>` chain, look for a list marker. If none,
     // the line is a plain blockquote (or plain text if no `>`
     // either, in which case we bail).
-    let inner_bytes = &bytes[after_indent_pos..];
+    let inner_bytes = bytes.after(after_indent_pos);
     let (kind, after_marker) = match inner_bytes.first() {
-        Some(c @ (b'-' | b'*' | b'+')) => (ListKind::Bullet(*c as char), 1),
+        Some(c @ (b'-' | b'*' | b'+')) => (ListKind::Bullet(char::from(*c)), 1),
         Some(c) if c.is_ascii_digit() => {
             let n_end = inner_bytes
                 .iter()
@@ -765,11 +796,11 @@ fn parse_list_continuation(line: &str) -> Option<ListContinuation> {
                     marker_end: after_indent_pos,
                 });
             }
-            let n: u32 = std::str::from_utf8(&inner_bytes[..n_end])
+            let n: u32 = std::str::from_utf8(inner_bytes.slice(0..n_end))
                 .ok()?
                 .parse()
                 .ok()?;
-            (ListKind::Ordered(n), n_end + 1)
+            (ListKind::Ordered(n), n_end.saturating_add(1))
         }
         _ => {
             if bq_prefix.is_empty() {
@@ -787,10 +818,11 @@ fn parse_list_continuation(line: &str) -> Option<ListContinuation> {
         }
     };
     let inner_start = after_indent_pos;
-    let after_marker_abs = inner_start + after_marker;
+    let after_marker_abs = inner_start.saturating_add(after_marker);
 
     // Whitespace after the list marker.
-    let ws_count = bytes[after_marker_abs..]
+    let ws_count = bytes
+        .after(after_marker_abs)
         .iter()
         .take_while(|&&x| x == b' ')
         .count();
@@ -811,16 +843,21 @@ fn parse_list_continuation(line: &str) -> Option<ListContinuation> {
         });
     }
     let after = " ".repeat(ws_count.max(1));
-    let mut marker_end = after_marker_abs + ws_count;
+    let mut marker_end = after_marker_abs.saturating_add(ws_count);
 
     // Optional task box `[ ]` / `[x]`.
-    let task = bytes.get(marker_end..marker_end + 3).is_some_and(|sl| {
-        sl.len() == 3 && sl[0] == b'[' && sl[2] == b']' && matches!(sl[1], b' ' | b'x' | b'X')
-    });
+    let task = bytes
+        .get(marker_end..marker_end.saturating_add(3))
+        .is_some_and(|sl| {
+            sl.len() == 3
+                && sl.at(0) == b'['
+                && sl.at(2) == b']'
+                && matches!(sl.at(1), b' ' | b'x' | b'X')
+        });
     if task {
-        marker_end += 3;
+        marker_end = marker_end.saturating_add(3);
         if bytes.get(marker_end) == Some(&b' ') {
-            marker_end += 1;
+            marker_end = marker_end.saturating_add(1);
         }
     }
     Some(ListContinuation {
@@ -857,7 +894,7 @@ pub fn delete_backward(state: &EditorState) -> Option<TransactionSpec> {
     // character and panic downstream on the invalid boundary.
     let rope = state.doc.rope();
     let ci = rope.byte_to_char(from);
-    let prev = rope.char_to_byte(ci - 1);
+    let prev = rope.char_to_byte(ci.saturating_sub(1));
     Some(TransactionSpec::new().changes(Changes::delete(prev..from)))
 }
 
@@ -877,17 +914,17 @@ pub fn delete_backward(state: &EditorState) -> Option<TransactionSpec> {
 /// Bound by convention to `Mod-b`.
 #[must_use]
 pub fn toggle_bold(state: &EditorState) -> Option<TransactionSpec> {
-    toggle_marker(state, "**")
+    Some(toggle_marker(state, "**"))
 }
 
 /// Same as [`toggle_bold`] but with single `*…*` for italic.
 /// Bound to `Mod-i`.
 #[must_use]
 pub fn toggle_italic(state: &EditorState) -> Option<TransactionSpec> {
-    toggle_marker(state, "*")
+    Some(toggle_marker(state, "*"))
 }
 
-fn toggle_marker(state: &EditorState, marker: &str) -> Option<TransactionSpec> {
+fn toggle_marker(state: &EditorState, marker: &str) -> TransactionSpec {
     let sel = state.selection.primary();
     let from = sel.from();
     let to = sel.to();
@@ -899,33 +936,30 @@ fn toggle_marker(state: &EditorState, marker: &str) -> Option<TransactionSpec> {
         // Empty caret. If the next bytes are the marker, skip
         // past it — closes an open span the user just filled.
         if doc.get(from..).is_some_and(|s| s.starts_with(m)) {
-            return Some(TransactionSpec::new().selection(Selection::caret(from + mlen)));
+            return TransactionSpec::new().selection(Selection::caret(from.saturating_add(mlen)));
         }
         // Open a new span: insert "marker + marker" with caret
         // in the middle.
         let pair = format!("{m}{m}");
-        return Some(
-            TransactionSpec::new()
-                .changes(Changes::insert(from, pair))
-                .selection(Selection::caret(from + mlen)),
-        );
+        return TransactionSpec::new()
+            .changes(Changes::insert(from, pair))
+            .selection(Selection::caret(from.saturating_add(mlen)));
     }
     // Wrap the selection.
     let selected = doc.get(from..to).unwrap_or("");
     let wrapped = format!("{m}{selected}{m}");
-    let new_to = from + wrapped.len();
-    Some(
-        TransactionSpec::new()
-            .changes(Changes::replace(from..to, wrapped))
-            .selection(Selection::single(Range::new(from, new_to))),
-    )
+    let new_to = from.saturating_add(wrapped.len());
+    TransactionSpec::new()
+        .changes(Changes::replace(from..to, wrapped))
+        .selection(Selection::single(Range::new(from, new_to)))
 }
 
 /// `Mod-k` — wrap the selection in `[…](url)`. Empty selection
 /// inserts `[]()` with the caret between the brackets so the
-/// user types the link text first. With a selection that looks
-/// like an existing link (`[text](url)`) the markers are
-/// stripped (toggle behavior).
+/// user types the link text first.
+///
+/// With a selection that looks like an existing link (`[text](url)`)
+/// the markers are stripped (toggle behavior).
 #[must_use]
 pub fn toggle_link(state: &EditorState) -> Option<TransactionSpec> {
     let sel = state.selection.primary();
@@ -936,26 +970,27 @@ pub fn toggle_link(state: &EditorState) -> Option<TransactionSpec> {
         return Some(
             TransactionSpec::new()
                 .changes(Changes::insert(from, insert))
-                .selection(Selection::caret(from + 1)),
+                .selection(Selection::caret(from.saturating_add(1))),
         );
     }
     let body = doc.get(from..to).unwrap_or("");
     // Toggle: if the body is already `[…](…)`, strip back to the
     // inner text. Else wrap.
-    if body.starts_with('[') && body.ends_with(')') {
-        if let Some(rb) = body.find("](") {
-            let inner = &body[1..rb];
-            let inner_owned = inner.to_string();
-            let new_to = from + inner_owned.len();
-            return Some(
-                TransactionSpec::new()
-                    .changes(Changes::replace(from..to, inner_owned))
-                    .selection(Selection::single(Range::new(from, new_to))),
-            );
-        }
+    if body.starts_with('[')
+        && body.ends_with(')')
+        && let Some(rb) = body.find("](")
+    {
+        let inner = body.slice(1..rb);
+        let inner_owned = inner.to_string();
+        let new_to = from.saturating_add(inner_owned.len());
+        return Some(
+            TransactionSpec::new()
+                .changes(Changes::replace(from..to, inner_owned))
+                .selection(Selection::single(Range::new(from, new_to))),
+        );
     }
     let wrapped = format!("[{body}]()");
-    let url_caret = from + wrapped.len() - 1; // inside the `()`
+    let url_caret = from.saturating_add(wrapped.len()).saturating_sub(1); // inside the `()`
     Some(
         TransactionSpec::new()
             .changes(Changes::replace(from..to, wrapped))
@@ -964,6 +999,7 @@ pub fn toggle_link(state: &EditorState) -> Option<TransactionSpec> {
 }
 
 /// `Mod-1` … `Mod-6` — set the current line's heading level.
+///
 /// Strips any existing `#…#` prefix first, then prepends the
 /// new one. Level `0` removes the heading entirely. Operates on
 /// every line covered by the selection.
@@ -976,23 +1012,24 @@ pub fn set_heading(state: &EditorState, level: u8) -> Option<TransactionSpec> {
     }
     let mut changes: Vec<crate::Change> = Vec::new();
     for line_start in starts {
-        let line_end = doc[line_start..]
+        let line_end = doc
+            .after(line_start)
             .find('\n')
-            .map_or(doc.len(), |n| line_start + n);
-        let line = &doc[line_start..line_end];
+            .map_or(doc.len(), |n| line_start.saturating_add(n));
+        let line = doc.slice(line_start..line_end);
         // Strip existing prefix.
         let hashes = line.chars().take_while(|c| *c == '#').count();
         let strip_to =
             if (1..=6).contains(&hashes) && line.as_bytes().get(hashes).copied() == Some(b' ') {
-                hashes + 1
+                hashes.saturating_add(1)
             } else {
                 0
             };
-        let body = &line[strip_to..];
+        let body = line.after(strip_to);
         let new_line = if level == 0 {
             body.to_string()
         } else {
-            let prefix = "#".repeat(level as usize);
+            let prefix = "#".repeat(usize::from(level));
             format!("{prefix} {body}")
         };
         changes.push(crate::Change {
@@ -1009,9 +1046,10 @@ pub fn set_heading(state: &EditorState, level: u8) -> Option<TransactionSpec> {
 }
 
 /// `Mod-l` — cycle the current line's list marker through
-/// `none → -  → 1. → - [ ] → none`. Operates on every line in
-/// the selection, snapping all of them to the same target so a
-/// multi-line cycle stays predictable.
+/// `none → -  → 1. → - [ ] → none`.
+///
+/// Operates on every line in the selection, snapping all of them
+/// to the same target so a multi-line cycle stays predictable.
 #[must_use]
 pub fn cycle_list(state: &EditorState) -> Option<TransactionSpec> {
     let doc = state.doc.to_string();
@@ -1021,15 +1059,17 @@ pub fn cycle_list(state: &EditorState) -> Option<TransactionSpec> {
     }
     // Determine the first line's current state to compute the
     // target for the whole batch.
-    let first_state = list_marker_state(&doc, starts[0]);
-    let target = first_state.next();
+    // Nothing to toggle if no line was collected; `starts` drives the batch.
+    let &first_start = starts.first()?;
+    let target = list_marker_state(&doc, first_start).next();
     let mut changes: Vec<crate::Change> = Vec::new();
     for line_start in starts {
-        let line_end = doc[line_start..]
+        let line_end = doc
+            .after(line_start)
             .find('\n')
-            .map_or(doc.len(), |n| line_start + n);
+            .map_or(doc.len(), |n| line_start.saturating_add(n));
         let current = list_marker_state(&doc, line_start);
-        let body_start = line_start + current.prefix_bytes();
+        let body_start = line_start.saturating_add(current.prefix_bytes());
         let body = doc.get(body_start..line_end).unwrap_or("");
         let new_line = target.apply_to(body);
         changes.push(crate::Change {
@@ -1054,7 +1094,7 @@ enum ListMarkerState {
 }
 
 impl ListMarkerState {
-    fn next(self) -> Self {
+    const fn next(self) -> Self {
         match self {
             Self::None => Self::Unordered,
             Self::Unordered => Self::Ordered,
@@ -1062,7 +1102,7 @@ impl ListMarkerState {
             Self::UnorderedTask => Self::None,
         }
     }
-    fn prefix_bytes(self) -> usize {
+    const fn prefix_bytes(self) -> usize {
         match self {
             Self::None => 0,
             Self::Unordered => 2,
@@ -1085,18 +1125,18 @@ fn list_marker_state(doc: &str, line_start: usize) -> ListMarkerState {
     let line = line.split('\n').next().unwrap_or("");
     let b = line.as_bytes();
     if b.len() >= 6
-        && (b[0] == b'-' || b[0] == b'*' || b[0] == b'+')
-        && b[1] == b' '
-        && b[2] == b'['
-        && b[4] == b']'
-        && b[5] == b' '
+        && (b.at(0) == b'-' || b.at(0) == b'*' || b.at(0) == b'+')
+        && b.at(1) == b' '
+        && b.at(2) == b'['
+        && b.at(4) == b']'
+        && b.at(5) == b' '
     {
         return ListMarkerState::UnorderedTask;
     }
-    if b.len() >= 3 && b[0].is_ascii_digit() && b[1] == b'.' && b[2] == b' ' {
+    if b.len() >= 3 && b.at(0).is_ascii_digit() && b.at(1) == b'.' && b.at(2) == b' ' {
         return ListMarkerState::Ordered;
     }
-    if b.len() >= 2 && (b[0] == b'-' || b[0] == b'*' || b[0] == b'+') && b[1] == b' ' {
+    if b.len() >= 2 && (b.at(0) == b'-' || b.at(0) == b'*' || b.at(0) == b'+') && b.at(1) == b' ' {
         return ListMarkerState::Unordered;
     }
     ListMarkerState::None
@@ -1112,21 +1152,26 @@ fn list_marker_state(doc: &str, line_start: usize) -> ListMarkerState {
 pub fn add_block_id(state: &EditorState) -> Option<(TransactionSpec, String)> {
     let doc = state.doc.to_string();
     let caret = state.selection.primary().head.min(doc.len());
-    let line_start = doc[..caret].rfind('\n').map_or(0, |n| n + 1);
-    let line_end = doc[line_start..]
+    let line_start = doc
+        .before(caret)
+        .rfind('\n')
+        .map_or(0, |n| n.saturating_add(1));
+    let line_end = doc
+        .after(line_start)
         .find('\n')
-        .map_or(doc.len(), |n| line_start + n);
-    let line = &doc[line_start..line_end];
+        .map_or(doc.len(), |n| line_start.saturating_add(n));
+    let line = doc.slice(line_start..line_end);
     if line.trim().is_empty() {
         return None;
     }
     // If the next line is already `id:: <uuid>`, reuse it.
     if line_end < doc.len() {
-        let next_start = line_end + 1;
-        let next_end = doc[next_start..]
+        let next_start = line_end.saturating_add(1);
+        let next_end = doc
+            .after(next_start)
             .find('\n')
-            .map_or(doc.len(), |n| next_start + n);
-        let next_line = &doc[next_start..next_end];
+            .map_or(doc.len(), |n| next_start.saturating_add(n));
+        let next_line = doc.slice(next_start..next_end);
         if let Some(uuid) = next_line.strip_prefix("id:: ") {
             let uuid = uuid.trim();
             if uuid.len() == 36 {
@@ -1162,21 +1207,24 @@ pub fn toggle_task(state: &EditorState) -> Option<TransactionSpec> {
     }
     let mut changes: Vec<crate::Change> = Vec::new();
     for line_start in starts {
-        let line_end = doc[line_start..]
+        let line_end = doc
+            .after(line_start)
             .find('\n')
-            .map_or(doc.len(), |n| line_start + n);
-        let line = &doc[line_start..line_end];
+            .map_or(doc.len(), |n| line_start.saturating_add(n));
+        let line = doc.slice(line_start..line_end);
         let b = line.as_bytes();
         let is_task = b.len() >= 5
-            && (b[0] == b'-' || b[0] == b'*' || b[0] == b'+')
-            && b[1] == b' '
-            && b[2] == b'['
-            && b[4] == b']';
+            && (b.at(0) == b'-' || b.at(0) == b'*' || b.at(0) == b'+')
+            && b.at(1) == b' '
+            && b.at(2) == b'['
+            && b.at(4) == b']';
         let new_line = if is_task {
-            let inner = b[3];
+            let inner = b.at(3);
             let new_inner = if inner == b' ' { 'x' } else { ' ' };
             let mut bytes = b.to_vec();
-            bytes[3] = new_inner as u8;
+            if let Some(slot) = bytes.get_mut(3) {
+                *slot = u8::try_from(new_inner).unwrap_or(b' ');
+            }
             String::from_utf8(bytes).unwrap_or_else(|_| line.to_string())
         } else {
             // Promote to a task line.
@@ -1212,7 +1260,7 @@ pub fn delete_forward(state: &EditorState) -> Option<TransactionSpec> {
     // character and panic downstream on the invalid boundary.
     let rope = state.doc.rope();
     let ci = rope.byte_to_char(to);
-    let next = rope.char_to_byte(ci + 1);
+    let next = rope.char_to_byte(ci.saturating_add(1));
     Some(TransactionSpec::new().changes(Changes::delete(to..next)))
 }
 

@@ -37,7 +37,7 @@ impl Change {
 
     /// Pure deletion of a byte range.
     #[must_use]
-    pub fn delete(range: std::ops::Range<usize>) -> Self {
+    pub const fn delete(range: std::ops::Range<usize>) -> Self {
         Self {
             from: range.start,
             to: range.end,
@@ -58,7 +58,10 @@ impl Change {
     /// shrinks.
     #[must_use]
     pub fn delta(&self) -> isize {
-        self.inserted.len() as isize - (self.to as isize - self.from as isize)
+        let inserted_len = isize::try_from(self.inserted.len()).unwrap_or(isize::MAX);
+        let to = isize::try_from(self.to).unwrap_or(isize::MAX);
+        let from = isize::try_from(self.from).unwrap_or(isize::MAX);
+        inserted_len.saturating_sub(to.saturating_sub(from))
     }
 }
 
@@ -73,7 +76,7 @@ pub struct Changes {
 impl Changes {
     /// Empty change set — applying it is a no-op.
     #[must_use]
-    pub fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self { inner: Vec::new() }
     }
 
@@ -86,17 +89,23 @@ impl Changes {
     /// Build from a pre-sorted, non-overlapping list of changes.
     /// Panics in debug if the invariant is violated — caller's
     /// responsibility to maintain.
+    ///
+    /// # Panics
+    ///
+    /// In debug builds, panics if `changes` is not sorted and
+    /// non-overlapping (i.e. some change's `from` starts before the
+    /// previous change's `to`).
     #[must_use]
     pub fn from_sorted(changes: Vec<Change>) -> Self {
         #[cfg(debug_assertions)]
         {
             for w in changes.windows(2) {
-                assert!(
-                    w[0].to <= w[1].from,
-                    "Changes must be sorted and non-overlapping (got {:?} then {:?})",
-                    w[0],
-                    w[1]
-                );
+                if let [a, b] = w {
+                    assert!(
+                        a.to <= b.from,
+                        "Changes must be sorted and non-overlapping (got {a:?} then {b:?})"
+                    );
+                }
             }
         }
         Self { inner: changes }
@@ -109,7 +118,7 @@ impl Changes {
 
     /// `true` when there's nothing to apply.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
 
@@ -158,23 +167,26 @@ impl Changes {
     /// `from'` is `from` shifted by the cumulative delta of the
     /// changes before it. Sortedness and non-overlap are preserved.
     #[must_use]
-    pub fn invert(&self, doc: &Doc) -> Changes {
+    pub fn invert(&self, doc: &Doc) -> Self {
         let mut shift: isize = 0;
         let inverted = self
             .inner
             .iter()
             .map(|c| {
-                let from = (c.from as isize + shift) as usize;
+                let from_signed = isize::try_from(c.from)
+                    .unwrap_or(isize::MAX)
+                    .saturating_add(shift);
+                let from = usize::try_from(from_signed).unwrap_or(0);
                 let inv = Change {
                     from,
-                    to: from + c.inserted.len(),
+                    to: from.saturating_add(c.inserted.len()),
                     inserted: doc.slice(c.from..c.to),
                 };
-                shift += c.delta();
+                shift = shift.saturating_add(c.delta());
                 inv
             })
             .collect();
-        Changes::from_sorted(inverted)
+        Self::from_sorted(inverted)
     }
 
     /// Map a byte offset through this change set. Used by
@@ -206,11 +218,11 @@ impl Changes {
                         // Anchor stays "before" the inserted text.
                         Assoc::Before => pos,
                         // Typing cursor follows the insertion.
-                        Assoc::After => pos + change.inserted.len(),
+                        Assoc::After => pos.saturating_add(change.inserted.len()),
                     };
                 }
                 // pos > change.from (we already checked < above).
-                pos += change.inserted.len();
+                pos = pos.saturating_add(change.inserted.len());
                 continue;
             }
             // Range edit.
@@ -221,11 +233,14 @@ impl Changes {
                 // After pushes it to the end of the new content.
                 return match assoc {
                     Assoc::Before => change.from,
-                    Assoc::After => change.from + change.inserted.len(),
+                    Assoc::After => change.from.saturating_add(change.inserted.len()),
                 };
             }
             // pos >= change.to → past the deletion, shift by delta.
-            pos = (pos as isize + change.delta()) as usize;
+            let pos_signed = isize::try_from(pos)
+                .unwrap_or(isize::MAX)
+                .saturating_add(change.delta());
+            pos = usize::try_from(pos_signed).unwrap_or(0);
         }
         pos
     }
@@ -250,28 +265,28 @@ mod tests {
 
     #[test]
     fn apply_insert() {
-        let d = Doc::from_str("hello");
+        let d = Doc::new("hello");
         let cs = Changes::insert(5, " world");
         assert_eq!(cs.apply(&d).to_string(), "hello world");
     }
 
     #[test]
     fn apply_delete() {
-        let d = Doc::from_str("hello world");
+        let d = Doc::new("hello world");
         let cs = Changes::delete(5..6);
         assert_eq!(cs.apply(&d).to_string(), "helloworld");
     }
 
     #[test]
     fn apply_replace() {
-        let d = Doc::from_str("hello world");
+        let d = Doc::new("hello world");
         let cs = Changes::replace(6..11, "rust");
         assert_eq!(cs.apply(&d).to_string(), "hello rust");
     }
 
     #[test]
     fn apply_multiple_in_order() {
-        let d = Doc::from_str("hello world");
+        let d = Doc::new("hello world");
         let cs = Changes::from_sorted(vec![
             Change::replace(0..5, "HELLO"),
             Change::replace(6..11, "WORLD"),
@@ -281,7 +296,7 @@ mod tests {
 
     #[test]
     fn invert_insert_round_trips() {
-        let d = Doc::from_str("hello");
+        let d = Doc::new("hello");
         let cs = Changes::insert(5, " world");
         let after = cs.apply(&d);
         let inv = cs.invert(&d);
@@ -291,7 +306,7 @@ mod tests {
 
     #[test]
     fn invert_delete_round_trips() {
-        let d = Doc::from_str("hello world");
+        let d = Doc::new("hello world");
         let cs = Changes::delete(5..11);
         let after = cs.apply(&d);
         let inv = cs.invert(&d);
@@ -301,7 +316,7 @@ mod tests {
 
     #[test]
     fn invert_replace_round_trips() {
-        let d = Doc::from_str("hello world");
+        let d = Doc::new("hello world");
         let cs = Changes::replace(6..11, "rust");
         let after = cs.apply(&d);
         assert_eq!(after.to_string(), "hello rust");
@@ -312,7 +327,7 @@ mod tests {
 
     #[test]
     fn invert_multi_change_round_trips() {
-        let d = Doc::from_str("hello world");
+        let d = Doc::new("hello world");
         let cs = Changes::from_sorted(vec![
             Change::replace(0..5, "HI"),
             Change::insert(6, "big "),
@@ -326,7 +341,7 @@ mod tests {
 
     #[test]
     fn invert_utf8_round_trips() {
-        let d = Doc::from_str("héllo wörld");
+        let d = Doc::new("héllo wörld");
         // Replace the multibyte "ö" (bytes 8..10) with "o".
         let cs = Changes::replace(8..10, "o");
         let after = cs.apply(&d);

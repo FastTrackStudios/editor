@@ -18,17 +18,27 @@
 [workspace]
 resolver = "3"
 
+# Layout follows architect's shape (see the `architect` skill):
+#   crates/    the facade + the document model — what an embedder reaches for
+#   features/  one capability per directory, each independently consumable
+#   apps/      runnable binaries
+# A feature is a single crate at `features/<name>` and only nests a level
+# deeper when it genuinely needs more than one crate — `mermaid` does,
+# because the vendored renderer is a separate package from the fence
+# adapter. Directories are bare capability names; package names keep the
+# `editor-` prefix so they stay publishable and downstream imports don't
+# move.
 members = [
     "crates/editor",
-    "crates/editor-crdt",
-    "crates/editor-lsp",
-    "crates/editor-mermaid",
     "crates/editor-state",
-    "crates/editor-syntax",
-    "crates/editor-typst",
-    "crates/editor-view",
-    "crates/editor-vim",
-    "crates/mermaid-rs-renderer",
+    "features/crdt",
+    "features/lsp",
+    "features/mermaid/mermaid",
+    "features/mermaid/mermaid-rs-renderer",
+    "features/syntax",
+    "features/typst",
+    "features/ui",
+    "features/vim",
     "apps/playground",
 ]
 
@@ -45,15 +55,15 @@ repository = "https://github.com/FastTrackStudios/editor"
 # `editor` is the facade. `editor-state` is the document model and the
 # markdown pass; everything else hangs off it.
 editor = { path = "crates/editor" }
-editor-crdt = { path = "crates/editor-crdt" }
-editor-lsp = { path = "crates/editor-lsp" }
-editor-mermaid = { path = "crates/editor-mermaid" }
 editor-state = { path = "crates/editor-state" }
-editor-syntax = { path = "crates/editor-syntax" }
-editor-typst = { path = "crates/editor-typst" }
-editor-view = { path = "crates/editor-view" }
-editor-vim = { path = "crates/editor-vim" }
-mermaid-rs-renderer = { path = "crates/mermaid-rs-renderer" }
+editor-crdt = { path = "features/crdt" }
+editor-lsp = { path = "features/lsp" }
+editor-mermaid = { path = "features/mermaid/mermaid" }
+editor-syntax = { path = "features/syntax" }
+editor-typst = { path = "features/typst" }
+editor-view = { path = "features/ui" }
+editor-vim = { path = "features/vim" }
+mermaid-rs-renderer = { path = "features/mermaid/mermaid-rs-renderer" }
 
 # ── External ──────────────────────────────────────────────────────────
 dioxus-test = { git = "https://github.com/FastTrackStudios/FastTrackStudio", tag = "v0.1.0" }
@@ -113,35 +123,38 @@ private_intra_doc_links = "allow"
 redundant_explicit_links = "allow"
 
 [workspace.lints.clippy]
-field_reassign_with_default = "allow"
-redundant_closure = "allow"
-nonminimal_bool = "allow"
-clone_on_copy = "allow"
-useless_vec = "allow"
-type_complexity = "allow"
-manual_clamp = "allow"
-needless_range_loop = "allow"
-not_unsafe_ptr_arg_deref = "allow"
-only_used_in_recursion = "allow"
-unnecessary_sort_by = "allow"
-unusual_byte_groupings = "allow"
-manual_c_str_literals = "allow"
-branches_sharing_code = "allow"
-needless_borrow = "allow"
-needless_borrows_for_generic_args = "allow"
-collapsible_if = "allow"
-map_clone = "allow"
-unnecessary_map_or = "allow"
-if_same_then_else = "allow"
-redundant_locals = "allow"
-large_enum_variant = "allow"
-explicit_counter_loop = "allow"
-manual_strip = "allow"
-too_many_arguments = "allow"
-double_must_use = "allow"
-vec_init_then_push = "allow"
-collapsible_match = "allow"
-filter_next = "allow"
+# See namtao.com/rust. pedantic + nursery teach good patterns; the rest
+# make it a compile error to write code that can panic at runtime.
+#
+# There is no escape hatch: `#[allow(clippy::…)]` is banned in this repo.
+# If a lint fires, the code changes — not the lint level. Tests are the
+# one exception, granted by clippy.toml (allow-*-in-tests), because fast
+# prototyping belongs there and a panicking test is just a failing test.
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+
+# ── No panics ─────────────────────────────────────────────────────────
+unwrap_used = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+arithmetic_side_effects = "deny"
+unreachable = "deny"
+unimplemented = "deny"
+unchecked_time_subtraction = "deny"
+todo = "deny"
+string_slice = "deny"
+panic_in_result_fn = "deny"
+panic = "deny"
+exit = "deny"
+as_conversions = "deny"
+
+# The ban on suppression, enforced by the compiler rather than by review:
+# `#[allow(clippy::…)]` is itself an error here. `#[expect]` still works and
+# must carry a reason — so the rare unavoidable case is a deliberate, dated,
+# explained exception that fails loudly once it stops being needed, instead
+# of an `allow` that quietly outlives its excuse.
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
 
 # ── Profiles ──────────────────────────────────────────────────────────
 [profile.dev]
