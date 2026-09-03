@@ -166,7 +166,6 @@ fn render_line_el(
             }
         }
     }
-    
 }
 
 /// The `<span class="editor-widget">` element for one widget tile.
@@ -200,5 +199,4 @@ fn render_widget_el(
             }
         }
     }
-    
 }

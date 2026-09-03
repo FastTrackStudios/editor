@@ -116,13 +116,10 @@ impl Arena {
     /// Iterate every live tile id in insertion order. Skips
     /// vacant slots.
     pub fn iter_ids(&self) -> impl Iterator<Item = TileId> + '_ {
-        self.tiles
-            .iter()
-            .enumerate()
-            .filter_map(|(i, slot)| {
-                slot.as_ref()
-                    .map(|_| TileId(u32::try_from(i).unwrap_or(u32::MAX)))
-            })
+        self.tiles.iter().enumerate().filter_map(|(i, slot)| {
+            slot.as_ref()
+                .map(|_| TileId(u32::try_from(i).unwrap_or(u32::MAX)))
+        })
     }
 
     /// Total live tile count.

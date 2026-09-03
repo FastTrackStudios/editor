@@ -220,10 +220,12 @@ fn push_token(tokens: &mut Vec<Token>, start: usize, end: usize, tag: &'static s
         return;
     }
     if let Some(last) = tokens.last_mut()
-        && last.end == start && last.tag == tag {
-            last.end = end;
-            return;
-        }
+        && last.end == start
+        && last.tag == tag
+    {
+        last.end = end;
+        return;
+    }
     tokens.push(Token { start, end, tag });
 }
 

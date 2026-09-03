@@ -36,9 +36,10 @@ pub const fn new_line_tile() -> Tile {
 /// decorations of the same class collapse).
 pub fn push_line_class(tile: &mut Tile, class: &str) {
     if let TileBody::Line { extra_classes } = &mut tile.body
-        && !extra_classes.iter().any(|c| c == class) {
-            extra_classes.push(class.to_string());
-        }
+        && !extra_classes.iter().any(|c| c == class)
+    {
+        extra_classes.push(class.to_string());
+    }
 }
 
 /// Read the extra classes of a `LineTile`. Empty slice for tiles

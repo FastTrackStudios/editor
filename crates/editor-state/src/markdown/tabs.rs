@@ -281,7 +281,11 @@ fn inline_md(escaped: &str) -> String {
             }
             '*' if chars.get(i.saturating_add(1)) == Some(&'*') => {
                 if let Some(j) = find_double(&chars, i.saturating_add(2)) {
-                    let inner: String = chars.get(i.saturating_add(2)..j).unwrap_or(&[]).iter().collect();
+                    let inner: String = chars
+                        .get(i.saturating_add(2)..j)
+                        .unwrap_or(&[])
+                        .iter()
+                        .collect();
                     out.push_str("<strong>");
                     out.push_str(&inline_md(&inner));
                     out.push_str("</strong>");
@@ -293,7 +297,11 @@ fn inline_md(escaped: &str) -> String {
             }
             '*' => {
                 if let Some(j) = find_char(&chars, i.saturating_add(1), '*') {
-                    let inner: String = chars.get(i.saturating_add(1)..j).unwrap_or(&[]).iter().collect();
+                    let inner: String = chars
+                        .get(i.saturating_add(1)..j)
+                        .unwrap_or(&[])
+                        .iter()
+                        .collect();
                     out.push_str("<em>");
                     out.push_str(&inline_md(&inner));
                     out.push_str("</em>");

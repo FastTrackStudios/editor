@@ -2062,11 +2062,19 @@ pub fn Editor(
                         "hover" => {
                             if let Some(src) = hover_source {
                                 let pos = usize::try_from(
-                                    v.get("pos").and_then(serde_json::Value::as_u64).unwrap_or(0),
+                                    v.get("pos")
+                                        .and_then(serde_json::Value::as_u64)
+                                        .unwrap_or(0),
                                 )
                                 .unwrap_or(usize::MAX);
-                                let x = v.get("x").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
-                                let y = v.get("y").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+                                let x = v
+                                    .get("x")
+                                    .and_then(serde_json::Value::as_f64)
+                                    .unwrap_or(0.0);
+                                let y = v
+                                    .get("y")
+                                    .and_then(serde_json::Value::as_f64)
+                                    .unwrap_or(0.0);
                                 let cur = state.read().clone();
                                 hover_sig.set(src(&cur, pos).map(|tip| crate::hover::HoverPopup {
                                     tip,
@@ -2089,9 +2097,9 @@ pub fn Editor(
                             if other == "link-clicked"
                                 && let (Some(cb), Some(href)) =
                                     (on_link_click, v.get("href").and_then(|h| h.as_str()))
-                                {
-                                    cb.call(href.to_string());
-                                }
+                            {
+                                cb.call(href.to_string());
+                            }
                             // Any doc-mutating message means the user is
                             // actively editing: drop to the `Structural`
                             // pass until the next `idle` ping so expensive
@@ -2161,11 +2169,13 @@ pub fn Editor(
         // line below. Normalize: shift + single lowercase letter
         // becomes the uppercase letter. (No-op where the platform
         // already applied shift.)
-        if mods.shift() && key_str.chars().count() == 1
+        if mods.shift()
+            && key_str.chars().count() == 1
             && let Some(c) = key_str.chars().next()
-                && c.is_lowercase() {
-                    key_str = c.to_uppercase().to_string();
-                }
+            && c.is_lowercase()
+        {
+            key_str = c.to_uppercase().to_string();
+        }
         let press = KeySpec {
             key: key_str,
             ctrl: mods.ctrl(),
@@ -2195,7 +2205,11 @@ pub fn Editor(
                     }
                     "ArrowDown" if !hits.is_empty() => {
                         let len = hits.len();
-                        let next = current.selected.saturating_add(1).checked_rem(len).unwrap_or(0);
+                        let next = current
+                            .selected
+                            .saturating_add(1)
+                            .checked_rem(len)
+                            .unwrap_or(0);
                         let mut new = current;
                         new.selected = next;
                         slash_sig.set(Some(new));
@@ -2261,7 +2275,11 @@ pub fn Editor(
                     "ArrowDown" if !current.candidates.is_empty() => {
                         let len = current.candidates.len();
                         let mut new = current.clone();
-                        new.selected = current.selected.saturating_add(1).checked_rem(len).unwrap_or(0);
+                        new.selected = current
+                            .selected
+                            .saturating_add(1)
+                            .checked_rem(len)
+                            .unwrap_or(0);
                         comp_sig.set(Some(new));
                         evt.prevent_default();
                         return;
@@ -2286,9 +2304,9 @@ pub fn Editor(
                         if let Some(candidate) = current.candidates.get(idx)
                             && let Some(spec) =
                                 crate::trigger::accept_candidate(&cur, &current, candidate)
-                            {
-                                crate::event::apply_tx(state, &cur, spec, sink_for_keys);
-                            }
+                        {
+                            crate::event::apply_tx(state, &cur, spec, sink_for_keys);
+                        }
                         comp_sig.set(None);
                         evt.prevent_default();
                         return;
@@ -2420,18 +2438,21 @@ pub fn Editor(
                                 .props
                                 .iter()
                                 .position(|p| pre >= p.range.start && pre < p.range.end)
-                                .unwrap_or_else(|| if key == "j" {
-                                    0
-                                } else {
-                                    fm.props.len().saturating_sub(1)
+                                .unwrap_or_else(|| {
+                                    if key == "j" {
+                                        0
+                                    } else {
+                                        fm.props.len().saturating_sub(1)
+                                    }
                                 });
                             let next_idx = if key == "j" {
-                                cur_idx.saturating_add(1).min(fm.props.len().saturating_sub(1))
+                                cur_idx
+                                    .saturating_add(1)
+                                    .min(fm.props.len().saturating_sub(1))
                             } else {
                                 cur_idx.saturating_sub(1)
                             };
-                            let Some(target) = fm.props.get(next_idx).map(|p| p.range.start)
-                            else {
+                            let Some(target) = fm.props.get(next_idx).map(|p| p.range.start) else {
                                 evt.prevent_default();
                                 return;
                             };
@@ -2533,11 +2554,12 @@ pub fn Editor(
             }
         }
         if let Some(ref km) = keymap_for_keys
-            && let Some(spec) = km.dispatch(&press, &cur) {
-                evt.prevent_default();
-                tracing::debug!(?press, "editor.keymap.fire");
-                crate::event::apply_tx(state, &cur, spec, sink_for_keys);
-            }
+            && let Some(spec) = km.dispatch(&press, &cur)
+        {
+            evt.prevent_default();
+            tracing::debug!(?press, "editor.keymap.fire");
+            crate::event::apply_tx(state, &cur, spec, sink_for_keys);
+        }
         // ── Native default-input fallthrough ─────────────────────────
         //
         // The web path stops here: an unclaimed key (a printable char, an
@@ -2680,7 +2702,9 @@ pub fn Editor(
             });
             let t_decos = now_ms();
             let decorations: Vec<DecoratedRange> = {
-                let mut v = deco_source_patch.as_ref().map_or_else(Vec::new, |src| src.run(&s));
+                let mut v = deco_source_patch
+                    .as_ref()
+                    .map_or_else(Vec::new, |src| src.run(&s));
                 // Painted modal caret (block/underscore) — the native
                 // caret can't take these shapes everywhere (CSS
                 // `caret-shape` is Chromium-only as of 2026; Firefox
@@ -3095,10 +3119,7 @@ pub fn diff_text(old: &str, new: &str) -> Changes {
     let ob = old.as_bytes();
     let nb = new.as_bytes();
     let mut start = 0;
-    while start < ob.len()
-        && start < nb.len()
-        && ob.get(start) == nb.get(start)
-    {
+    while start < ob.len() && start < nb.len() && ob.get(start) == nb.get(start) {
         start = start.saturating_add(1);
     }
     let mut o_end = ob.len();

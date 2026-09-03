@@ -121,7 +121,9 @@ pub fn insert_bracket(state: &EditorState, input: &str) -> Option<TransactionSpe
     if same {
         let next_byte = doc.as_bytes().get(from).copied();
         if next_byte == Some(u8::try_from(ch).unwrap_or(0)) {
-            return Some(TransactionSpec::new().selection(Selection::caret(from.saturating_add(1))));
+            return Some(
+                TransactionSpec::new().selection(Selection::caret(from.saturating_add(1))),
+            );
         }
     }
 
@@ -275,7 +277,11 @@ pub fn enter_continue_list(state: &EditorState) -> Option<TransactionSpec> {
         // The newly inserted item has number `n + 1`. Pass that
         // as the starting expected value so the renumber walk
         // matches the displaced old-`n+1` item first.
-        all_changes.extend(renumber_following_ordered(&doc, line_to, n.saturating_add(1)));
+        all_changes.extend(renumber_following_ordered(
+            &doc,
+            line_to,
+            n.saturating_add(1),
+        ));
     }
     Some(
         TransactionSpec::new()
@@ -673,7 +679,11 @@ fn char_class(c: char) -> CharClass {
 fn line_bounds(doc: &str, pos: usize) -> (usize, usize) {
     let bytes = doc.as_bytes();
     let mut start = pos.min(bytes.len());
-    while start > 0 && bytes.get(start.saturating_sub(1)).is_some_and(|&b| b != b'\n') {
+    while start > 0
+        && bytes
+            .get(start.saturating_sub(1))
+            .is_some_and(|&b| b != b'\n')
+    {
         start = start.saturating_sub(1);
     }
     let mut end = pos.min(bytes.len());
@@ -811,7 +821,8 @@ fn parse_list_continuation(line: &str) -> Option<ListContinuation> {
     let after_marker_abs = inner_start.saturating_add(after_marker);
 
     // Whitespace after the list marker.
-    let ws_count = bytes.after(after_marker_abs)
+    let ws_count = bytes
+        .after(after_marker_abs)
         .iter()
         .take_while(|&&x| x == b' ')
         .count();
@@ -835,9 +846,14 @@ fn parse_list_continuation(line: &str) -> Option<ListContinuation> {
     let mut marker_end = after_marker_abs.saturating_add(ws_count);
 
     // Optional task box `[ ]` / `[x]`.
-    let task = bytes.get(marker_end..marker_end.saturating_add(3)).is_some_and(|sl| {
-        sl.len() == 3 && sl.at(0) == b'[' && sl.at(2) == b']' && matches!(sl.at(1), b' ' | b'x' | b'X')
-    });
+    let task = bytes
+        .get(marker_end..marker_end.saturating_add(3))
+        .is_some_and(|sl| {
+            sl.len() == 3
+                && sl.at(0) == b'['
+                && sl.at(2) == b']'
+                && matches!(sl.at(1), b' ' | b'x' | b'X')
+        });
     if task {
         marker_end = marker_end.saturating_add(3);
         if bytes.get(marker_end) == Some(&b' ') {
@@ -960,17 +976,19 @@ pub fn toggle_link(state: &EditorState) -> Option<TransactionSpec> {
     let body = doc.get(from..to).unwrap_or("");
     // Toggle: if the body is already `[…](…)`, strip back to the
     // inner text. Else wrap.
-    if body.starts_with('[') && body.ends_with(')')
-        && let Some(rb) = body.find("](") {
-            let inner = body.slice(1..rb);
-            let inner_owned = inner.to_string();
-            let new_to = from.saturating_add(inner_owned.len());
-            return Some(
-                TransactionSpec::new()
-                    .changes(Changes::replace(from..to, inner_owned))
-                    .selection(Selection::single(Range::new(from, new_to))),
-            );
-        }
+    if body.starts_with('[')
+        && body.ends_with(')')
+        && let Some(rb) = body.find("](")
+    {
+        let inner = body.slice(1..rb);
+        let inner_owned = inner.to_string();
+        let new_to = from.saturating_add(inner_owned.len());
+        return Some(
+            TransactionSpec::new()
+                .changes(Changes::replace(from..to, inner_owned))
+                .selection(Selection::single(Range::new(from, new_to))),
+        );
+    }
     let wrapped = format!("[{body}]()");
     let url_caret = from.saturating_add(wrapped.len()).saturating_sub(1); // inside the `()`
     Some(
@@ -994,7 +1012,8 @@ pub fn set_heading(state: &EditorState, level: u8) -> Option<TransactionSpec> {
     }
     let mut changes: Vec<crate::Change> = Vec::new();
     for line_start in starts {
-        let line_end = doc.after(line_start)
+        let line_end = doc
+            .after(line_start)
             .find('\n')
             .map_or(doc.len(), |n| line_start.saturating_add(n));
         let line = doc.slice(line_start..line_end);
@@ -1045,7 +1064,8 @@ pub fn cycle_list(state: &EditorState) -> Option<TransactionSpec> {
     let target = list_marker_state(&doc, first_start).next();
     let mut changes: Vec<crate::Change> = Vec::new();
     for line_start in starts {
-        let line_end = doc.after(line_start)
+        let line_end = doc
+            .after(line_start)
             .find('\n')
             .map_or(doc.len(), |n| line_start.saturating_add(n));
         let current = list_marker_state(&doc, line_start);
@@ -1132,8 +1152,12 @@ fn list_marker_state(doc: &str, line_start: usize) -> ListMarkerState {
 pub fn add_block_id(state: &EditorState) -> Option<(TransactionSpec, String)> {
     let doc = state.doc.to_string();
     let caret = state.selection.primary().head.min(doc.len());
-    let line_start = doc.before(caret).rfind('\n').map_or(0, |n| n.saturating_add(1));
-    let line_end = doc.after(line_start)
+    let line_start = doc
+        .before(caret)
+        .rfind('\n')
+        .map_or(0, |n| n.saturating_add(1));
+    let line_end = doc
+        .after(line_start)
         .find('\n')
         .map_or(doc.len(), |n| line_start.saturating_add(n));
     let line = doc.slice(line_start..line_end);
@@ -1143,7 +1167,8 @@ pub fn add_block_id(state: &EditorState) -> Option<(TransactionSpec, String)> {
     // If the next line is already `id:: <uuid>`, reuse it.
     if line_end < doc.len() {
         let next_start = line_end.saturating_add(1);
-        let next_end = doc.after(next_start)
+        let next_end = doc
+            .after(next_start)
             .find('\n')
             .map_or(doc.len(), |n| next_start.saturating_add(n));
         let next_line = doc.slice(next_start..next_end);
@@ -1182,7 +1207,8 @@ pub fn toggle_task(state: &EditorState) -> Option<TransactionSpec> {
     }
     let mut changes: Vec<crate::Change> = Vec::new();
     for line_start in starts {
-        let line_end = doc.after(line_start)
+        let line_end = doc
+            .after(line_start)
             .find('\n')
             .map_or(doc.len(), |n| line_start.saturating_add(n));
         let line = doc.slice(line_start..line_end);

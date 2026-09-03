@@ -176,7 +176,11 @@ pub fn find_char(
                 hits = hits.saturating_add(1);
                 if hits == count {
                     let at = lo.saturating_add(off);
-                    return Some(if till { at.saturating_add(c.len_utf8()) } else { at });
+                    return Some(if till {
+                        at.saturating_add(c.len_utf8())
+                    } else {
+                        at
+                    });
                 }
             }
         }
@@ -296,7 +300,9 @@ pub fn vertical(
             let prev_nl = start.saturating_sub(1);
             let mut prev_start = prev_nl;
             while prev_start > 0
-                && bytes.get(prev_start.saturating_sub(1)).is_some_and(|&b| b != b'\n')
+                && bytes
+                    .get(prev_start.saturating_sub(1))
+                    .is_some_and(|&b| b != b'\n')
             {
                 prev_start = prev_start.saturating_sub(1);
             }
@@ -409,7 +415,11 @@ fn word_backward_impl(bytes: &[u8], pos: usize, n: usize, class: fn(u8) -> u8) -
         if c == 2 || c == 0 {
             continue;
         }
-        while p > 0 && bytes.get(p.saturating_sub(1)).is_some_and(|&b| class(b) == c) {
+        while p > 0
+            && bytes
+                .get(p.saturating_sub(1))
+                .is_some_and(|&b| class(b) == c)
+        {
             p = p.saturating_sub(1);
         }
     }
@@ -435,7 +445,9 @@ fn word_end_impl(bytes: &[u8], pos: usize, n: usize, class: fn(u8) -> u8) -> usi
         let Some(&b) = bytes.get(p) else { break };
         let c = class(b);
         while p.saturating_add(1) < bytes.len()
-            && bytes.get(p.saturating_add(1)).is_some_and(|&b| class(b) == c)
+            && bytes
+                .get(p.saturating_add(1))
+                .is_some_and(|&b| class(b) == c)
         {
             p = p.saturating_add(1);
         }
@@ -491,7 +503,11 @@ fn end_prev_word(state: &EditorState, pos: usize, n: usize) -> usize {
             && matches!(started_on, 1 | 3)
         {
             let c = started_on;
-            while p > 0 && bytes.get(p.saturating_sub(1)).is_some_and(|&b| classify(b) == c) {
+            while p > 0
+                && bytes
+                    .get(p.saturating_sub(1))
+                    .is_some_and(|&b| classify(b) == c)
+            {
                 p = p.saturating_sub(1);
             }
             if p == 0 {
@@ -604,7 +620,12 @@ fn para_forward(state: &EditorState, pos: usize, n: usize) -> usize {
             };
             p = nl.saturating_add(1);
             let line_end_pos = next_newline(state, p).unwrap_or(bytes.len());
-            if p == line_end_pos || bytes.slice(p..line_end_pos).iter().all(u8::is_ascii_whitespace) {
+            if p == line_end_pos
+                || bytes
+                    .slice(p..line_end_pos)
+                    .iter()
+                    .all(u8::is_ascii_whitespace)
+            {
                 break;
             }
         }
@@ -624,7 +645,12 @@ fn para_backward(state: &EditorState, pos: usize, n: usize) -> usize {
             let line_lo = line_start(state, p.saturating_sub(1));
             let line_hi = next_newline(state, line_lo).unwrap_or(bytes.len());
             p = line_lo;
-            if line_lo == line_hi || bytes.slice(line_lo..line_hi).iter().all(u8::is_ascii_whitespace) {
+            if line_lo == line_hi
+                || bytes
+                    .slice(line_lo..line_hi)
+                    .iter()
+                    .all(u8::is_ascii_whitespace)
+            {
                 break;
             }
             if p == 0 {

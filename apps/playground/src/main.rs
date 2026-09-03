@@ -179,30 +179,32 @@ fn read_seed_query() -> Option<String> {
 
 /// Look for `?flag` or `?flag=1` etc. — returns true when the
 /// query string contains the named flag with a truthy value.
-const fn read_query_flag(_name: &str) -> bool {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let window = match web_sys::window() {
-            Some(w) => w,
-            None => return false,
-        };
-        let search = window.location().search().unwrap_or_default();
-        let trimmed = search.strip_prefix('?').unwrap_or(&search);
-        for pair in trimmed.split('&') {
-            let (k, v) = match pair.split_once('=') {
-                Some((k, v)) => (k, v),
-                None => (pair, "1"),
-            };
-            if k == _name {
-                return matches!(v, "1" | "true" | "yes" | "on" | "");
-            }
+///
+/// Defined once per target rather than as one function with a `cfg` body: the
+/// host branch is a bare `false` and so is genuinely `const`, while the wasm
+/// branch reads `window.location` and cannot be. Written as one function, the
+/// host build flags it as `missing_const_for_fn` and the wasm build rejects
+/// the `const` — a lint no single definition can satisfy on both targets.
+#[cfg(target_arch = "wasm32")]
+fn read_query_flag(name: &str) -> bool {
+    let Some(window) = web_sys::window() else {
+        return false;
+    };
+    let search = window.location().search().unwrap_or_default();
+    let trimmed = search.strip_prefix('?').unwrap_or(&search);
+    for pair in trimmed.split('&') {
+        let (k, v) = pair.split_once('=').unwrap_or((pair, "1"));
+        if k == name {
+            return matches!(v, "1" | "true" | "yes" | "on" | "");
         }
-        false
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        false
-    }
+    false
+}
+
+/// No query string off the web — see the wasm definition above.
+#[cfg(not(target_arch = "wasm32"))]
+const fn read_query_flag(_name: &str) -> bool {
+    false
 }
 
 #[cfg(target_arch = "wasm32")]

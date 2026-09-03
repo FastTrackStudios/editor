@@ -194,7 +194,12 @@ fn indent_range(state: &EditorState, lo: usize, hi: usize, outdent: bool) -> Tra
             changes.push(editor_state::Change::insert(p, "    "));
         }
         // jump to next line
-        match bytes.get(p..).unwrap_or(&[]).iter().position(|&b| b == b'\n') {
+        match bytes
+            .get(p..)
+            .unwrap_or(&[])
+            .iter()
+            .position(|&b| b == b'\n')
+        {
             Some(i) => p = p.saturating_add(i).saturating_add(1),
             None => break,
         }

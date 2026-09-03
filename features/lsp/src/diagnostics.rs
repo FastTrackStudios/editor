@@ -199,13 +199,15 @@ impl DiagnosticsStore {
         let key = published.uri.to_string();
         if let Some(v) = published.version {
             if let Some(cur) = current_version
-                && v < cur {
-                    return false; // computed against text we've since edited
-                }
+                && v < cur
+            {
+                return false; // computed against text we've since edited
+            }
             if let Some(prev) = self.docs.get(&key).and_then(|d| d.version)
-                && v < prev {
-                    return false; // out-of-order publish
-                }
+                && v < prev
+            {
+                return false; // out-of-order publish
+            }
         }
         let items = published
             .diagnostics

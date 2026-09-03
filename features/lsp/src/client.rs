@@ -385,13 +385,14 @@ impl LspClient {
 /// Turn a server notification into the host-facing event.
 fn route_notification(n: Notification) -> ServerMessage {
     if n.method == lsp_types::notification::PublishDiagnostics::METHOD
-        && let Ok(params) = serde_json::from_value::<PublishDiagnosticsParams>(n.params.clone()) {
-            return ServerMessage::Diagnostics(PublishedDiagnostics {
-                uri: params.uri,
-                version: params.version,
-                diagnostics: params.diagnostics,
-            });
-        }
+        && let Ok(params) = serde_json::from_value::<PublishDiagnosticsParams>(n.params.clone())
+    {
+        return ServerMessage::Diagnostics(PublishedDiagnostics {
+            uri: params.uri,
+            version: params.version,
+            diagnostics: params.diagnostics,
+        });
+    }
     ServerMessage::Notification {
         method: n.method,
         params: n.params,

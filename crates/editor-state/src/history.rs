@@ -135,9 +135,10 @@ impl History {
             // Selection-only movement: a caret jump means the next
             // keystroke should start a fresh undo group.
             if spec.selection.is_some()
-                && let Some(top) = self.done.last_mut() {
-                    top.coalesce = None;
-                }
+                && let Some(top) = self.done.last_mut()
+            {
+                top.coalesce = None;
+            }
             return;
         }
 
@@ -243,7 +244,9 @@ impl History {
         // reaches *outside* the current region — those bytes are
         // untouched, so they line up 1:1 with `doc_before` (see
         // the invariant on [`Coalesce`]).
-        co.from_orig = co.from_orig.saturating_sub(co.from_cur.saturating_sub(c.from));
+        co.from_orig = co
+            .from_orig
+            .saturating_sub(co.from_cur.saturating_sub(c.from));
         co.to_orig = co.to_orig.saturating_add(c.to.saturating_sub(co.to_cur));
         // Map the current-doc region through the new change and
         // union it with the change's own footprint.

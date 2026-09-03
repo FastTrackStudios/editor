@@ -99,7 +99,9 @@ impl VisibleText {
     fn push_map(&mut self, doc: usize) {
         let visible = self.text.len();
         if let Some(last) = self.map.last() {
-            let expected_doc = last.doc.saturating_add(visible.saturating_sub(last.visible));
+            let expected_doc = last
+                .doc
+                .saturating_add(visible.saturating_sub(last.visible));
             if expected_doc == doc {
                 return;
             }

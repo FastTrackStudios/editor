@@ -187,7 +187,10 @@ pub fn detect_trigger(doc: &str, caret: usize) -> Option<(CompletionKind, usize,
     if !doc.is_char_boundary(caret) {
         return None;
     }
-    let line_start = doc.before(caret).rfind('\n').map_or(0, |n| n.saturating_add(1));
+    let line_start = doc
+        .before(caret)
+        .rfind('\n')
+        .map_or(0, |n| n.saturating_add(1));
     let seg = doc.slice(line_start..caret);
 
     // ── `[[` wikilink ─────────────────────────────────────────
@@ -205,7 +208,11 @@ pub fn detect_trigger(doc: &str, caret: usize) -> Option<(CompletionKind, usize,
     // ── `#` tag ───────────────────────────────────────────────
     let bytes = seg.as_bytes();
     let mut i = bytes.len();
-    while i > 0 && bytes.get(i.saturating_sub(1)).is_some_and(|&b| is_tag_byte(b)) {
+    while i > 0
+        && bytes
+            .get(i.saturating_sub(1))
+            .is_some_and(|&b| is_tag_byte(b))
+    {
         i = i.saturating_sub(1);
     }
     if i > 0 && bytes.get(i.saturating_sub(1)) == Some(&b'#') {
@@ -316,7 +323,9 @@ pub fn CompletionMenu(
             Fragment {}
         };
     }
-    let selected = current.selected.min(current.candidates.len().saturating_sub(1));
+    let selected = current
+        .selected
+        .min(current.candidates.len().saturating_sub(1));
     let kind_icon = match current.kind {
         CompletionKind::Wikilink => "[[",
         CompletionKind::Tag => "#",

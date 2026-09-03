@@ -21,8 +21,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::tile::arena::{Arena, TileId};
 use crate::tile::Tile;
+use crate::tile::arena::{Arena, TileId};
 use crate::tile::line::line_extra_classes;
 use crate::tile::mark::mark_spec_of;
 use crate::tile::pos::pos_at_start;
@@ -196,7 +196,6 @@ fn render_node(arena: &Arena, tile: TileId) -> Option<Patch> {
         }
     }
 }
-
 
 /// The `<div class="cm-line">` for one line tile, children rendered into it.
 ///

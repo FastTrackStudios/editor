@@ -214,7 +214,10 @@ pub struct SlashState {
 #[must_use]
 pub fn detect_slash(doc: &str, caret: usize) -> Option<(usize, String)> {
     let caret = caret.min(doc.len());
-    let line_start = doc.before(caret).rfind('\n').map_or(0, |n| n.saturating_add(1));
+    let line_start = doc
+        .before(caret)
+        .rfind('\n')
+        .map_or(0, |n| n.saturating_add(1));
     let segment = doc.slice(line_start..caret);
     let bytes = segment.as_bytes();
     let mut i = bytes.len();
@@ -748,7 +751,6 @@ fn push_embeds_and_links(out: &mut Vec<CommandEntry>) {
     ]);
 }
 
-
 /// Insert a block-level snippet, replacing the slash query.
 ///
 /// Split out of [`run_command`]'s `match`: this arm carries the block-context
@@ -788,7 +790,9 @@ fn insert_block_snippet(
     let head = stripped.before(anchor);
     let tail = stripped.after(anchor);
     let final_doc = format!("{head}{snippet}{tail}");
-    let new_caret = anchor.saturating_add(snippet.len()).saturating_sub(caret_back);
+    let new_caret = anchor
+        .saturating_add(snippet.len())
+        .saturating_sub(caret_back);
     TransactionSpec::new()
         .changes(Changes::replace(0..doc.len(), final_doc))
         .selection(Selection::caret(new_caret))
@@ -850,4 +854,3 @@ mod tests {
         assert!(hits.iter().any(|c| c.group == "Callout"));
     }
 }
-

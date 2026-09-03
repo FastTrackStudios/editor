@@ -76,7 +76,12 @@ fn word_object(bytes: &[u8], pos: usize, around: bool) -> std::ops::Range<usize>
     let mut lo = pos;
     let mut hi = pos;
     if on_word {
-        while lo > 0 && bytes.get(lo.saturating_sub(1)).copied().is_some_and(is_word) {
+        while lo > 0
+            && bytes
+                .get(lo.saturating_sub(1))
+                .copied()
+                .is_some_and(is_word)
+        {
             lo = lo.saturating_sub(1);
         }
         while hi < bytes.len() && bytes.get(hi).copied().is_some_and(is_word) {

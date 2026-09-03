@@ -22,10 +22,10 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
-use crate::text::{ByteSlice, TextSlice};
 use crate::decoration::{DecoratedRange, Decoration};
 use crate::selection::Range;
 use crate::state::EditorState;
+use crate::text::{ByteSlice, TextSlice};
 
 /// The full live-preview decoration source.
 ///
@@ -190,7 +190,11 @@ fn kbd_widget_html(spec: &str, kbd: Option<&dyn KbdLookup>) -> Option<String> {
             if ki > 0 {
                 html.push_str(r#"<span class="md-kbd-plus">+</span>"#);
             }
-            let _ = write!(html, r#"<kbd class="md-kbd-key">{}</kbd>"#, escape_html(key));
+            let _ = write!(
+                html,
+                r#"<kbd class="md-kbd-key">{}</kbd>"#,
+                escape_html(key)
+            );
         }
     }
     html.push_str("</span>");
@@ -422,10 +426,9 @@ fn song_strip_runs(
         let mut j = i;
         // Extend the run while the next candidate starts exactly one byte
         // after this one ends — i.e. they are separated by a single newline.
-        while let (Some(&(next_start, _)), Some(&(_, cur_end))) = (
-            candidates.get(j.saturating_add(1)),
-            candidates.get(j),
-        ) {
+        while let (Some(&(next_start, _)), Some(&(_, cur_end))) =
+            (candidates.get(j.saturating_add(1)), candidates.get(j))
+        {
             if next_start != cur_end.saturating_add(1) {
                 break;
             }
@@ -436,7 +439,7 @@ fn song_strip_runs(
                 start,
                 StripRunCtx {
                     joined_above: k > 0,
-                    joined_below: i.saturating_add(k)< j,
+                    joined_below: i.saturating_add(k) < j,
                     odd: k % 2 == 1,
                     index: k.saturating_add(1),
                 },
@@ -552,7 +555,9 @@ fn emit_roster_rows(
             let Some(close_rel) = rest.after(open).find("]]") else {
                 break;
             };
-            let name = rest.slice(open.saturating_add(2)..open.saturating_add(close_rel)).trim();
+            let name = rest
+                .slice(open.saturating_add(2)..open.saturating_add(close_rel))
+                .trim();
             let name = name.split(['#', '|']).next().unwrap_or(name).trim();
             rest = rest.after(open.saturating_add(close_rel).saturating_add(2));
             let (st_cls, badge, ring) = {
@@ -560,10 +565,12 @@ fn emit_roster_rows(
                 after
                     .strip_prefix('(')
                     .and_then(|r| r.split_once(')').map(|(a, _)| a))
-                    .map_or(("md-av--none", "", ""), |inner| match inner.trim().to_ascii_lowercase().as_str() {
-                        "confirmed" => ("md-av--confirmed", "✓", "confirmed"),
-                        "declined" => ("md-av--declined", "✕", "declined"),
-                        _ => ("md-av--pending", "?", "pending"),
+                    .map_or(("md-av--none", "", ""), |inner| {
+                        match inner.trim().to_ascii_lowercase().as_str() {
+                            "confirmed" => ("md-av--confirmed", "✓", "confirmed"),
+                            "declined" => ("md-av--declined", "✕", "declined"),
+                            _ => ("md-av--pending", "?", "pending"),
+                        }
                     })
             };
             if vault.lookup_note_kind(name).as_deref() != Some("contact") {
@@ -626,7 +633,8 @@ fn emit_status_pills(text: &str, primary: Range, out: &mut Vec<DecoratedRange>) 
         let Some(open_rel) = trimmed_end.rfind('(') else {
             continue;
         };
-        let Some(inner) = trimmed_end.after(open_rel)
+        let Some(inner) = trimmed_end
+            .after(open_rel)
             .strip_prefix('(')
             .and_then(|r| r.strip_suffix(')'))
         else {
@@ -643,7 +651,9 @@ fn emit_status_pills(text: &str, primary: Range, out: &mut Vec<DecoratedRange>) 
             continue;
         }
         let open_abs = line_from.saturating_add(open_rel);
-        let close_abs = line_from.saturating_add(trimmed_end.len()).saturating_sub(1);
+        let close_abs = line_from
+            .saturating_add(trimmed_end.len())
+            .saturating_sub(1);
         let word_from = open_abs.saturating_add(1);
         let word_to = close_abs;
         out.push(Decoration::replace(open_abs..word_from));
@@ -713,7 +723,10 @@ fn split_title_artist(raw: &str, fallback: Option<&str>) -> (String, Option<Stri
         let a = a.trim();
         (t.trim().to_string(), (!a.is_empty()).then(|| a.to_string()))
     } else {
-        (raw.trim().to_string(), fallback.map(std::string::ToString::to_string))
+        (
+            raw.trim().to_string(),
+            fallback.map(std::string::ToString::to_string),
+        )
     }
 }
 
@@ -766,7 +779,10 @@ fn scripture_card_html(target: &str, sc: &VaultScriptureHit) -> String {
     let safe = html_escape(target);
     let display = html_escape(&sc.display);
     let tx = html_escape(&sc.translation);
-    let body = sc.text.as_ref().map_or_else(|| "Loading…".to_string(), |t| html_escape(t));
+    let body = sc
+        .text
+        .as_ref()
+        .map_or_else(|| "Loading…".to_string(), |t| html_escape(t));
     format!(
         r#"<span class="md-scripture-card" data-href="scripture-open:{safe}"><span class="md-scripture-card-text">{body}</span><span class="md-scripture-card-ref"><span class="md-scripture-card-display">{display}</span><span class="md-scripture-card-tx">{tx}</span><span class="md-scripture-card-open">Study ›</span></span></span>"#
     )
@@ -805,9 +821,7 @@ fn embed_widget_html(raw: &str, doc: &str, vault: Option<&dyn VaultLookup>) -> S
             );
         }
         "pdf" => {
-            return format!(
-                r#"<iframe class="md-embed-pdf" src="{safe_target}"{style}></iframe>"#
-            );
+            return format!(r#"<iframe class="md-embed-pdf" src="{safe_target}"{style}></iframe>"#);
         }
         _ => {}
     }
@@ -869,11 +883,7 @@ fn embed_widget_html(raw: &str, doc: &str, vault: Option<&dyn VaultLookup>) -> S
             .and_then(|v| v.lookup_page(page_part))
             .map(|h| h.preview)
     };
-    render_embed_card_page(
-        "📄",
-        &safe_page,
-        resolved.as_deref(),
-    )
+    render_embed_card_page("📄", &safe_page, resolved.as_deref())
 }
 
 /// Walk the doc for a heading whose text matches `name` (case-
@@ -900,9 +910,10 @@ fn resolve_heading_section(doc: &str, name: &str) -> Option<String> {
     for (lf, lt) in lines.iter().skip(start_i.saturating_add(1)) {
         let line = doc.slice(*lf..*lt);
         if let Some((level, _)) = parse_heading(line)
-            && level <= start_level {
-                break;
-            }
+            && level <= start_level
+        {
+            break;
+        }
         body.push_str(line);
         body.push('\n');
     }
@@ -914,11 +925,21 @@ fn resolve_heading_section(doc: &str, name: &str) -> Option<String> {
 fn resolve_block_short_id(doc: &str, short_id: &str) -> Option<String> {
     let needle = format!("^{short_id}");
     let pos = doc.find(&needle)?;
-    let line_start = doc.before(pos).rfind('\n').map_or(0, |n| n.saturating_add(1));
-    let line_end = doc.after(pos).find('\n').map_or(doc.len(), |n| pos.saturating_add(n));
+    let line_start = doc
+        .before(pos)
+        .rfind('\n')
+        .map_or(0, |n| n.saturating_add(1));
+    let line_end = doc
+        .after(pos)
+        .find('\n')
+        .map_or(doc.len(), |n| pos.saturating_add(n));
     let line = doc.slice(line_start..line_end);
     // Strip the trailing `^id` so the embed shows the body text.
-    Some(line.before(line.len().saturating_sub(needle.len())).trim_end().to_string())
+    Some(
+        line.before(line.len().saturating_sub(needle.len()))
+            .trim_end()
+            .to_string(),
+    )
 }
 
 fn render_embed_card_page(icon: &str, page: &str, resolved: Option<&str>) -> String {
@@ -1066,7 +1087,6 @@ fn decorate_inline_spans(
     }
 }
 
-
 /// `$inline$` and `$$display$$` math, rendered to a Typst SVG widget when the
 /// caret is off the span.
 ///
@@ -1079,38 +1099,38 @@ fn decorate_math_span(
     primary: Range,
     out: &mut Vec<DecoratedRange>,
 ) -> bool {
-if span.class == "md-math-inline" || span.class == "md-math-block" {
-    if !cursor_touches(primary, span.outer.clone()) {
-        let body = text.slice(span.body.clone());
-        let kind = if span.class == "md-math-inline" {
-            TypstKind::MathInline
-        } else {
-            TypstKind::MathBlock
-        };
-        if let Some(svg) = render_typst(kind, body) {
-            out.push(Decoration::replace(span.outer.clone()));
-            // `data-focus-pos` lets the JS click
-            // handler route a click on the widget
-            // back to a caret inside the source
-            // span, so the user can edit math by
-            // tapping the rendered output.
-            let html = format!(
-                r#"<span class="{cls}" data-focus-pos="{pos}">{svg}</span>"#,
-                cls = if kind == TypstKind::MathInline {
-                    "md-math-widget md-math-widget-inline"
-                } else {
-                    "md-math-widget md-math-widget-block"
-                },
-                pos = span.body.start,
-            );
-            out.push(Decoration::widget(span.outer.start, html));
-            return true;
+    if span.class == "md-math-inline" || span.class == "md-math-block" {
+        if !cursor_touches(primary, span.outer.clone()) {
+            let body = text.slice(span.body.clone());
+            let kind = if span.class == "md-math-inline" {
+                TypstKind::MathInline
+            } else {
+                TypstKind::MathBlock
+            };
+            if let Some(svg) = render_typst(kind, body) {
+                out.push(Decoration::replace(span.outer.clone()));
+                // `data-focus-pos` lets the JS click
+                // handler route a click on the widget
+                // back to a caret inside the source
+                // span, so the user can edit math by
+                // tapping the rendered output.
+                let html = format!(
+                    r#"<span class="{cls}" data-focus-pos="{pos}">{svg}</span>"#,
+                    cls = if kind == TypstKind::MathInline {
+                        "md-math-widget md-math-widget-inline"
+                    } else {
+                        "md-math-widget md-math-widget-block"
+                    },
+                    pos = span.body.start,
+                );
+                out.push(Decoration::widget(span.outer.start, html));
+                return true;
+            }
         }
+        // Source visible (caret on, or compile failed).
+        out.push(Decoration::mark(span.body.clone(), span.class));
+        return true;
     }
-    // Source visible (caret on, or compile failed).
-    out.push(Decoration::mark(span.body.clone(), span.class));
-    return true;
-}
     false
 }
 
@@ -1154,21 +1174,20 @@ fn decorate_embed_like_span(
         // brings its own preview (target page may live
         // anywhere); intra-doc hits read from this
         // doc's text directly.
-        let (preview, source_page, is_resolved) =
-            block_anchor_for_uuid(uuid).map_or_else(
-                || {
-                    if let Some(hit) = vault.and_then(|v| v.lookup_block(uuid)) {
-                        (hit.preview, Some(hit.page), true)
-                    } else {
-                        (
-                            format!("unresolved {}", uuid.before(8.min(uuid.len()))),
-                            None,
-                            false,
-                        )
-                    }
-                },
-                |anchor| (block_preview(text, anchor), None, true),
-            );
+        let (preview, source_page, is_resolved) = block_anchor_for_uuid(uuid).map_or_else(
+            || {
+                if let Some(hit) = vault.and_then(|v| v.lookup_block(uuid)) {
+                    (hit.preview, Some(hit.page), true)
+                } else {
+                    (
+                        format!("unresolved {}", uuid.before(8.min(uuid.len()))),
+                        None,
+                        false,
+                    )
+                }
+            },
+            |anchor| (block_preview(text, anchor), None, true),
+        );
         let cls = if is_resolved {
             "md-block-ref-chip"
         } else {
@@ -1192,21 +1211,20 @@ fn decorate_embed_like_span(
     // hidden-source treatment as block refs.
     if span.class == "md-block-embed" {
         let uuid = text.slice(span.body.clone());
-        let (content, source_page, is_resolved) =
-            block_anchor_for_uuid(uuid).map_or_else(
-                || {
-                    if let Some(hit) = vault.and_then(|v| v.lookup_block(uuid)) {
-                        (hit.preview, Some(hit.page), true)
-                    } else {
-                        (
-                            format!("unresolved {}", uuid.before(8.min(uuid.len()))),
-                            None,
-                            false,
-                        )
-                    }
-                },
-                |anchor| (block_preview(text, anchor), None, true),
-            );
+        let (content, source_page, is_resolved) = block_anchor_for_uuid(uuid).map_or_else(
+            || {
+                if let Some(hit) = vault.and_then(|v| v.lookup_block(uuid)) {
+                    (hit.preview, Some(hit.page), true)
+                } else {
+                    (
+                        format!("unresolved {}", uuid.before(8.min(uuid.len()))),
+                        None,
+                        false,
+                    )
+                }
+            },
+            |anchor| (block_preview(text, anchor), None, true),
+        );
         let cls = if is_resolved {
             "md-block-embed-card"
         } else {
@@ -1231,6 +1249,81 @@ fn decorate_embed_like_span(
     false
 }
 
+/// A `[[wikilink]]` alone on its line, resolved against the vault into a
+/// richer embed — a setlist card, a song strip, a scripture verse card, or an
+/// unresolved-page chip.
+///
+/// Returns `true` when it emitted an embed and the caller should stop; an
+/// inline wikilink (one with text around it) falls through to the ordinary
+/// link decoration. Split out of [`decorate_link_span`]; the body is
+/// unchanged.
+fn decorate_standalone_wikilink(
+    span: &Span,
+    text: &str,
+    primary: Range,
+    vault: Option<&dyn VaultLookup>,
+    href: Option<&str>,
+    strip_runs: &mut Option<std::collections::HashMap<usize, StripRunCtx>>,
+    out: &mut Vec<DecoratedRange>,
+) -> bool {
+    if span.class == "md-wikilink"
+        && !cursor_touches(primary, span.outer.clone())
+        && let Some(h2) = href
+    {
+        let page_part = h2.split(['#', '|']).next().unwrap_or(h2).trim();
+        let line_start = text
+            .before(span.outer.start)
+            .rfind('\n')
+            .map_or(0, |i| i.saturating_add(1));
+        let line_end = text
+            .after(span.outer.end)
+            .find('\n')
+            .map_or(text.len(), |i| span.outer.end.saturating_add(i));
+        let standalone = text.slice(line_start..span.outer.start).trim().is_empty()
+            && text.slice(span.outer.end..line_end).trim().is_empty();
+        if standalone {
+            if let Some(setlist) = vault.and_then(|v| v.lookup_setlist(page_part)) {
+                out.push(Decoration::replace(span.outer.clone()));
+                out.push(Decoration::widget(
+                    span.outer.start,
+                    setlist_card_html(page_part, &setlist),
+                ));
+                out.push(Decoration::atomic(span.outer.clone()));
+                return true;
+            }
+            if let Some(song) = vault.and_then(|v| v.lookup_song(page_part)) {
+                let ctx = strip_runs
+                    .get_or_insert_with(|| song_strip_runs(text, vault))
+                    .get(&line_start)
+                    .copied()
+                    .unwrap_or_default();
+                out.push(Decoration::replace(span.outer.clone()));
+                out.push(Decoration::widget(
+                    span.outer.start,
+                    song_strip_html(page_part, &song, ctx),
+                ));
+                out.push(Decoration::atomic(span.outer.clone()));
+                return true;
+            }
+            // VERSE CARD: a standalone scripture reference
+            // embeds the verse text. Real pages win (checked
+            // above via setlist/song; the general page check
+            // below keeps ordinary links untouched).
+            if vault.is_some_and(|v| v.lookup_page(page_part).is_none())
+                && let Some(sc) = vault.and_then(|v| v.lookup_scripture(page_part))
+            {
+                out.push(Decoration::replace(span.outer.clone()));
+                out.push(Decoration::widget(
+                    span.outer.start,
+                    scripture_card_html(page_part, &sc),
+                ));
+                out.push(Decoration::atomic(span.outer.clone()));
+                return true;
+            }
+        }
+    }
+    false
+}
 
 /// Decorate the link family — `[text](url)`, `[[wikilink]]` and their vault
 /// resolutions (song strips, setlist cards, scripture chips, contact cards).
@@ -1246,7 +1339,10 @@ fn decorate_link_span(
     out: &mut Vec<DecoratedRange>,
 ) {
     let href = match span.class {
-        "md-link" => Some(text.slice(span.body.end.saturating_add(2)..span.outer.end.saturating_sub(1)).to_string()),
+        "md-link" => Some(
+            text.slice(span.body.end.saturating_add(2)..span.outer.end.saturating_sub(1))
+                .to_string(),
+        ),
         "md-wikilink" => Some(text.slice(span.body.clone()).to_string()),
         _ => None,
     };
@@ -1270,55 +1366,9 @@ fn decorate_link_span(
     // artist · stems · duration, with a play control the host
     // wires via `data-href="song-play:<target>"`). Caret on the
     // line falls through to the normal editable link.
-    if span.class == "md-wikilink" && !cursor_touches(primary, span.outer.clone())
-        && let Some(h2) = href.as_deref() {
-            let page_part = h2.split(['#', '|']).next().unwrap_or(h2).trim();
-            let line_start = text.before(span.outer.start).rfind('\n').map_or(0, |i| i.saturating_add(1));
-            let line_end = text.after(span.outer.end)
-                .find('\n')
-                .map_or(text.len(), |i| span.outer.end.saturating_add(i));
-            let standalone = text.slice(line_start..span.outer.start).trim().is_empty()
-                && text.slice(span.outer.end..line_end).trim().is_empty();
-            if standalone {
-                if let Some(setlist) = vault.and_then(|v| v.lookup_setlist(page_part)) {
-                    out.push(Decoration::replace(span.outer.clone()));
-                    out.push(Decoration::widget(
-                        span.outer.start,
-                        setlist_card_html(page_part, &setlist),
-                    ));
-                    out.push(Decoration::atomic(span.outer.clone()));
-                    return;
-                }
-                if let Some(song) = vault.and_then(|v| v.lookup_song(page_part)) {
-                    let ctx = strip_runs
-                        .get_or_insert_with(|| song_strip_runs(text, vault))
-                        .get(&line_start)
-                        .copied()
-                        .unwrap_or_default();
-                    out.push(Decoration::replace(span.outer.clone()));
-                    out.push(Decoration::widget(
-                        span.outer.start,
-                        song_strip_html(page_part, &song, ctx),
-                    ));
-                    out.push(Decoration::atomic(span.outer.clone()));
-                    return;
-                }
-                // VERSE CARD: a standalone scripture reference
-                // embeds the verse text. Real pages win (checked
-                // above via setlist/song; the general page check
-                // below keeps ordinary links untouched).
-                if vault.is_some_and(|v| v.lookup_page(page_part).is_none())
-                    && let Some(sc) = vault.and_then(|v| v.lookup_scripture(page_part)) {
-                        out.push(Decoration::replace(span.outer.clone()));
-                        out.push(Decoration::widget(
-                            span.outer.start,
-                            scripture_card_html(page_part, &sc),
-                        ));
-                        out.push(Decoration::atomic(span.outer.clone()));
-                        return;
-                    }
-            }
-        }
+    if decorate_standalone_wikilink(span, text, primary, vault, href.as_deref(), strip_runs, out) {
+        return;
+    }
     if let Some(h) = href {
         // Wikilinks: consult the vault to decide
         // resolved (purple, default) vs unresolved
@@ -1427,14 +1477,15 @@ fn decorate_leaf_span(
         let body = text.slice(span.body.clone());
         if let Some(spec) = body.strip_prefix("kbd:")
             && !cursor_touches(primary, span.outer.clone())
-                && let Some(html) = kbd_widget_html(spec, kbd) {
-                    out.push(Decoration::replace(span.outer.clone()));
-                    out.push(Decoration::widget(span.outer.start, html));
-                    out.push(Decoration::atomic(span.outer.clone()));
-                    return true;
-                }
-            // Caret inside (or empty spec): fall through to the
-            // normal inline-code styling with raw source.
+            && let Some(html) = kbd_widget_html(spec, kbd)
+        {
+            out.push(Decoration::replace(span.outer.clone()));
+            out.push(Decoration::widget(span.outer.start, html));
+            out.push(Decoration::atomic(span.outer.clone()));
+            return true;
+        }
+        // Caret inside (or empty spec): fall through to the
+        // normal inline-code styling with raw source.
     }
     false
 }
@@ -1487,14 +1538,11 @@ fn emit_setext_and_block_id(
         // Index this block id against the byte offset of the
         // line above (its block content). Stashed for
         // cross-line resolution + the `🔗` widget.
-        register_block_id(
-            text.slice(uuid_range),
-            find_block_anchor(text, line_from),
-        );
+        register_block_id(text.slice(uuid_range), find_block_anchor(text, line_from));
         return true;
     }
-        false
-    }
+    false
+}
 
 /// Decorate the remaining block-level line kinds: horizontal rules,
 /// blockquotes and callouts, and list / task-list markers.
@@ -1511,147 +1559,150 @@ fn emit_block_line(
     callout_stack: &mut Vec<&'static str>,
     out: &mut Vec<DecoratedRange>,
 ) {
-if is_hr(line) {
-    // Two states:
-    //   `md-hr-active` while the caret is on the line —
-    //     just dim the `---` text, leave it on one row
-    //     so the user can edit it.
-    //   `md-hr` otherwise — hide the text bytes and let
-    //     CSS render a single-row horizontal rule via
-    //     the line's own border-top.
-    if cursor_touches(primary, line_from..line_to) {
-        out.push(Decoration::line(line_from, "md-hr-active"));
-    } else {
-        out.push(Decoration::line(line_from, "md-hr"));
-        out.push(Decoration::replace(line_from..line_to));
-    }
-    return;
-}
-
-// ── Task list ──────────────────────────────────────
-if let Some((prefix_end, checked)) = parse_task_marker(line) {
-    let abs_prefix_end = line_from.saturating_add(prefix_end);
-    out.push(Decoration::line(line_from, "md-task"));
-    // The checkbox widget is always emitted so it stays
-    // clickable regardless of caret position. The source
-    // bytes are hidden via Replace only when the caret is
-    // off the line — when the user is editing the line
-    // we keep them visible so they can mutate the marker
-    // directly and clicks/motions land on real text.
-    let html = if checked {
-        format!(
-            r#"<span class="md-task-checkbox checked" data-task-pos="{line_from}">✓</span>"#
-        )
-    } else {
-        format!(r#"<span class="md-task-checkbox" data-task-pos="{line_from}"></span>"#)
-    };
-    // Two states: source-visible when the caret is on
-    // the line (so `- [ ]` is editable), checkbox-widget
-    // otherwise. Rendering both at once gave you the
-    // checkbox + the literal source overlapping.
-    if cursor_touches(primary, line_from..line_to) {
-        out.push(Decoration::mark(
-            line_from..abs_prefix_end,
-            "md-task-marker-active",
-        ));
-    } else {
-        out.push(Decoration::replace(line_from..abs_prefix_end));
-        out.push(Decoration::widget(line_from, html));
-    }
-    return;
-}
-
-// ── Blockquote / Callout (with nesting) ────────────
-if let Some((depth, marker_end)) = parse_blockquote_depth(line) {
-    let abs_marker_end = line_from.saturating_add(marker_end);
-    // Lines with fewer `>` markers close any deeper
-    // callouts. e.g. on `> > body` after `> [!a]\n> >
-    // [!b]\n> >body` we'd be at depth 2 still — only a
-    // depth-1 or 0 line pops back.
-    while callout_stack.len() > depth {
-        callout_stack.pop();
-    }
-    let after_marker = line.after(marker_end);
-    // Callout header at the deepest open level.
-    if let Some((kind, header_end_off)) = parse_callout_header(after_marker) {
-        // Extend the stack with synthetic ancestors if
-        // the user opens a depth-3 callout without
-        // having opened a depth-2 first. Real docs
-        // almost never hit this; the fallback keeps
-        // indexing safe.
-        while callout_stack.len() < depth.saturating_sub(1) {
-            callout_stack.push("note");
+    if is_hr(line) {
+        // Two states:
+        //   `md-hr-active` while the caret is on the line —
+        //     just dim the `---` text, leave it on one row
+        //     so the user can edit it.
+        //   `md-hr` otherwise — hide the text bytes and let
+        //     CSS render a single-row horizontal rule via
+        //     the line's own border-top.
+        if cursor_touches(primary, line_from..line_to) {
+            out.push(Decoration::line(line_from, "md-hr-active"));
+        } else {
+            out.push(Decoration::line(line_from, "md-hr"));
+            out.push(Decoration::replace(line_from..line_to));
         }
-        if callout_stack.len() == depth.saturating_sub(1) {
-            callout_stack.push(kind);
-        } else if let Some(slot) = callout_stack.get_mut(depth.saturating_sub(1)) {
-            *slot = kind;
+        return;
+    }
+
+    // ── Task list ──────────────────────────────────────
+    if let Some((prefix_end, checked)) = parse_task_marker(line) {
+        let abs_prefix_end = line_from.saturating_add(prefix_end);
+        out.push(Decoration::line(line_from, "md-task"));
+        // The checkbox widget is always emitted so it stays
+        // clickable regardless of caret position. The source
+        // bytes are hidden via Replace only when the caret is
+        // off the line — when the user is editing the line
+        // we keep them visible so they can mutate the marker
+        // directly and clicks/motions land on real text.
+        let html = if checked {
+            format!(
+                r#"<span class="md-task-checkbox checked" data-task-pos="{line_from}">✓</span>"#
+            )
+        } else {
+            format!(r#"<span class="md-task-checkbox" data-task-pos="{line_from}"></span>"#)
+        };
+        // Two states: source-visible when the caret is on
+        // the line (so `- [ ]` is editable), checkbox-widget
+        // otherwise. Rendering both at once gave you the
+        // checkbox + the literal source overlapping.
+        if cursor_touches(primary, line_from..line_to) {
+            out.push(Decoration::mark(
+                line_from..abs_prefix_end,
+                "md-task-marker-active",
+            ));
+        } else {
+            out.push(Decoration::replace(line_from..abs_prefix_end));
+            out.push(Decoration::widget(line_from, html));
         }
-        let line_class = callout_class(kind, true);
+        return;
+    }
+
+    // ── Blockquote / Callout (with nesting) ────────────
+    if let Some((depth, marker_end)) = parse_blockquote_depth(line) {
+        let abs_marker_end = line_from.saturating_add(marker_end);
+        // Lines with fewer `>` markers close any deeper
+        // callouts. e.g. on `> > body` after `> [!a]\n> >
+        // [!b]\n> >body` we'd be at depth 2 still — only a
+        // depth-1 or 0 line pops back.
+        while callout_stack.len() > depth {
+            callout_stack.pop();
+        }
+        let after_marker = line.after(marker_end);
+        // Callout header at the deepest open level.
+        if let Some((kind, header_end_off)) = parse_callout_header(after_marker) {
+            // Extend the stack with synthetic ancestors if
+            // the user opens a depth-3 callout without
+            // having opened a depth-2 first. Real docs
+            // almost never hit this; the fallback keeps
+            // indexing safe.
+            while callout_stack.len() < depth.saturating_sub(1) {
+                callout_stack.push("note");
+            }
+            if callout_stack.len() == depth.saturating_sub(1) {
+                callout_stack.push(kind);
+            } else if let Some(slot) = callout_stack.get_mut(depth.saturating_sub(1)) {
+                *slot = kind;
+            }
+            let line_class = callout_class(kind, true);
+            out.push(Decoration::line(line_from, line_class));
+            if depth > 1 {
+                out.push(Decoration::line(line_from, callout_depth_class(depth)));
+            }
+            // Hide the `> > [!type] Title` markers when
+            // caret is off the line — the line class draws
+            // the icon / title styling instead. The marker
+            // span covers all `>` chars + their spaces.
+            let abs_header_end = abs_marker_end.saturating_add(header_end_off);
+            if !cursor_touches(primary, line_from..line_to) {
+                out.push(Decoration::mark(
+                    line_from..abs_marker_end,
+                    "md-quote-marker",
+                ));
+                out.push(Decoration::replace(abs_marker_end..abs_header_end));
+            }
+            return;
+        }
+        // Plain blockquote or callout body — pick the kind
+        // of the deepest currently-open callout (if any).
+        let line_class = callout_stack
+            .last()
+            .copied()
+            .map_or("md-blockquote", |kind| callout_class(kind, false));
         out.push(Decoration::line(line_from, line_class));
         if depth > 1 {
             out.push(Decoration::line(line_from, callout_depth_class(depth)));
         }
-        // Hide the `> > [!type] Title` markers when
-        // caret is off the line — the line class draws
-        // the icon / title styling instead. The marker
-        // span covers all `>` chars + their spaces.
-        let abs_header_end = abs_marker_end.saturating_add(header_end_off);
         if !cursor_touches(primary, line_from..line_to) {
             out.push(Decoration::mark(
                 line_from..abs_marker_end,
                 "md-quote-marker",
             ));
-            out.push(Decoration::replace(abs_marker_end..abs_header_end));
         }
         return;
     }
-    // Plain blockquote or callout body — pick the kind
-    // of the deepest currently-open callout (if any).
-    let line_class = callout_stack.last().copied().map_or("md-blockquote", |kind| callout_class(kind, false));
-    out.push(Decoration::line(line_from, line_class));
-    if depth > 1 {
-        out.push(Decoration::line(line_from, callout_depth_class(depth)));
-    }
-    if !cursor_touches(primary, line_from..line_to) {
-        out.push(Decoration::mark(
-            line_from..abs_marker_end,
-            "md-quote-marker",
-        ));
-    }
-    return;
-}
-// A line without `>` drains the whole nesting stack.
-callout_stack.clear();
+    // A line without `>` drains the whole nesting stack.
+    callout_stack.clear();
 
-// ── List (unordered or ordered) ────────────────────
-if let Some(marker_end) = parse_list_marker(line) {
-    let abs_marker_end = line_from.saturating_add(marker_end);
-    out.push(Decoration::line(line_from, "md-list-item"));
-    // Caret on the line: keep the raw `- ` / `1. ` source
-    // visible (muted) so clicks land on real text and vim
-    // motions don't fall through the Replace into the
-    // line-tile end fallback. Off the line: hide source
-    // and render the bullet/number widget.
-    if cursor_touches(primary, line_from..line_to) {
-        out.push(Decoration::mark(
-            line_from..abs_marker_end,
-            "md-list-marker-active",
-        ));
-    } else {
-        let kind_byte = line.trim_start().as_bytes().at(0);
-        let widget_html = if kind_byte.is_ascii_digit() {
-            let leading = line.len().saturating_sub(line.trim_start().len());
-            let num_end = marker_end.saturating_sub(2).saturating_sub(leading);
-            let num = line.trim_start().before(num_end);
-            format!(r#"<span class="md-list-marker">{num}.&nbsp;</span>"#)
+    // ── List (unordered or ordered) ────────────────────
+    if let Some(marker_end) = parse_list_marker(line) {
+        let abs_marker_end = line_from.saturating_add(marker_end);
+        out.push(Decoration::line(line_from, "md-list-item"));
+        // Caret on the line: keep the raw `- ` / `1. ` source
+        // visible (muted) so clicks land on real text and vim
+        // motions don't fall through the Replace into the
+        // line-tile end fallback. Off the line: hide source
+        // and render the bullet/number widget.
+        if cursor_touches(primary, line_from..line_to) {
+            out.push(Decoration::mark(
+                line_from..abs_marker_end,
+                "md-list-marker-active",
+            ));
         } else {
-            r#"<span class="md-list-marker">-&nbsp;</span>"#.into()
-        };
-        out.push(Decoration::replace(line_from..abs_marker_end));
-        out.push(Decoration::widget(line_from, widget_html));
+            let kind_byte = line.trim_start().as_bytes().at(0);
+            let widget_html = if kind_byte.is_ascii_digit() {
+                let leading = line.len().saturating_sub(line.trim_start().len());
+                let num_end = marker_end.saturating_sub(2).saturating_sub(leading);
+                let num = line.trim_start().before(num_end);
+                format!(r#"<span class="md-list-marker">{num}.&nbsp;</span>"#)
+            } else {
+                r#"<span class="md-list-marker">-&nbsp;</span>"#.into()
+            };
+            out.push(Decoration::replace(line_from..abs_marker_end));
+            out.push(Decoration::widget(line_from, widget_html));
+        }
     }
-}
 }
 
 /// What the note's frontmatter declares it to be — the two document kinds
@@ -1686,69 +1737,69 @@ fn emit_heading(
         is_event: doc_is_event,
         event_date,
     } = doc;
-if let Some((level, marker_end)) = parse_heading(line) {
-    let abs_marker_end = line_from.saturating_add(marker_end);
-    if doc_is_setlist
-        && level == 1
-        && !(*setlist_h1_done)
-        && !cursor_touches(primary, line_from..line_to)
-    {
-        (*setlist_h1_done) = true;
-        let title = html_escape(line.after(marker_end).trim());
-        out.push(Decoration::replace(line_from..line_to));
-        out.push(Decoration::widget(
+    if let Some((level, marker_end)) = parse_heading(line) {
+        let abs_marker_end = line_from.saturating_add(marker_end);
+        if doc_is_setlist
+            && level == 1
+            && !(*setlist_h1_done)
+            && !cursor_touches(primary, line_from..line_to)
+        {
+            (*setlist_h1_done) = true;
+            let title = html_escape(line.after(marker_end).trim());
+            out.push(Decoration::replace(line_from..line_to));
+            out.push(Decoration::widget(
             line_from,
             format!(
                 r#"<span class="md-setlist-header"><span class="md-setlist-art">🎵</span><span class="md-setlist-titles"><span class="md-setlist-title">{title}</span><span class="md-setlist-kind">Setlist</span></span><span class="md-setlist-playbtn" data-href="setlist-play:">▶</span><span class="md-setlist-openbtn" data-href="setlist-open:">Open</span></span>"#
             ),
         ));
-        out.push(Decoration::atomic(line_from..line_to));
-        return true;
-    }
-    if doc_is_event
-        && level == 1
-        && !(*setlist_h1_done)
-        && !cursor_touches(primary, line_from..line_to)
-    {
-        (*setlist_h1_done) = true;
-        let title = html_escape(line.after(marker_end).trim());
-        let date = html_escape(event_date);
-        let date_html = if date.is_empty() {
-            String::new()
-        } else {
-            format!(r#"<span class="md-event-date">{date}</span>"#)
-        };
-        out.push(Decoration::replace(line_from..line_to));
-        out.push(Decoration::widget(
+            out.push(Decoration::atomic(line_from..line_to));
+            return true;
+        }
+        if doc_is_event
+            && level == 1
+            && !(*setlist_h1_done)
+            && !cursor_touches(primary, line_from..line_to)
+        {
+            (*setlist_h1_done) = true;
+            let title = html_escape(line.after(marker_end).trim());
+            let date = html_escape(event_date);
+            let date_html = if date.is_empty() {
+                String::new()
+            } else {
+                format!(r#"<span class="md-event-date">{date}</span>"#)
+            };
+            out.push(Decoration::replace(line_from..line_to));
+            out.push(Decoration::widget(
             line_from,
             format!(
                 r#"<span class="md-setlist-header md-event-header"><span class="md-setlist-art">📅</span><span class="md-setlist-titles"><span class="md-setlist-title">{title}</span><span class="md-setlist-kind">Event{date_sep}{date_html}</span></span></span>"#,
                 date_sep = if date.is_empty() { "" } else { " · " },
             ),
         ));
-        out.push(Decoration::atomic(line_from..line_to));
+            out.push(Decoration::atomic(line_from..line_to));
+            return true;
+        }
+        if (doc_is_setlist || doc_is_event) && level == 1 && !(*setlist_h1_done) {
+            // Caret on the title: keep it editable, but mark it
+            // consumed so a SECOND h1 renders normally.
+            (*setlist_h1_done) = true;
+        }
+        let class = heading_class(level);
+        out.push(Decoration::line(line_from, class));
+        // Marker stays visible (muted) any time the caret
+        // is anywhere on the line — typing inside the
+        // heading body shouldn't make the marker disappear.
+        if cursor_touches(primary, line_from..line_to) {
+            out.push(Decoration::mark(
+                line_from..abs_marker_end,
+                "md-heading-marker",
+            ));
+        } else {
+            out.push(Decoration::replace(line_from..abs_marker_end));
+        }
         return true;
     }
-    if (doc_is_setlist || doc_is_event) && level == 1 && !(*setlist_h1_done) {
-        // Caret on the title: keep it editable, but mark it
-        // consumed so a SECOND h1 renders normally.
-        (*setlist_h1_done) = true;
-    }
-    let class = heading_class(level);
-    out.push(Decoration::line(line_from, class));
-    // Marker stays visible (muted) any time the caret
-    // is anywhere on the line — typing inside the
-    // heading body shouldn't make the marker disappear.
-    if cursor_touches(primary, line_from..line_to) {
-        out.push(Decoration::mark(
-            line_from..abs_marker_end,
-            "md-heading-marker",
-        ));
-    } else {
-        out.push(Decoration::replace(line_from..abs_marker_end));
-    }
-    return true;
-}
     false
 }
 
@@ -1769,83 +1820,83 @@ fn emit_rendered_fence(
     out: &mut Vec<DecoratedRange>,
 ) -> bool {
     let (mc, mlen) = marker;
-if info.eq_ignore_ascii_case("typst")
-    || info.eq_ignore_ascii_case("mermaid")
-    || info.eq_ignore_ascii_case("kf")
-    || info.eq_ignore_ascii_case("kf+")
-    || info.eq_ignore_ascii_case("kf-")
-    || info.eq_ignore_ascii_case("tabs")
-{
-    let body_end = find_fence_close(text, content_start, mc, mlen);
-    let body = text.slice(content_start..body_end);
-    // Extend the replace range to cover the closing
-    // ``` line so the rendered output stands alone
-    // when caret is away.
-    let bytes = text.as_bytes();
-    let mut close_end = body_end;
-    while close_end < bytes.len() && bytes.at(close_end) != b'\n' {
-        close_end = close_end.saturating_add(1);
-    }
-    let fence_range = line_from..close_end;
-    if !cursor_touches(primary, fence_range.clone()) && !body.trim().is_empty() {
-        let is_mermaid = info.eq_ignore_ascii_case("mermaid");
-        // The keyflow fence family — the AUTHOR picks per
-        // snippet what shows, portable in the markdown:
-        //   ```kf   → engraved chart only (default)
-        //   ```kf+  → chart AND keyflow-highlighted source
-        //   ```kf-  → highlighted source only, no chart
-        // All three shed the code frame and carry a header
-        // (the `kf` tag + a copy button, top-right). kf/kf+
-        // also get a `</>` hover toggle to flip the source.
-        let kf_kind = if info.eq_ignore_ascii_case("kf") {
-            Some((false, true)) // (show_source, has_chart)
-        } else if info.eq_ignore_ascii_case("kf+") {
-            Some((true, true))
-        } else if info.eq_ignore_ascii_case("kf-") {
-            Some((true, false))
-        } else {
-            None
-        };
-        if let Some((show_source, has_chart)) = kf_kind {
-            // Chart (kf/kf+) needs a successful engrave;
-            // source-only (kf-) always renders.
-            let svg = if has_chart {
-                render_keyflow(body)
+    if info.eq_ignore_ascii_case("typst")
+        || info.eq_ignore_ascii_case("mermaid")
+        || info.eq_ignore_ascii_case("kf")
+        || info.eq_ignore_ascii_case("kf+")
+        || info.eq_ignore_ascii_case("kf-")
+        || info.eq_ignore_ascii_case("tabs")
+    {
+        let body_end = find_fence_close(text, content_start, mc, mlen);
+        let body = text.slice(content_start..body_end);
+        // Extend the replace range to cover the closing
+        // ``` line so the rendered output stands alone
+        // when caret is away.
+        let bytes = text.as_bytes();
+        let mut close_end = body_end;
+        while close_end < bytes.len() && bytes.at(close_end) != b'\n' {
+            close_end = close_end.saturating_add(1);
+        }
+        let fence_range = line_from..close_end;
+        if !cursor_touches(primary, fence_range.clone()) && !body.trim().is_empty() {
+            let is_mermaid = info.eq_ignore_ascii_case("mermaid");
+            // The keyflow fence family — the AUTHOR picks per
+            // snippet what shows, portable in the markdown:
+            //   ```kf   → engraved chart only (default)
+            //   ```kf+  → chart AND keyflow-highlighted source
+            //   ```kf-  → highlighted source only, no chart
+            // All three shed the code frame and carry a header
+            // (the `kf` tag + a copy button, top-right). kf/kf+
+            // also get a `</>` hover toggle to flip the source.
+            let kf_kind = if info.eq_ignore_ascii_case("kf") {
+                Some((false, true)) // (show_source, has_chart)
+            } else if info.eq_ignore_ascii_case("kf+") {
+                Some((true, true))
+            } else if info.eq_ignore_ascii_case("kf-") {
+                Some((true, false))
             } else {
                 None
             };
-            if has_chart && svg.is_none() {
-                // Bad chart source — leave the raw fence
-                // (falls through to the code path below).
-            } else {
-                let show = if show_source {
-                    " md-keyflow-show-source"
+            if let Some((show_source, has_chart)) = kf_kind {
+                // Chart (kf/kf+) needs a successful engrave;
+                // source-only (kf-) always renders.
+                let svg = if has_chart {
+                    render_keyflow(body)
                 } else {
-                    ""
+                    None
                 };
-                let only = if has_chart {
-                    ""
+                if has_chart && svg.is_none() {
+                    // Bad chart source — leave the raw fence
+                    // (falls through to the code path below).
                 } else {
-                    " md-keyflow-source-only"
-                };
-                // Header (fence tag + copy, plus the source
-                // toggle when a chart is present). It lives
-                // INSIDE the display block — the chart's
-                // top-right corner (or the source block's,
-                // when there's no chart) — anchored there,
-                // not overlaid on the widget. Copy grabs the
-                // raw body.
-                let toggle = if has_chart {
-                    r#"<button type="button" class="md-keyflow-toggle" title="Show source">&lt;/&gt;</button>"#
-                } else {
-                    ""
-                };
-                let header = format!(
-                    r#"<div class="md-keyflow-header"><span class="md-keyflow-lang">{tag}</span><button class="md-code-copy" data-copy-from="{content_start}" data-copy-to="{body_end}" title="Copy">⧉</button>{toggle}</div>"#,
-                    tag = escape_html(info),
-                );
-                let highlighted = keyflow::highlight_keyflow(body);
-                let html = svg.map_or_else(
+                    let show = if show_source {
+                        " md-keyflow-show-source"
+                    } else {
+                        ""
+                    };
+                    let only = if has_chart {
+                        ""
+                    } else {
+                        " md-keyflow-source-only"
+                    };
+                    // Header (fence tag + copy, plus the source
+                    // toggle when a chart is present). It lives
+                    // INSIDE the display block — the chart's
+                    // top-right corner (or the source block's,
+                    // when there's no chart) — anchored there,
+                    // not overlaid on the widget. Copy grabs the
+                    // raw body.
+                    let toggle = if has_chart {
+                        r#"<button type="button" class="md-keyflow-toggle" title="Show source">&lt;/&gt;</button>"#
+                    } else {
+                        ""
+                    };
+                    let header = format!(
+                        r#"<div class="md-keyflow-header"><span class="md-keyflow-lang">{tag}</span><button class="md-code-copy" data-copy-from="{content_start}" data-copy-to="{body_end}" title="Copy">⧉</button>{toggle}</div>"#,
+                        tag = escape_html(info),
+                    );
+                    let highlighted = keyflow::highlight_keyflow(body);
+                    let html = svg.map_or_else(
                     || {
                         // Source only: header anchors to the
                         // source block's top-right.
@@ -1862,46 +1913,46 @@ if info.eq_ignore_ascii_case("typst")
                         )
                     },
                 );
-                out.push(Decoration::replace(fence_range.clone()));
-                out.push(Decoration::widget(fence_range.start, html));
-            }
-        } else if info.eq_ignore_ascii_case("tabs") {
-            // ```tabs — split the body into `=== Tab`
-            // panels and render one self-contained,
-            // CSS-only tab widget (hidden radios +
-            // `<label>` strip + `:checked ~ .panel`
-            // rules — no JS, since the widget is a
-            // static injected HTML string). The scope
-            // hash folds in `content_start` so two
-            // blocks never share a radio group.
-            if let Some(inner) = render_tabs(body, content_start) {
-                let html = format!(
-                    r#"<div class="md-tabs-widget" data-focus-pos="{content_start}">{inner}</div>"#,
-                );
-                out.push(Decoration::replace(fence_range.clone()));
-                out.push(Decoration::widget(fence_range.start, html));
-            }
-        } else {
-            let svg = if is_mermaid {
-                render_mermaid(body)
+                    out.push(Decoration::replace(fence_range.clone()));
+                    out.push(Decoration::widget(fence_range.start, html));
+                }
+            } else if info.eq_ignore_ascii_case("tabs") {
+                // ```tabs — split the body into `=== Tab`
+                // panels and render one self-contained,
+                // CSS-only tab widget (hidden radios +
+                // `<label>` strip + `:checked ~ .panel`
+                // rules — no JS, since the widget is a
+                // static injected HTML string). The scope
+                // hash folds in `content_start` so two
+                // blocks never share a radio group.
+                if let Some(inner) = render_tabs(body, content_start) {
+                    let html = format!(
+                        r#"<div class="md-tabs-widget" data-focus-pos="{content_start}">{inner}</div>"#,
+                    );
+                    out.push(Decoration::replace(fence_range.clone()));
+                    out.push(Decoration::widget(fence_range.start, html));
+                }
             } else {
-                render_typst(TypstKind::Block, body)
-            };
-            if let Some(svg) = svg {
-                let class = if is_mermaid {
-                    "md-mermaid-widget"
+                let svg = if is_mermaid {
+                    render_mermaid(body)
                 } else {
-                    "md-typst-widget"
+                    render_typst(TypstKind::Block, body)
                 };
-                let html = format!(
-                    r#"<div class="{class}" data-focus-pos="{content_start}">{svg}</div>"#,
-                );
-                out.push(Decoration::replace(fence_range.clone()));
-                out.push(Decoration::widget(fence_range.start, html));
+                if let Some(svg) = svg {
+                    let class = if is_mermaid {
+                        "md-mermaid-widget"
+                    } else {
+                        "md-typst-widget"
+                    };
+                    let html = format!(
+                        r#"<div class="{class}" data-focus-pos="{content_start}">{svg}</div>"#,
+                    );
+                    out.push(Decoration::replace(fence_range.clone()));
+                    out.push(Decoration::widget(fence_range.start, html));
+                }
             }
         }
     }
-}
     false
 }
 
@@ -1923,68 +1974,76 @@ fn open_fence_at_line(
     fence: &mut Option<(usize, u8, usize, bool)>,
     out: &mut Vec<DecoratedRange>,
 ) -> bool {
-if let Some((mc, mlen, info_start)) = opens_fence(trimmed) {
-    let info_peek = trimmed.after(info_start).trim();
-    let is_kf_fence = info_peek.eq_ignore_ascii_case("kf")
-        || info_peek.eq_ignore_ascii_case("kf+")
-        || info_peek.eq_ignore_ascii_case("kf-");
-    out.push(Decoration::line(line_from, "md-code-block"));
-    if is_kf_fence {
-        out.push(Decoration::line(line_from, "md-keyflow-bare"));
-    }
-    let caret_on_opener = cursor_touches(primary, line_from..line_to);
-    // Caret on opener: leave the `\`\`\`lang` source
-    // visible so it's editable. Off: hide source +
-    // overlay the lang/copy widget.
-    if !caret_on_opener {
-        out.push(Decoration::replace(line_from..line_to));
-    }
-    let info = trimmed.after(info_start).trim();
-    let content_start = if line_to < text.len() {
-        line_to.saturating_add(1)
-    } else {
-        line_to
-    };
-    *fence = Some((line_from, mc, mlen, is_kf_fence));
-    // The lang+copy header overlays the opener line for
-    // ordinary code fences. Skip it for fences we
-    // render as a widget (typst, mermaid) — the
-    // rendered SVG already speaks for itself, and the
-    // floating header would be a leftover when the user
-    // moves the caret onto the fence to edit source.
-    // Keyflow fences build their own header (tag + copy) inside
-    // the widget, so skip the absolute-positioned code header
-    // that ordinary fences overlay.
-    let is_rendered_fence = info.eq_ignore_ascii_case("typst")
-        || info.eq_ignore_ascii_case("mermaid")
-        || info.eq_ignore_ascii_case("kf")
-        || info.eq_ignore_ascii_case("kf+")
-        || info.eq_ignore_ascii_case("kf-")
-        || info.eq_ignore_ascii_case("tabs");
-    if !caret_on_opener && !is_rendered_fence {
-        let body_end_estimate = find_fence_close(text, content_start, mc, mlen);
-        let header_html = format!(
-            r#"<span class="md-code-header"><span class="md-code-lang">{lang}</span><button class="md-code-copy" data-copy-from="{from}" data-copy-to="{to}" title="Copy">⧉</button></span>"#,
-            lang = if info.is_empty() { "plain" } else { info },
-            from = content_start,
-            to = body_end_estimate,
-        );
-        out.push(Decoration::widget(line_from, header_html));
-    }
-    if let Some(lang) = editor_syntax::Lang::from_fence_tag(info) {
-        emit_fence_tokens(text, content_start, mc, mlen, lang, out);
-    }
-    // ```typst — render the body as a Typst document
-    // and emit a single SVG widget on the closing fence
-    // line so the rendered output sits below the source
-    // code. Skip when the caret is anywhere inside the
-    // fence range (so the user sees the raw source while
-    // editing).
-    if emit_rendered_fence(text, info, line_from, content_start, (mc, mlen), primary, out) {
+    if let Some((mc, mlen, info_start)) = opens_fence(trimmed) {
+        let info_peek = trimmed.after(info_start).trim();
+        let is_kf_fence = info_peek.eq_ignore_ascii_case("kf")
+            || info_peek.eq_ignore_ascii_case("kf+")
+            || info_peek.eq_ignore_ascii_case("kf-");
+        out.push(Decoration::line(line_from, "md-code-block"));
+        if is_kf_fence {
+            out.push(Decoration::line(line_from, "md-keyflow-bare"));
+        }
+        let caret_on_opener = cursor_touches(primary, line_from..line_to);
+        // Caret on opener: leave the `\`\`\`lang` source
+        // visible so it's editable. Off: hide source +
+        // overlay the lang/copy widget.
+        if !caret_on_opener {
+            out.push(Decoration::replace(line_from..line_to));
+        }
+        let info = trimmed.after(info_start).trim();
+        let content_start = if line_to < text.len() {
+            line_to.saturating_add(1)
+        } else {
+            line_to
+        };
+        *fence = Some((line_from, mc, mlen, is_kf_fence));
+        // The lang+copy header overlays the opener line for
+        // ordinary code fences. Skip it for fences we
+        // render as a widget (typst, mermaid) — the
+        // rendered SVG already speaks for itself, and the
+        // floating header would be a leftover when the user
+        // moves the caret onto the fence to edit source.
+        // Keyflow fences build their own header (tag + copy) inside
+        // the widget, so skip the absolute-positioned code header
+        // that ordinary fences overlay.
+        let is_rendered_fence = info.eq_ignore_ascii_case("typst")
+            || info.eq_ignore_ascii_case("mermaid")
+            || info.eq_ignore_ascii_case("kf")
+            || info.eq_ignore_ascii_case("kf+")
+            || info.eq_ignore_ascii_case("kf-")
+            || info.eq_ignore_ascii_case("tabs");
+        if !caret_on_opener && !is_rendered_fence {
+            let body_end_estimate = find_fence_close(text, content_start, mc, mlen);
+            let header_html = format!(
+                r#"<span class="md-code-header"><span class="md-code-lang">{lang}</span><button class="md-code-copy" data-copy-from="{from}" data-copy-to="{to}" title="Copy">⧉</button></span>"#,
+                lang = if info.is_empty() { "plain" } else { info },
+                from = content_start,
+                to = body_end_estimate,
+            );
+            out.push(Decoration::widget(line_from, header_html));
+        }
+        if let Some(lang) = editor_syntax::Lang::from_fence_tag(info) {
+            emit_fence_tokens(text, content_start, mc, mlen, lang, out);
+        }
+        // ```typst — render the body as a Typst document
+        // and emit a single SVG widget on the closing fence
+        // line so the rendered output sits below the source
+        // code. Skip when the caret is anywhere inside the
+        // fence range (so the user sees the raw source while
+        // editing).
+        if emit_rendered_fence(
+            text,
+            info,
+            line_from,
+            content_start,
+            (mc, mlen),
+            primary,
+            out,
+        ) {
+            return true;
+        }
         return true;
     }
-    return true;
-}
     false
 }
 
@@ -2196,9 +2255,10 @@ fn scan_blocks(
         // and `key: value` lines aren't matched against block
         // patterns.
         if let Some(r) = &frontmatter_range
-            && line_from < r.end {
-                continue;
-            }
+            && line_from < r.end
+        {
+            continue;
+        }
 
         // ── Table (GFM pipe table) ─────────────────────────
         //
@@ -2248,15 +2308,7 @@ fn scan_blocks(
 
         // ── Starting a fence ───────────────────────────────
         let trimmed = line.trim_start();
-        if open_fence_at_line(
-            text,
-            trimmed,
-            line_from,
-            line_to,
-            primary,
-            &mut fence,
-            out,
-        ) {
+        if open_fence_at_line(text, trimmed, line_from, line_to, primary, &mut fence, out) {
             continue;
         }
 
@@ -2278,14 +2330,7 @@ fn scan_blocks(
         }
 
         // ── HR ─────────────────────────────────────────────
-        emit_block_line(
-            line,
-            line_from,
-            line_to,
-            primary,
-            &mut callout_stack,
-            out,
-        );
+        emit_block_line(line, line_from, line_to, primary, &mut callout_stack, out);
     }
 
     // EOF with unclosed fence — close it implicitly at doc end so
@@ -2490,61 +2535,72 @@ fn render_table_cell(cell: &str) -> String {
     while i < b.len() {
         // `code` — first, so nothing inside is interpreted.
         if b.at(i) == b'`'
-            && let Some(end) = cell.after(i.saturating_add(1)).find('`') {
-                let body = cell.slice(i.saturating_add(1)..i.saturating_add(1).saturating_add(end));
-                out.push_str(r#"<code class="md-code">"#);
-                out.push_str(&html_escape(body));
-                out.push_str("</code>");
-                i = i.saturating_add(end.saturating_add(2));
-                continue;
-            }
+            && let Some(end) = cell.after(i.saturating_add(1)).find('`')
+        {
+            let body = cell.slice(i.saturating_add(1)..i.saturating_add(1).saturating_add(end));
+            out.push_str(r#"<code class="md-code">"#);
+            out.push_str(&html_escape(body));
+            out.push_str("</code>");
+            i = i.saturating_add(end.saturating_add(2));
+            continue;
+        }
 
         // [[wikilink]] and [[target|label]]
         if cell.after(i).starts_with("[[")
-            && let Some(end) = cell.after(i.saturating_add(2)).find("]]") {
-                let body = cell.slice(i.saturating_add(2)..i.saturating_add(2).saturating_add(end));
-                let (target, label) = body.split_once('|').unwrap_or((body, body));
-                let _ = write!(
-                    out,
-                    r#"<span class="md-wikilink" data-href="{}">{}</span>"#,
-                    html_escape(target.trim()),
-                    html_escape(label.trim())
-                );
-                i = i.saturating_add(end.saturating_add(4));
-                continue;
-            }
+            && let Some(end) = cell.after(i.saturating_add(2)).find("]]")
+        {
+            let body = cell.slice(i.saturating_add(2)..i.saturating_add(2).saturating_add(end));
+            let (target, label) = body.split_once('|').unwrap_or((body, body));
+            let _ = write!(
+                out,
+                r#"<span class="md-wikilink" data-href="{}">{}</span>"#,
+                html_escape(target.trim()),
+                html_escape(label.trim())
+            );
+            i = i.saturating_add(end.saturating_add(4));
+            continue;
+        }
 
         // [text](url)
         if b.at(i) == b'['
-            && let Some(close) = cell.after(i.saturating_add(1)).find(']') {
-                let rest = cell.after(i.saturating_add(1).saturating_add(close).saturating_add(1));
-                if rest.starts_with('(')
-                    && let Some(paren) = rest.find(')') {
-                        let text = cell.slice(i.saturating_add(1)..i.saturating_add(1).saturating_add(close));
-                        let href = rest.slice(1..paren);
-                        let _ = write!(
-                            out,
-                            r#"<a class="md-link" href="{}" data-href="{}">{}</a>"#,
-                            html_escape(href),
-                            html_escape(href),
-                            html_escape(text)
-                        );
-                        // past "[", the link text, "](", the href and ")"
-                        i = i.saturating_add(close).saturating_add(paren).saturating_add(3);
-                        continue;
-                    }
+            && let Some(close) = cell.after(i.saturating_add(1)).find(']')
+        {
+            let rest = cell.after(i.saturating_add(1).saturating_add(close).saturating_add(1));
+            if rest.starts_with('(')
+                && let Some(paren) = rest.find(')')
+            {
+                let text =
+                    cell.slice(i.saturating_add(1)..i.saturating_add(1).saturating_add(close));
+                let href = rest.slice(1..paren);
+                let _ = write!(
+                    out,
+                    r#"<a class="md-link" href="{}" data-href="{}">{}</a>"#,
+                    html_escape(href),
+                    html_escape(href),
+                    html_escape(text)
+                );
+                // past "[", the link text, "](", the href and ")"
+                i = i
+                    .saturating_add(close)
+                    .saturating_add(paren)
+                    .saturating_add(3);
+                continue;
             }
+        }
 
         // **bold** before *italic*, or the opening `**` reads as an
         // empty emphasis followed by a stray `*`.
         if cell.after(i).starts_with("**")
-            && let Some(end) = cell.after(i.saturating_add(2)).find("**") {
-                out.push_str(r#"<span class="md-bold">"#);
-                out.push_str(&html_escape(cell.slice(i.saturating_add(2)..i.saturating_add(2).saturating_add(end))));
-                out.push_str("</span>");
-                i = i.saturating_add(end.saturating_add(4));
-                continue;
-            }
+            && let Some(end) = cell.after(i.saturating_add(2)).find("**")
+        {
+            out.push_str(r#"<span class="md-bold">"#);
+            out.push_str(&html_escape(
+                cell.slice(i.saturating_add(2)..i.saturating_add(2).saturating_add(end)),
+            ));
+            out.push_str("</span>");
+            i = i.saturating_add(end.saturating_add(4));
+            continue;
+        }
 
         if b.at(i) == b'*' || b.at(i) == b'_' {
             let marker = char::from(b.at(i));
@@ -2760,9 +2816,11 @@ fn parse_list_marker(line: &str) -> Option<usize> {
     let after = b.after(leading);
     // Unordered: `- ` / `* ` / `+ `.
     if let Some(&c) = after.first()
-        && (c == b'-' || c == b'*' || c == b'+') && after.get(1) == Some(&b' ') {
-            return Some(leading.saturating_add(2));
-        }
+        && (c == b'-' || c == b'*' || c == b'+')
+        && after.get(1) == Some(&b' ')
+    {
+        return Some(leading.saturating_add(2));
+    }
     // Ordered: `1. ` / `12. `.
     let digit_count = after.iter().take_while(|&&x| x.is_ascii_digit()).count();
     if digit_count > 0
@@ -2841,10 +2899,10 @@ fn emit_fence_tokens(
     let cached = with_fence_cache(|cache| cache.get(lang, body));
     let was_cached = cached.is_some();
     let tokens = cached.unwrap_or_else(|| {
-            let toks = editor_syntax::highlight(lang, body);
-            with_fence_cache(|cache| cache.put(lang, body.to_string(), toks.clone()));
-            toks
-        });
+        let toks = editor_syntax::highlight(lang, body);
+        with_fence_cache(|cache| cache.put(lang, body.to_string(), toks.clone()));
+        toks
+    });
     let tok_ms = now_ms_native() - t_tok;
     tracing::trace!(
         body_len = body.len(),
@@ -2927,9 +2985,11 @@ fn is_closing_fence(line: &str, marker_char: u8, marker_len: usize) -> bool {
 /// offset to resume from. Split out of [`find_spans`]; the arms are unchanged
 /// apart from `i = x; continue;` becoming `return Some(x);`.
 fn scan_paired_marker_span(b: &[u8], i: usize, out: &mut Vec<Span>) -> Option<usize> {
-// marker isn't consumed as nested bold + italic.
-if i.saturating_add(6)<= b.len() && b.slice(i..i.saturating_add(3)) == b"***"
-    && let Some(end) = find_close(b, i.saturating_add(3), b"***") {
+    // marker isn't consumed as nested bold + italic.
+    if i.saturating_add(6) <= b.len()
+        && b.slice(i..i.saturating_add(3)) == b"***"
+        && let Some(end) = find_close(b, i.saturating_add(3), b"***")
+    {
         out.push(Span {
             outer: i..end.saturating_add(3),
             body: i.saturating_add(3)..end,
@@ -2937,9 +2997,11 @@ if i.saturating_add(6)<= b.len() && b.slice(i..i.saturating_add(3)) == b"***"
         });
         return Some(end.saturating_add(3));
     }
-// **bold**
-if i.saturating_add(4)<= b.len() && b.slice(i..i.saturating_add(2)) == b"**"
-    && let Some(end) = find_close(b, i.saturating_add(2), b"**") {
+    // **bold**
+    if i.saturating_add(4) <= b.len()
+        && b.slice(i..i.saturating_add(2)) == b"**"
+        && let Some(end) = find_close(b, i.saturating_add(2), b"**")
+    {
         out.push(Span {
             outer: i..end.saturating_add(2),
             body: i.saturating_add(2)..end,
@@ -2947,9 +3009,11 @@ if i.saturating_add(4)<= b.len() && b.slice(i..i.saturating_add(2)) == b"**"
         });
         return Some(end.saturating_add(2));
     }
-// ~~strikethrough~~
-if i.saturating_add(4)<= b.len() && b.slice(i..i.saturating_add(2)) == b"~~"
-    && let Some(end) = find_close(b, i.saturating_add(2), b"~~") {
+    // ~~strikethrough~~
+    if i.saturating_add(4) <= b.len()
+        && b.slice(i..i.saturating_add(2)) == b"~~"
+        && let Some(end) = find_close(b, i.saturating_add(2), b"~~")
+    {
         out.push(Span {
             outer: i..end.saturating_add(2),
             body: i.saturating_add(2)..end,
@@ -2957,9 +3021,11 @@ if i.saturating_add(4)<= b.len() && b.slice(i..i.saturating_add(2)) == b"~~"
         });
         return Some(end.saturating_add(2));
     }
-// ==highlight==
-if i.saturating_add(4)<= b.len() && b.slice(i..i.saturating_add(2)) == b"=="
-    && let Some(end) = find_close(b, i.saturating_add(2), b"==") {
+    // ==highlight==
+    if i.saturating_add(4) <= b.len()
+        && b.slice(i..i.saturating_add(2)) == b"=="
+        && let Some(end) = find_close(b, i.saturating_add(2), b"==")
+    {
         out.push(Span {
             outer: i..end.saturating_add(2),
             body: i.saturating_add(2)..end,
@@ -2967,10 +3033,12 @@ if i.saturating_add(4)<= b.len() && b.slice(i..i.saturating_add(2)) == b"=="
         });
         return Some(end.saturating_add(2));
     }
-// %% obsidian comment %% — body hidden when caret away,
-// styled subtly when revealed. Quartz: `ofm.ts:132`.
-if i.saturating_add(4)<= b.len() && b.slice(i..i.saturating_add(2)) == b"%%"
-    && let Some(end) = find_close(b, i.saturating_add(2), b"%%") {
+    // %% obsidian comment %% — body hidden when caret away,
+    // styled subtly when revealed. Quartz: `ofm.ts:132`.
+    if i.saturating_add(4) <= b.len()
+        && b.slice(i..i.saturating_add(2)) == b"%%"
+        && let Some(end) = find_close(b, i.saturating_add(2), b"%%")
+    {
         out.push(Span {
             outer: i..end.saturating_add(2),
             body: i.saturating_add(2)..end,
@@ -2978,11 +3046,13 @@ if i.saturating_add(4)<= b.len() && b.slice(i..i.saturating_add(2)) == b"%%"
         });
         return Some(end.saturating_add(2));
     }
-// $$display math$$ — must precede the `$inline$` arm so
-// the doubled marker doesn't get consumed as two empty
-// inline maths. Body is the Typst math source.
-if i.saturating_add(4)<= b.len() && b.slice(i..i.saturating_add(2)) == b"$$"
-    && let Some(end) = find_close(b, i.saturating_add(2), b"$$") {
+    // $$display math$$ — must precede the `$inline$` arm so
+    // the doubled marker doesn't get consumed as two empty
+    // inline maths. Body is the Typst math source.
+    if i.saturating_add(4) <= b.len()
+        && b.slice(i..i.saturating_add(2)) == b"$$"
+        && let Some(end) = find_close(b, i.saturating_add(2), b"$$")
+    {
         out.push(Span {
             outer: i..end.saturating_add(2),
             body: i.saturating_add(2)..end,
@@ -2990,9 +3060,9 @@ if i.saturating_add(4)<= b.len() && b.slice(i..i.saturating_add(2)) == b"$$"
         });
         return Some(end.saturating_add(2));
     }
-// $inline math$ — single-dollar pair. Skip if the body
-// would be empty (`$$` already handled above) or starts
-// with whitespace (avoids matching prose like
+    // $inline math$ — single-dollar pair. Skip if the body
+    // would be empty (`$$` already handled above) or starts
+    // with whitespace (avoids matching prose like
     None
 }
 
@@ -3002,123 +3072,131 @@ if i.saturating_add(4)<= b.len() && b.slice(i..i.saturating_add(2)) == b"$$"
 /// Pushes any span it recognises onto `out` and returns the offset to resume
 /// from. Split out of [`scan_link_like_span`]; the arms are unchanged.
 fn scan_block_ref_span(text: &str, b: &[u8], i: usize, out: &mut Vec<Span>) -> Option<usize> {
-if i.saturating_add(13)<= b.len() && b.slice(i..i.saturating_add(9)) == b"{{embed (" {
-// Look for `))}}` closing.
-let payload_start = i.saturating_add(9); // after `{{embed (`
-if b.get(payload_start) == Some(&b'(') {
-    let uuid_start = payload_start.saturating_add(1);
-    if let Some(uuid_len) = peek_uuid(b.after(uuid_start)) {
-        let uuid_end = uuid_start.saturating_add(uuid_len);
-        if b.get(uuid_end..uuid_end.saturating_add(4)) == Some(b"))}}") {
-            out.push(Span {
-                outer: i..uuid_end.saturating_add(4),
-                body: uuid_start..uuid_end,
-                class: "md-block-embed",
-            });
-            return Some(uuid_end.saturating_add(4));
+    if i.saturating_add(13) <= b.len() && b.slice(i..i.saturating_add(9)) == b"{{embed (" {
+        // Look for `))}}` closing.
+        let payload_start = i.saturating_add(9); // after `{{embed (`
+        if b.get(payload_start) == Some(&b'(') {
+            let uuid_start = payload_start.saturating_add(1);
+            if let Some(uuid_len) = peek_uuid(b.after(uuid_start)) {
+                let uuid_end = uuid_start.saturating_add(uuid_len);
+                if b.get(uuid_end..uuid_end.saturating_add(4)) == Some(b"))}}") {
+                    out.push(Span {
+                        outer: i..uuid_end.saturating_add(4),
+                        body: uuid_start..uuid_end,
+                        class: "md-block-embed",
+                    });
+                    return Some(uuid_end.saturating_add(4));
+                }
+            }
         }
     }
-}
-}
-// `((uuid))` — Logseq block reference. The body is the
-// 36-char UUID itself; outer adds the `(( ))` markers.
-if i.saturating_add(40)<= b.len() && b.slice(i..i.saturating_add(2)) == b"((" {
-let uuid_start = i.saturating_add(2);
-if let Some(uuid_len) = peek_uuid(b.after(uuid_start)) {
-    let uuid_end = uuid_start.saturating_add(uuid_len);
-    if b.get(uuid_end..uuid_end.saturating_add(2)) == Some(b"))") {
-        out.push(Span {
-            outer: i..uuid_end.saturating_add(2),
-            body: uuid_start..uuid_end,
-            class: "md-block-ref",
-        });
-        return Some(uuid_end.saturating_add(2));
-    }
-}
-}
-// <https://…> autolink (also matches mailto-shaped
-// `<foo@bar.baz>`). The body becomes the URL itself; the
-// angle brackets are styling-only.
-if b.at(i) == b'<'
-&& let Some(end) = find_close(b, i.saturating_add(1), b">") {
-    let body = text.slice(i.saturating_add(1)..end);
-    let is_url = body.starts_with("http://")
-        || body.starts_with("https://")
-        || body.starts_with("mailto:")
-        || (body.contains('@') && !body.contains(' ') && body.contains('.'));
-    if is_url {
-        out.push(Span {
-            outer: i..end.saturating_add(1),
-            body: i.saturating_add(1)..end,
-            class: "md-autolink",
-        });
-        return Some(end.saturating_add(1));
-    }
-}
-// [text](url) — find `]` then verify `(...)` follows.
-if b.at(i) == b'['
-&& let Some(close_text) = find_close(b, i.saturating_add(1), b"]")
-    && b.get(close_text.saturating_add(1)) == Some(&b'(')
-        && let Some(close_paren) = find_close(b, close_text.saturating_add(2), b")") {
-            out.push(Span {
-                outer: i..close_paren.saturating_add(1),
-                body: i.saturating_add(1)..close_text,
-                class: "md-link",
-            });
-            return Some(close_paren.saturating_add(1));
+    // `((uuid))` — Logseq block reference. The body is the
+    // 36-char UUID itself; outer adds the `(( ))` markers.
+    if i.saturating_add(40) <= b.len() && b.slice(i..i.saturating_add(2)) == b"((" {
+        let uuid_start = i.saturating_add(2);
+        if let Some(uuid_len) = peek_uuid(b.after(uuid_start)) {
+            let uuid_end = uuid_start.saturating_add(uuid_len);
+            if b.get(uuid_end..uuid_end.saturating_add(2)) == Some(b"))") {
+                out.push(Span {
+                    outer: i..uuid_end.saturating_add(2),
+                    body: uuid_start..uuid_end,
+                    class: "md-block-ref",
+                });
+                return Some(uuid_end.saturating_add(2));
+            }
         }
-// #tag  — `#` at doc start or after non-word char,
-// followed by tag chars (alnum / `-` / `_` / `/`). The
-// body equals the outer (no markers to hide) so the
-// mark just colors the whole `#tag` string.
-if b.at(i) == b'#' && tag_boundary_before(b, i) {
-let start = i;
-let mut j = i.saturating_add(1);
-while j < b.len() && is_tag_char(b.at(j)) {
-    j = j.saturating_add(1);
-}
-// Need at least one tag char after `#`.
-if j > i.saturating_add(1) {
-    out.push(Span {
-        outer: start..j,
-        body: start..j,
-        class: "md-tag",
-    });
-    return Some(j);
-}
-}
-None
+    }
+    // <https://…> autolink (also matches mailto-shaped
+    // `<foo@bar.baz>`). The body becomes the URL itself; the
+    // angle brackets are styling-only.
+    if b.at(i) == b'<'
+        && let Some(end) = find_close(b, i.saturating_add(1), b">")
+    {
+        let body = text.slice(i.saturating_add(1)..end);
+        let is_url = body.starts_with("http://")
+            || body.starts_with("https://")
+            || body.starts_with("mailto:")
+            || (body.contains('@') && !body.contains(' ') && body.contains('.'));
+        if is_url {
+            out.push(Span {
+                outer: i..end.saturating_add(1),
+                body: i.saturating_add(1)..end,
+                class: "md-autolink",
+            });
+            return Some(end.saturating_add(1));
+        }
+    }
+    // [text](url) — find `]` then verify `(...)` follows.
+    if b.at(i) == b'['
+        && let Some(close_text) = find_close(b, i.saturating_add(1), b"]")
+        && b.get(close_text.saturating_add(1)) == Some(&b'(')
+        && let Some(close_paren) = find_close(b, close_text.saturating_add(2), b")")
+    {
+        out.push(Span {
+            outer: i..close_paren.saturating_add(1),
+            body: i.saturating_add(1)..close_text,
+            class: "md-link",
+        });
+        return Some(close_paren.saturating_add(1));
+    }
+    // #tag  — `#` at doc start or after non-word char,
+    // followed by tag chars (alnum / `-` / `_` / `/`). The
+    // body equals the outer (no markers to hide) so the
+    // mark just colors the whole `#tag` string.
+    if b.at(i) == b'#' && tag_boundary_before(b, i) {
+        let start = i;
+        let mut j = i.saturating_add(1);
+        while j < b.len() && is_tag_char(b.at(j)) {
+            j = j.saturating_add(1);
+        }
+        // Need at least one tag char after `#`.
+        if j > i.saturating_add(1) {
+            out.push(Span {
+                outer: start..j,
+                body: start..j,
+                class: "md-tag",
+            });
+            return Some(j);
+        }
+    }
+    None
 }
 
 fn find_spans(text: &str) -> Vec<Span> {
-let mut out = Vec::new();
-let b = text.as_bytes();
-let mut i = 0;
-while i < b.len() {
-    if b.at(i) == b'\n' {
-        i = i.saturating_add(1);
-        continue;
-    }
-    // ***bold-italic***  — must precede `**` so the triple
-    if let Some(next) = scan_paired_marker_span(b, i, &mut out) {
-        i = next;
-        continue;
-    }
-    // "Cost is $5 not $10").
-    if b.at(i) == b'$' && i.saturating_add(2)< b.len() && b.at(i.saturating_add(1)) != b' ' && b.at(i.saturating_add(1)) != b'$'
-        && let Some(end) = find_close(b, i.saturating_add(1), b"$")
-            && end > i.saturating_add(1)&& b.at(end.saturating_sub(1)) != b' ' {
-                out.push(Span {
-                    outer: i..end.saturating_add(1),
-                    body: i.saturating_add(1)..end,
-                    class: "md-math-inline",
-                });
-                i = end.saturating_add(1);
-                continue;
-            }
-    // `inline code`
-    if b.at(i) == b'`'
-        && let Some(end) = find_close(b, i.saturating_add(1), b"`") {
+    let mut out = Vec::new();
+    let b = text.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b.at(i) == b'\n' {
+            i = i.saturating_add(1);
+            continue;
+        }
+        // ***bold-italic***  — must precede `**` so the triple
+        if let Some(next) = scan_paired_marker_span(b, i, &mut out) {
+            i = next;
+            continue;
+        }
+        // "Cost is $5 not $10").
+        if b.at(i) == b'$'
+            && i.saturating_add(2) < b.len()
+            && b.at(i.saturating_add(1)) != b' '
+            && b.at(i.saturating_add(1)) != b'$'
+            && let Some(end) = find_close(b, i.saturating_add(1), b"$")
+            && end > i.saturating_add(1)
+            && b.at(end.saturating_sub(1)) != b' '
+        {
+            out.push(Span {
+                outer: i..end.saturating_add(1),
+                body: i.saturating_add(1)..end,
+                class: "md-math-inline",
+            });
+            i = end.saturating_add(1);
+            continue;
+        }
+        // `inline code`
+        if b.at(i) == b'`'
+            && let Some(end) = find_close(b, i.saturating_add(1), b"`")
+        {
             out.push(Span {
                 outer: i..end.saturating_add(1),
                 body: i.saturating_add(1)..end,
@@ -3127,48 +3205,50 @@ while i < b.len() {
             i = end.saturating_add(1);
             continue;
         }
-    // *italic* — must not be `**` (handled above) and must
-    // contain at least one char.
-    if b.at(i) == b'*'
-        && let Some(end) = find_close(b, i.saturating_add(1), b"*")
-            && end > i.saturating_add(1)&& b.after(end.saturating_add(1)).first() != Some(&b'*') {
-                out.push(Span {
-                    outer: i..end.saturating_add(1),
-                    body: i.saturating_add(1)..end,
-                    class: "md-italic",
-                });
-                i = end.saturating_add(1);
-                continue;
-            }
-    // ![[embed]]  — image/audio/video/pdf embed by file
-    // extension on the target. Recognized before the plain
-    // `[[wikilink]]` arm. Quartz: `ofm.ts:233-265`.
-    if let Some(next) = scan_link_like_span(text, b, i, &mut out) {
-        i = next;
-        continue;
+        // *italic* — must not be `**` (handled above) and must
+        // contain at least one char.
+        if b.at(i) == b'*'
+            && let Some(end) = find_close(b, i.saturating_add(1), b"*")
+            && end > i.saturating_add(1)
+            && b.after(end.saturating_add(1)).first() != Some(&b'*')
+        {
+            out.push(Span {
+                outer: i..end.saturating_add(1),
+                body: i.saturating_add(1)..end,
+                class: "md-italic",
+            });
+            i = end.saturating_add(1);
+            continue;
+        }
+        // ![[embed]]  — image/audio/video/pdf embed by file
+        // extension on the target. Recognized before the plain
+        // `[[wikilink]]` arm. Quartz: `ofm.ts:233-265`.
+        if let Some(next) = scan_link_like_span(text, b, i, &mut out) {
+            i = next;
+            continue;
+        }
+        i = i.saturating_add(1);
     }
-    i = i.saturating_add(1);
-}
-out
+    out
 }
 
 fn tag_boundary_before(b: &[u8], i: usize) -> bool {
-if i == 0 {
-    // A `#` at the very start of the doc is a heading if
-    // followed by a space; otherwise treat it as a tag.
-    return b.get(1) != Some(&b' ');
-}
-let prev = b.at(i.saturating_sub(1));
-// `#` immediately after a newline followed by a space is a
-// heading marker, not a tag.
-if prev == b'\n' && b.get(i.saturating_add(1)) == Some(&b' ') {
-    return false;
-}
-!prev.is_ascii_alphanumeric() && prev != b'_' && prev != b'/'
+    if i == 0 {
+        // A `#` at the very start of the doc is a heading if
+        // followed by a space; otherwise treat it as a tag.
+        return b.get(1) != Some(&b' ');
+    }
+    let prev = b.at(i.saturating_sub(1));
+    // `#` immediately after a newline followed by a space is a
+    // heading marker, not a tag.
+    if prev == b'\n' && b.get(i.saturating_add(1)) == Some(&b' ') {
+        return false;
+    }
+    !prev.is_ascii_alphanumeric() && prev != b'_' && prev != b'/'
 }
 
 const fn is_tag_char(c: u8) -> bool {
-c.is_ascii_alphanumeric() || c == b'_' || c == b'-' || c == b'/'
+    c.is_ascii_alphanumeric() || c == b'_' || c == b'-' || c == b'/'
 }
 
 /// Find the next occurrence of `needle` in `b` starting at
@@ -3179,18 +3259,21 @@ c.is_ascii_alphanumeric() || c == b'_' || c == b'-' || c == b'/'
 /// line matches, else `None`. Leading whitespace is tolerated
 /// so an indented bullet's block-id is recognized too.
 fn parse_block_id_line(line: &str, line_from: usize) -> Option<std::ops::Range<usize>> {
-let trimmed_start = line.len().saturating_sub(line.trim_start().len());
-let rest = line.after(trimmed_start);
-let prefix = "id:: ";
-let rest = rest.strip_prefix(prefix)?;
-let rest_off = trimmed_start.saturating_add(prefix.len());
-let bytes = rest.as_bytes();
-let uuid_len = peek_uuid(bytes)?;
-// Allow trailing whitespace but nothing else after the UUID.
-if rest.len() > uuid_len && !rest.after(uuid_len).trim().is_empty() {
-    return None;
-}
-Some(line_from.saturating_add(rest_off)..line_from.saturating_add(rest_off).saturating_add(uuid_len))
+    let trimmed_start = line.len().saturating_sub(line.trim_start().len());
+    let rest = line.after(trimmed_start);
+    let prefix = "id:: ";
+    let rest = rest.strip_prefix(prefix)?;
+    let rest_off = trimmed_start.saturating_add(prefix.len());
+    let bytes = rest.as_bytes();
+    let uuid_len = peek_uuid(bytes)?;
+    // Allow trailing whitespace but nothing else after the UUID.
+    if rest.len() > uuid_len && !rest.after(uuid_len).trim().is_empty() {
+        return None;
+    }
+    Some(
+        line_from.saturating_add(rest_off)
+            ..line_from.saturating_add(rest_off).saturating_add(uuid_len),
+    )
 }
 
 /// Walk back from a line offset to the start of the block the
@@ -3199,22 +3282,25 @@ Some(line_from.saturating_add(rest_off)..line_from.saturating_add(rest_off).satu
 /// empty block above). For v1 we just return the previous
 /// non-empty line's start.
 fn find_block_anchor(text: &str, id_line_from: usize) -> usize {
-if id_line_from == 0 {
-    return 0;
-}
-let prefix = text.before(id_line_from);
-// Walk back over any blank lines (shouldn't be common — the
-// `id::` line should be flush against the block).
-let mut end = id_line_from;
-while end > 0 {
-    let prev_nl = prefix.before(end.saturating_sub(1)).rfind('\n').map_or(0, |n| n.saturating_add(1));
-    let line = text.slice(prev_nl..end.saturating_sub(1));
-    if !line.trim().is_empty() {
-        return prev_nl;
+    if id_line_from == 0 {
+        return 0;
     }
-    end = prev_nl;
-}
-0
+    let prefix = text.before(id_line_from);
+    // Walk back over any blank lines (shouldn't be common — the
+    // `id::` line should be flush against the block).
+    let mut end = id_line_from;
+    while end > 0 {
+        let prev_nl = prefix
+            .before(end.saturating_sub(1))
+            .rfind('\n')
+            .map_or(0, |n| n.saturating_add(1));
+        let line = text.slice(prev_nl..end.saturating_sub(1));
+        if !line.trim().is_empty() {
+            return prev_nl;
+        }
+        end = prev_nl;
+    }
+    0
 }
 
 // Per-`live_preview`-pass registry of UUIDs in the current
@@ -3228,46 +3314,49 @@ static BLOCK_INDEX: std::cell::RefCell<std::collections::HashMap<String, usize>>
 }
 
 pub(crate) fn reset_block_index() {
-BLOCK_INDEX.with(|m| m.borrow_mut().clear());
+    BLOCK_INDEX.with(|m| m.borrow_mut().clear());
 }
 
 pub(crate) fn register_block_id(uuid: &str, block_anchor: usize) {
-BLOCK_INDEX.with(|m| {
-    m.borrow_mut().insert(uuid.to_string(), block_anchor);
-});
+    BLOCK_INDEX.with(|m| {
+        m.borrow_mut().insert(uuid.to_string(), block_anchor);
+    });
 }
 
 /// First ~40 chars of the block at `anchor`, stripped of
 /// markdown markers for chip display. Stops at the first
 /// newline.
 pub(crate) fn block_preview(text: &str, anchor: usize) -> String {
-let line_end = text.after(anchor).find('\n').map_or(text.len(), |n| anchor.saturating_add(n));
-let line = text.slice(anchor..line_end);
-let cleaned = line.trim_start_matches(|c: char| {
-    c == '#'
-        || c == '>'
-        || c == '-'
-        || c == '*'
-        || c == '+'
-        || c == ' '
-        || c == '\t'
-        || c == '['
-});
-let cleaned = cleaned.trim_end();
-let max = 40;
-if cleaned.chars().count() > max {
-    let truncated: String = cleaned.chars().take(max).collect();
-    format!("{truncated}…")
-} else {
-    cleaned.to_string()
-}
+    let line_end = text
+        .after(anchor)
+        .find('\n')
+        .map_or(text.len(), |n| anchor.saturating_add(n));
+    let line = text.slice(anchor..line_end);
+    let cleaned = line.trim_start_matches(|c: char| {
+        c == '#'
+            || c == '>'
+            || c == '-'
+            || c == '*'
+            || c == '+'
+            || c == ' '
+            || c == '\t'
+            || c == '['
+    });
+    let cleaned = cleaned.trim_end();
+    let max = 40;
+    if cleaned.chars().count() > max {
+        let truncated: String = cleaned.chars().take(max).collect();
+        format!("{truncated}…")
+    } else {
+        cleaned.to_string()
+    }
 }
 
 /// Look up a block's anchor offset by UUID. Returns `None` when
 /// the UUID isn't in the current doc — multi-file resolution
 /// is a later slice.
 pub(crate) fn block_anchor_for_uuid(uuid: &str) -> Option<usize> {
-BLOCK_INDEX.with(|m| m.borrow().get(uuid).copied())
+    BLOCK_INDEX.with(|m| m.borrow().get(uuid).copied())
 }
 
 /// Peek a UUID v4 string at the start of `bytes` and return its
@@ -3275,34 +3364,34 @@ BLOCK_INDEX.with(|m| m.borrow().get(uuid).copied())
 /// `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` — hex digits in the
 /// 8-4-4-4-12 layout, hyphens at positions 8/13/18/23.
 pub(crate) fn peek_uuid(bytes: &[u8]) -> Option<usize> {
-const UUID_LEN: usize = 36;
-if bytes.len() < UUID_LEN {
-    return None;
-}
-for idx in 0..UUID_LEN {
-    let c = bytes.at(idx);
-    if matches!(idx, 8 | 13 | 18 | 23) {
-        if c != b'-' {
-            return None;
-        }
-    } else if !c.is_ascii_hexdigit() {
+    const UUID_LEN: usize = 36;
+    if bytes.len() < UUID_LEN {
         return None;
     }
-}
-Some(UUID_LEN)
+    for idx in 0..UUID_LEN {
+        let c = bytes.at(idx);
+        if matches!(idx, 8 | 13 | 18 | 23) {
+            if c != b'-' {
+                return None;
+            }
+        } else if !c.is_ascii_hexdigit() {
+            return None;
+        }
+    }
+    Some(UUID_LEN)
 }
 
 fn find_close(b: &[u8], from: usize, needle: &[u8]) -> Option<usize> {
-let mut i = from;
-while i.saturating_add(needle.len())<= b.len() {
-    if b.at(i) == b'\n' {
-        return None;
+    let mut i = from;
+    while i.saturating_add(needle.len()) <= b.len() {
+        if b.at(i) == b'\n' {
+            return None;
+        }
+        if b.slice(i..i.saturating_add(needle.len())) == needle {
+            return Some(i);
+        }
+        i = i.saturating_add(1);
     }
-    if b.slice(i..i.saturating_add(needle.len())) == needle {
-        return Some(i);
-    }
-    i = i.saturating_add(1);
-}
     None
 }
 
@@ -3315,8 +3404,10 @@ while i.saturating_add(needle.len())<= b.len() {
 /// loop carried every delimiter in one body; the arms are unchanged apart from
 /// `i = x; continue;` becoming `return Some(x);`.
 fn scan_link_like_span(text: &str, b: &[u8], i: usize, out: &mut Vec<Span>) -> Option<usize> {
-    if i.saturating_add(5)<= b.len() && b.slice(i..i.saturating_add(3)) == b"![["
-    && let Some(end) = find_close(b, i.saturating_add(3), b"]]") {
+    if i.saturating_add(5) <= b.len()
+        && b.slice(i..i.saturating_add(3)) == b"![["
+        && let Some(end) = find_close(b, i.saturating_add(3), b"]]")
+    {
         out.push(Span {
             outer: i..end.saturating_add(2),
             body: i.saturating_add(3)..end,
@@ -3326,8 +3417,10 @@ fn scan_link_like_span(text: &str, b: &[u8], i: usize, out: &mut Vec<Span>) -> O
     }
     // [[wikilink]]  — keep before `[link]` so the `[[`
     // isn't misread as the start of a regular link.
-    if i.saturating_add(4)<= b.len() && b.slice(i..i.saturating_add(2)) == b"[["
-    && let Some(end) = find_close(b, i.saturating_add(2), b"]]") {
+    if i.saturating_add(4) <= b.len()
+        && b.slice(i..i.saturating_add(2)) == b"[["
+        && let Some(end) = find_close(b, i.saturating_add(2), b"]]")
+    {
         out.push(Span {
             outer: i..end.saturating_add(2),
             body: i.saturating_add(2)..end,
@@ -3336,8 +3429,10 @@ fn scan_link_like_span(text: &str, b: &[u8], i: usize, out: &mut Vec<Span>) -> O
         return Some(end.saturating_add(2));
     }
     // [^footnote-ref]
-    if i.saturating_add(4)<= b.len() && b.slice(i..i.saturating_add(2)) == b"[^"
-    && let Some(end) = find_close(b, i.saturating_add(2), b"]") {
+    if i.saturating_add(4) <= b.len()
+        && b.slice(i..i.saturating_add(2)) == b"[^"
+        && let Some(end) = find_close(b, i.saturating_add(2), b"]")
+    {
         out.push(Span {
             outer: i..end.saturating_add(1),
             body: i.saturating_add(2)..end,
@@ -3350,8 +3445,10 @@ fn scan_link_like_span(text: &str, b: &[u8], i: usize, out: &mut Vec<Span>) -> O
     // is the footnote content, not a refnum). Must match
     // BEFORE the `^block-id` arm, which would otherwise eat
     // the leading `^`.
-    if b.at(i) == b'^' && b.get(i.saturating_add(1)) == Some(&b'[')
-    && let Some(end) = find_close(b, i.saturating_add(2), b"]") {
+    if b.at(i) == b'^'
+        && b.get(i.saturating_add(1)) == Some(&b'[')
+        && let Some(end) = find_close(b, i.saturating_add(2), b"]")
+    {
         out.push(Span {
             outer: i..end.saturating_add(1),
             body: i.saturating_add(2)..end,
@@ -3365,22 +3462,25 @@ fn scan_link_like_span(text: &str, b: &[u8], i: usize, out: &mut Vec<Span>) -> O
     // doc), so a stray `^` inside a sentence isn't styled.
     // Boundary check on the left mirrors `tag_boundary_before`.
     if b.at(i) == b'^'
-    && i.saturating_add(1)< b.len()
-    && (b.at(i.saturating_add(1)).is_ascii_alphanumeric() || b.at(i.saturating_add(1)) == b'-' || b.at(i.saturating_add(1)) == b'_')
-    && (i == 0 || matches!(b.at(i.saturating_sub(1)), b' ' | b'\t' | b'\n'))
+        && i.saturating_add(1) < b.len()
+        && (b.at(i.saturating_add(1)).is_ascii_alphanumeric()
+            || b.at(i.saturating_add(1)) == b'-'
+            || b.at(i.saturating_add(1)) == b'_')
+        && (i == 0 || matches!(b.at(i.saturating_sub(1)), b' ' | b'\t' | b'\n'))
     {
-    let mut j = i.saturating_add(1);
-    while j < b.len() && (b.at(j).is_ascii_alphanumeric() || b.at(j) == b'-' || b.at(j) == b'_') {
-        j = j.saturating_add(1);
-    }
-    if j == b.len() || b.at(j) == b'\n' {
-        out.push(Span {
-            outer: i..j,
-            body: i..j,
-            class: "md-block-id",
-        });
-        return Some(j);
-    }
+        let mut j = i.saturating_add(1);
+        while j < b.len() && (b.at(j).is_ascii_alphanumeric() || b.at(j) == b'-' || b.at(j) == b'_')
+        {
+            j = j.saturating_add(1);
+        }
+        if j == b.len() || b.at(j) == b'\n' {
+            out.push(Span {
+                outer: i..j,
+                body: i..j,
+                class: "md-block-id",
+            });
+            return Some(j);
+        }
     }
     // `{{embed ((uuid))}}` — block embed (Logseq form).
     // Must match before `((uuid))` so the outer `(` of the
@@ -3877,7 +3977,8 @@ mod tests {
         let s = state(&src, 0);
         let decs = live_preview(&s);
         let id_line_start = src.find("id::").unwrap();
-        let id_line_end = src.after(id_line_start)
+        let id_line_end = src
+            .after(id_line_start)
             .find('\n')
             .map_or(src.len(), |n| id_line_start + n + 1);
         let has_replace = decs.iter().any(|d| {

@@ -27,7 +27,9 @@ pub(crate) fn replay_last(state: &EditorState, vim: &mut VimState) -> Option<Tra
                 MotionKind::Linewise => {
                     let (a, b) = (caret.min(to), caret.max(to));
                     let lo = motions::line_start(state, a);
-                    let hi = motions::line_end(state, b).saturating_add(1).min(state.doc.len());
+                    let hi = motions::line_end(state, b)
+                        .saturating_add(1)
+                        .min(state.doc.len());
                     Some(operators::apply_linewise(state, vim, operator, lo, hi))
                 }
                 kind => {

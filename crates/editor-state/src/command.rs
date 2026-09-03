@@ -90,9 +90,10 @@ impl Keymap {
     pub fn dispatch(&self, key: &KeySpec, state: &EditorState) -> Option<TransactionSpec> {
         for b in &self.bindings {
             if b.key.matches(key)
-                && let Some(spec) = (b.run)(state) {
-                    return Some(spec);
-                }
+                && let Some(spec) = (b.run)(state)
+            {
+                return Some(spec);
+            }
         }
         None
     }
@@ -284,8 +285,9 @@ mod tests {
     /// Typed as a fn pointer, not a plain `fn` item: `Keymap::with` takes
     /// `fn(&EditorState) -> Option<TransactionSpec>`, so the `Option` is
     /// required by the signature even though this one always returns `Some`.
-    const SELECT_ALL: fn(&EditorState) -> Option<TransactionSpec> =
-        |state| Some(TransactionSpec::new().selection(Selection::single(Range::new(0, state.doc.len()))));
+    const SELECT_ALL: fn(&EditorState) -> Option<TransactionSpec> = |state| {
+        Some(TransactionSpec::new().selection(Selection::single(Range::new(0, state.doc.len()))))
+    };
 
     #[test]
     fn keymap_runs_matched_command() {

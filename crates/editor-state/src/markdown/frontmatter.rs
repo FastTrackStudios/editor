@@ -101,7 +101,9 @@ pub fn parse_frontmatter(text: &str) -> Option<FrontMatter> {
     let closer_end = bytes
         .get(closer_start..)
         .and_then(|rest| rest.iter().position(|&b| b == b'\n'))
-        .map_or(bytes.len(), |n| closer_start.saturating_add(n).saturating_add(1));
+        .map_or(bytes.len(), |n| {
+            closer_start.saturating_add(n).saturating_add(1)
+        });
     let props = parse_frontmatter_body(text, body_start, closer_start);
     Some(FrontMatter {
         outer: 0..closer_end,
@@ -218,9 +220,10 @@ fn classify_scalar(rest: &str) -> PropValue {
         && cleaned
             .chars()
             .all(|c| c.is_ascii_digit() || c == '.' || c == '-' || c == '+' || c == 'e' || c == 'E')
-        && let Ok(n) = cleaned.parse::<f64>() {
-            return PropValue::Number(n);
-        }
+        && let Ok(n) = cleaned.parse::<f64>()
+    {
+        return PropValue::Number(n);
+    }
     PropValue::Text(cleaned)
 }
 

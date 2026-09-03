@@ -234,7 +234,12 @@ fn dispatch_normal(
     // motion. vim ref: codemirror-vim/src/vim.js (numberRegex)
     if ch.is_ascii_digit() && !(ch == '0' && vim.pending_count.is_none()) {
         let d = usize::try_from(ch.to_digit(10).unwrap_or(0)).unwrap_or(0);
-        vim.pending_count = Some(vim.pending_count.unwrap_or(0).saturating_mul(10).saturating_add(d));
+        vim.pending_count = Some(
+            vim.pending_count
+                .unwrap_or(0)
+                .saturating_mul(10)
+                .saturating_add(d),
+        );
         return None;
     }
 
@@ -384,7 +389,9 @@ fn single_char_normal_command(
     ch: char,
 ) -> Option<TransactionSpec> {
     match ch {
-c if matches!(c, 'i' | 'I' | 'a' | 'A' | 'o' | 'O' | 's' | 'S') => enter_insert_command(state, vim, c),
+        c if matches!(c, 'i' | 'I' | 'a' | 'A' | 'o' | 'O' | 's' | 'S') => {
+            enter_insert_command(state, vim, c)
+        }
         'r' => {
             vim.pending_motion_input = Some(MotionInput::Replace);
             None
@@ -394,14 +401,14 @@ c if matches!(c, 'i' | 'I' | 'a' | 'A' | 'o' | 'O' | 's' | 'S') => enter_insert_
             vim.clear_pending();
             Some(TransactionSpec::new())
         }
-c if matches!(c, 'v' | 'V' | ':' | '/' | '?') => enter_mode_command(state, vim, c),
+        c if matches!(c, 'v' | 'V' | ':' | '/' | '?') => enter_mode_command(state, vim, c),
         'u' => {
             vim.clear_pending();
             vim.request_undo()
         }
         'p' => Some(paste(state, vim, /*before=*/ false)),
         'P' => Some(paste(state, vim, /*before=*/ true)),
-'x' => delete_char_under_caret(state, vim),
+        'x' => delete_char_under_caret(state, vim),
         ';' => repeat_find(state, vim, /*swap=*/ false),
         ',' => repeat_find(state, vim, /*swap=*/ true),
         '*' => search_word_under_caret(state, vim, /*forward=*/ true),
@@ -986,7 +993,12 @@ fn dispatch_visual(
     // Counts work in visual too (`v3w`, `V2j`).
     if ch.is_ascii_digit() && !(ch == '0' && vim.pending_count.is_none()) {
         let d = usize::try_from(ch.to_digit(10).unwrap_or(0)).unwrap_or(0);
-        vim.pending_count = Some(vim.pending_count.unwrap_or(0).saturating_mul(10).saturating_add(d));
+        vim.pending_count = Some(
+            vim.pending_count
+                .unwrap_or(0)
+                .saturating_mul(10)
+                .saturating_add(d),
+        );
         return None;
     }
 
@@ -1015,9 +1027,9 @@ fn dispatch_visual(
         }
         // Paste over the selection; the replaced text lands in
         // the unnamed register (vim semantics).
-'p' | 'P' => return visual_paste(state, vim),
+        'p' | 'P' => return visual_paste(state, vim),
         // Swap the two ends of the selection.
-c @ ('o' | 'v' | 'V') => return visual_reshape(state, vim, c),
+        c @ ('o' | 'v' | 'V') => return visual_reshape(state, vim, c),
         // Text objects expand the selection (`viw`, `va"`).
         'i' | 'a' => {
             vim.pending_motion_input = Some(MotionInput::TextObject { around: ch == 'a' });
@@ -1114,7 +1126,9 @@ fn paste(state: &EditorState, vim: &mut VimState, before: bool) -> TransactionSp
             // trailing newline: prepend the `\n` instead.
             let payload = format!("\n{}", text.trim_end_matches('\n'));
             let rest = payload.after(1);
-            let nb = rest.len().saturating_sub(rest.trim_start_matches([' ', '\t']).len());
+            let nb = rest
+                .len()
+                .saturating_sub(rest.trim_start_matches([' ', '\t']).len());
             let new_caret = end.saturating_add(1).saturating_add(nb);
             return TransactionSpec::new()
                 .changes(Changes::insert(end, payload))
@@ -1245,10 +1259,7 @@ pub(crate) fn jump_to(
         if !whole_word {
             return true;
         }
-        let left_ok = i == 0
-            || bytes
-                .get(i.saturating_sub(1))
-                .is_some_and(|&b| !is_word(b));
+        let left_ok = i == 0 || bytes.get(i.saturating_sub(1)).is_some_and(|&b| !is_word(b));
         let right_ok = end == bytes.len() || bytes.get(end).is_some_and(|&b| !is_word(b));
         left_ok && right_ok
     };
@@ -1352,9 +1363,6 @@ fn toggle_case_char(state: &EditorState, vim: &mut VimState) -> TransactionSpec 
         .selection(Selection::caret(caret_after))
 }
 
-
-
-
 /// Visual-mode `p`/`P` — replace the selection with the register contents.
 ///
 /// Split out of [`dispatch_visual`]'s `match`; the body is unchanged.
@@ -1379,46 +1387,41 @@ fn visual_paste(state: &EditorState, vim: &mut VimState) -> Option<TransactionSp
             .changes(Changes::replace(lo..hi, text))
             .selection(Selection::caret(caret_pos)),
     )
-
 }
 
 /// Visual-mode `o` (swap ends), `v` and `V` (switch or leave charwise/linewise).
 ///
 /// Split out of [`dispatch_visual`]'s `match`; the arms are unchanged.
-fn visual_reshape(
-    state: &EditorState,
-    vim: &mut VimState,
-    ch: char,
-) -> Option<TransactionSpec> {
+fn visual_reshape(state: &EditorState, vim: &mut VimState, ch: char) -> Option<TransactionSpec> {
     match ch {
-    'o' => {
-        let r = state.selection.primary();
-        vim.visual_anchor = Some(r.head);
-        Some(TransactionSpec::new().selection(Selection::single(Range::new(r.head, r.anchor))))
-    }
-    // Mode toggles.
-    'v' => {
-        // Pressing the same visual key again leaves visual mode.
-        if vim.mode == Mode::VisualChar {
-            vim.mode = Mode::Normal;
-            let pos = motions::clamp_normal(state, caret(state));
-            vim.visual_anchor = None;
-            return Some(TransactionSpec::new().selection(Selection::caret(pos)));
+        'o' => {
+            let r = state.selection.primary();
+            vim.visual_anchor = Some(r.head);
+            Some(TransactionSpec::new().selection(Selection::single(Range::new(r.head, r.anchor))))
         }
-        vim.mode = Mode::VisualChar;
-        None
-    }
-    'V' => {
-        // Pressing the same visual key again leaves visual mode.
-        if vim.mode == Mode::VisualLine {
-            vim.mode = Mode::Normal;
-            let pos = motions::clamp_normal(state, caret(state));
-            vim.visual_anchor = None;
-            return Some(TransactionSpec::new().selection(Selection::caret(pos)));
+        // Mode toggles.
+        'v' => {
+            // Pressing the same visual key again leaves visual mode.
+            if vim.mode == Mode::VisualChar {
+                vim.mode = Mode::Normal;
+                let pos = motions::clamp_normal(state, caret(state));
+                vim.visual_anchor = None;
+                return Some(TransactionSpec::new().selection(Selection::caret(pos)));
+            }
+            vim.mode = Mode::VisualChar;
+            None
         }
-        vim.mode = Mode::VisualLine;
-        None
-    }
+        'V' => {
+            // Pressing the same visual key again leaves visual mode.
+            if vim.mode == Mode::VisualLine {
+                vim.mode = Mode::Normal;
+                let pos = motions::clamp_normal(state, caret(state));
+                vim.visual_anchor = None;
+                return Some(TransactionSpec::new().selection(Selection::caret(pos)));
+            }
+            vim.mode = Mode::VisualLine;
+            None
+        }
         _ => None,
     }
 }
@@ -1428,118 +1431,121 @@ fn visual_reshape(
 /// Split out of [`single_char_normal_command`]'s `match`; the body is
 /// unchanged.
 fn delete_char_under_caret(state: &EditorState, vim: &mut VimState) -> Option<TransactionSpec> {
-        // Delete `count` chars under/after caret — never the
-        // newline (vim `x` doesn't join lines).
-        let count = vim.pending_count.take().unwrap_or(1);
-        let from = caret(state);
-        let to = chars_ahead_in_line(state, from, count);
-        vim.clear_pending();
-        if from == to {
-            return None;
-        }
-        let text = state.doc.slice(from..to);
-        vim.registers.write_unnamed(&text);
-        vim.last_change = Some(LastChange::OperatorMotion {
-            operator: Operator::Delete,
-            motion: Motion::Right,
-            count,
-        });
-        let caret_after = caret_after_line_delete(state, from, to);
-        Some(
-            TransactionSpec::new()
-                .changes(Changes::delete(from..to))
-                .selection(Selection::caret(caret_after)),
-        )
-    
+    // Delete `count` chars under/after caret — never the
+    // newline (vim `x` doesn't join lines).
+    let count = vim.pending_count.take().unwrap_or(1);
+    let from = caret(state);
+    let to = chars_ahead_in_line(state, from, count);
+    vim.clear_pending();
+    if from == to {
+        return None;
+    }
+    let text = state.doc.slice(from..to);
+    vim.registers.write_unnamed(&text);
+    vim.last_change = Some(LastChange::OperatorMotion {
+        operator: Operator::Delete,
+        motion: Motion::Right,
+        count,
+    });
+    let caret_after = caret_after_line_delete(state, from, to);
+    Some(
+        TransactionSpec::new()
+            .changes(Changes::delete(from..to))
+            .selection(Selection::caret(caret_after)),
+    )
 }
 
 /// Normal-mode keys that enter Insert mode, each with its own caret move.
 ///
 /// Split out of [`single_char_normal_command`]'s `match`, which had grown past
 /// a screenful; the arms are unchanged.
-fn enter_insert_command(state: &EditorState, vim: &mut VimState, ch: char) -> Option<TransactionSpec> {
+fn enter_insert_command(
+    state: &EditorState,
+    vim: &mut VimState,
+    ch: char,
+) -> Option<TransactionSpec> {
     match ch {
-    'i' => {
-        vim.mode = Mode::Insert;
-        vim.clear_pending();
-        Some(TransactionSpec::new())
-    }
-    'I' => {
-        // First non-blank on current line, then insert.
-        let pos = motions::line_first_nonblank(state, caret(state));
-        vim.mode = Mode::Insert;
-        vim.clear_pending();
-        Some(TransactionSpec::new().selection(Selection::caret(pos)))
-    }
-    'a' => {
-        // Insert after the caret's char — never past the
-        // line's `\n`.
-        let s = state.doc.to_string();
-        let pos = motions::next_char_boundary(s.as_bytes(), caret(state))
-            .min(motions::line_end(state, caret(state)));
-        vim.mode = Mode::Insert;
-        vim.clear_pending();
-        Some(TransactionSpec::new().selection(Selection::caret(pos)))
-    }
-    'A' => {
-        let pos = motions::line_end(state, caret(state));
-        vim.mode = Mode::Insert;
-        vim.clear_pending();
-        Some(TransactionSpec::new().selection(Selection::caret(pos)))
-    }
-    'o' => {
-        let end = motions::line_end(state, caret(state));
-        vim.mode = Mode::Insert;
-        vim.clear_pending();
-        Some(
-            TransactionSpec::new()
-                .changes(Changes::insert(end, "\n"))
-                .selection(Selection::caret(end.saturating_add(1))),
-        )
-    }
-    'O' => {
-        let start = motions::line_start(state, caret(state));
-        vim.mode = Mode::Insert;
-        vim.clear_pending();
-        Some(
-            TransactionSpec::new()
-                .changes(Changes::insert(start, "\n"))
-                .selection(Selection::caret(start)),
-        )
-    }
-    's' => {
-        // Substitute `count` chars (line-bounded), enter insert.
-        let count = vim.pending_count.take().unwrap_or(1);
-        let from = caret(state);
-        let to = chars_ahead_in_line(state, from, count);
-        vim.mode = Mode::Insert;
-        if to > from {
-            let text = state.doc.slice(from..to);
-            vim.registers.write_unnamed(&text);
+        'i' => {
+            vim.mode = Mode::Insert;
+            vim.clear_pending();
+            Some(TransactionSpec::new())
         }
-        vim.clear_pending();
-        Some(
-            TransactionSpec::new()
-                .changes(Changes::delete(from..to))
-                .selection(Selection::caret(from)),
-        )
-    }
-    'S' => {
-        // Linewise change (`cc`): count lines, keep the
-        // trailing newline + indent.
-        let count = vim.pending_count.take().unwrap_or(1);
-        let from = motions::line_start(state, caret(state));
-        let to = motions::line_end_n(state, caret(state), count)
-            .saturating_add(1)
-            .min(state.doc.len());
-        Some(operators::apply_linewise(
-            state,
-            vim,
-            Operator::Change,
-            from,
-            to,
-        ))
-    }
+        'I' => {
+            // First non-blank on current line, then insert.
+            let pos = motions::line_first_nonblank(state, caret(state));
+            vim.mode = Mode::Insert;
+            vim.clear_pending();
+            Some(TransactionSpec::new().selection(Selection::caret(pos)))
+        }
+        'a' => {
+            // Insert after the caret's char — never past the
+            // line's `\n`.
+            let s = state.doc.to_string();
+            let pos = motions::next_char_boundary(s.as_bytes(), caret(state))
+                .min(motions::line_end(state, caret(state)));
+            vim.mode = Mode::Insert;
+            vim.clear_pending();
+            Some(TransactionSpec::new().selection(Selection::caret(pos)))
+        }
+        'A' => {
+            let pos = motions::line_end(state, caret(state));
+            vim.mode = Mode::Insert;
+            vim.clear_pending();
+            Some(TransactionSpec::new().selection(Selection::caret(pos)))
+        }
+        'o' => {
+            let end = motions::line_end(state, caret(state));
+            vim.mode = Mode::Insert;
+            vim.clear_pending();
+            Some(
+                TransactionSpec::new()
+                    .changes(Changes::insert(end, "\n"))
+                    .selection(Selection::caret(end.saturating_add(1))),
+            )
+        }
+        'O' => {
+            let start = motions::line_start(state, caret(state));
+            vim.mode = Mode::Insert;
+            vim.clear_pending();
+            Some(
+                TransactionSpec::new()
+                    .changes(Changes::insert(start, "\n"))
+                    .selection(Selection::caret(start)),
+            )
+        }
+        's' => {
+            // Substitute `count` chars (line-bounded), enter insert.
+            let count = vim.pending_count.take().unwrap_or(1);
+            let from = caret(state);
+            let to = chars_ahead_in_line(state, from, count);
+            vim.mode = Mode::Insert;
+            if to > from {
+                let text = state.doc.slice(from..to);
+                vim.registers.write_unnamed(&text);
+            }
+            vim.clear_pending();
+            Some(
+                TransactionSpec::new()
+                    .changes(Changes::delete(from..to))
+                    .selection(Selection::caret(from)),
+            )
+        }
+        'S' => {
+            // Linewise change (`cc`): count lines, keep the
+            // trailing newline + indent.
+            let count = vim.pending_count.take().unwrap_or(1);
+            let from = motions::line_start(state, caret(state));
+            let to = motions::line_end_n(state, caret(state), count)
+                .saturating_add(1)
+                .min(state.doc.len());
+            Some(operators::apply_linewise(
+                state,
+                vim,
+                Operator::Change,
+                from,
+                to,
+            ))
+        }
         _ => None,
     }
 }
@@ -1548,47 +1554,51 @@ fn enter_insert_command(state: &EditorState, vim: &mut VimState, ch: char) -> Op
 ///
 /// Split out of [`single_char_normal_command`]'s `match`, which had grown past
 /// a screenful; the arms are unchanged.
-fn enter_mode_command(state: &EditorState, vim: &mut VimState, ch: char) -> Option<TransactionSpec> {
+fn enter_mode_command(
+    state: &EditorState,
+    vim: &mut VimState,
+    ch: char,
+) -> Option<TransactionSpec> {
     match ch {
-    'v' => {
-        vim.mode = Mode::VisualChar;
-        vim.visual_anchor = Some(caret(state));
-        vim.clear_pending();
-        None
-    }
-    'V' => {
-        vim.mode = Mode::VisualLine;
-        vim.visual_anchor = Some(caret(state));
-        vim.clear_pending();
-        None
-    }
-    ':' => {
-        vim.mode = Mode::Command;
-        vim.command_line = Some(crate::command_line::CommandLineState::new(
-            crate::command_line::CmdKind::Ex,
-        ));
-        vim.clear_pending();
-        None
-    }
-    // `/` search. NOTE: hosts that wire a slash-command
-    // palette intercept `/` before vim sees it (Obsidian UX)
-    // — `?` searches backward and is always available.
-    '/' => {
-        vim.mode = Mode::Command;
-        vim.command_line = Some(crate::command_line::CommandLineState::new(
-            crate::command_line::CmdKind::SearchForward,
-        ));
-        vim.clear_pending();
-        None
-    }
-    '?' => {
-        vim.mode = Mode::Command;
-        vim.command_line = Some(crate::command_line::CommandLineState::new(
-            crate::command_line::CmdKind::SearchBackward,
-        ));
-        vim.clear_pending();
-        None
-    }
+        'v' => {
+            vim.mode = Mode::VisualChar;
+            vim.visual_anchor = Some(caret(state));
+            vim.clear_pending();
+            None
+        }
+        'V' => {
+            vim.mode = Mode::VisualLine;
+            vim.visual_anchor = Some(caret(state));
+            vim.clear_pending();
+            None
+        }
+        ':' => {
+            vim.mode = Mode::Command;
+            vim.command_line = Some(crate::command_line::CommandLineState::new(
+                crate::command_line::CmdKind::Ex,
+            ));
+            vim.clear_pending();
+            None
+        }
+        // `/` search. NOTE: hosts that wire a slash-command
+        // palette intercept `/` before vim sees it (Obsidian UX)
+        // — `?` searches backward and is always available.
+        '/' => {
+            vim.mode = Mode::Command;
+            vim.command_line = Some(crate::command_line::CommandLineState::new(
+                crate::command_line::CmdKind::SearchForward,
+            ));
+            vim.clear_pending();
+            None
+        }
+        '?' => {
+            vim.mode = Mode::Command;
+            vim.command_line = Some(crate::command_line::CommandLineState::new(
+                crate::command_line::CmdKind::SearchBackward,
+            ));
+            vim.clear_pending();
+            None
+        }
         _ => None,
     }
 }

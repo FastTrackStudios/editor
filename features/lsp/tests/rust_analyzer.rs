@@ -53,11 +53,11 @@ async fn rust_analyzer_publishes_type_error_diagnostics() {
             .expect("server channel closed before diagnostics arrived");
         if let ServerMessage::Diagnostics(published) = event
             && published.uri == uri
-                && store.apply(&published, client.version_of(&uri), &doc)
-                && !store.get(&uri).is_empty()
-            {
-                break store.get(&uri)[0].clone();
-            }
+            && store.apply(&published, client.version_of(&uri), &doc)
+            && !store.get(&uri).is_empty()
+        {
+            break store.get(&uri)[0].clone();
+        }
     };
 
     // The flagged byte range must lie inside the document and the

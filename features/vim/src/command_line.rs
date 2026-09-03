@@ -102,9 +102,12 @@ pub(crate) fn dispatch(
         }
         _ => {
             if let Some(ch) = single_char(key)
-                && !key.ctrl && !key.alt && !key.meta {
-                    cl.buffer.push(ch);
-                }
+                && !key.ctrl
+                && !key.alt
+                && !key.meta
+            {
+                cl.buffer.push(ch);
+            }
             None
         }
     }
@@ -196,10 +199,7 @@ fn substitute_command(state: &EditorState, cmd: &str) -> Option<TransactionSpec>
         let comma = cmd.find(',')?;
         let s_pos = cmd.after(comma).find('s')?.saturating_add(comma);
         let lo: usize = cmd.before(comma).parse().ok()?;
-        let hi: usize = cmd
-            .slice(comma.saturating_add(1)..s_pos)
-            .parse()
-            .ok()?;
+        let hi: usize = cmd.slice(comma.saturating_add(1)..s_pos).parse().ok()?;
         (SubstRange::Lines(lo, hi), cmd.after(s_pos))
     } else {
         (SubstRange::CurrentLine, cmd)

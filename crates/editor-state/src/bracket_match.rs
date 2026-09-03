@@ -31,14 +31,16 @@ pub fn bracket_match(state: &EditorState) -> Vec<DecoratedRange> {
     // caret right after `)` matches its `(`), falling back to
     // the byte to the RIGHT.
     if caret > 0
-        && let Some((from, to, matched)) = match_at(bytes, caret.saturating_sub(1)) {
-            push_pair(&mut out, from, to, matched);
-            return out;
-        }
+        && let Some((from, to, matched)) = match_at(bytes, caret.saturating_sub(1))
+    {
+        push_pair(&mut out, from, to, matched);
+        return out;
+    }
     if caret < bytes.len()
-        && let Some((from, to, matched)) = match_at(bytes, caret) {
-            push_pair(&mut out, from, to, matched);
-        }
+        && let Some((from, to, matched)) = match_at(bytes, caret)
+    {
+        push_pair(&mut out, from, to, matched);
+    }
     out
 }
 
@@ -73,7 +75,10 @@ fn match_at(bytes: &[u8], at: usize) -> Option<(usize, usize, bool)> {
 
 fn scan_forward(bytes: &[u8], at: usize, open: u8, close: u8) -> Option<usize> {
     let mut depth: u32 = 1;
-    let end = at.saturating_add(1).saturating_add(SCAN_LIMIT).min(bytes.len());
+    let end = at
+        .saturating_add(1)
+        .saturating_add(SCAN_LIMIT)
+        .min(bytes.len());
     // Bracket scan walks a tight inner loop; the `for i in
     // start..end` shape is the natural one even though
     // clippy's `needless_range_loop` would prefer a slice
