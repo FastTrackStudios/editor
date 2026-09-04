@@ -27,19 +27,19 @@ env:
 jobs:
   check:
     name: Build + test
-    runs-on: ubuntu-latest
+    # The repo's own self-hosted runner on THEBATTLESHIP (NixOS, nix
+    # preinstalled). The build tree persists in $CI_CACHE_DIR between runs,
+    # which replaces the rust-cache round trip.
+    runs-on: [self-hosted, editor]
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
-      - name: Free disk space
+      - name: Persistent target dir
         run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
-          df -h / | tail -1
-      - uses: DeterminateSystems/nix-installer-action@v22
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: check
-          cache-on-failure: "true"
+          dir="${CI_CACHE_DIR:-$HOME/cargo-target}/checks"
+          mkdir -p "$dir"
+          echo "CARGO_TARGET_DIR=$dir" >> "$GITHUB_ENV"
+          echo "target dir: $dir ($(du -sh "$dir" 2>/dev/null | cut -f1))"
       - name: Manifests + lockfile
         run: ${NIX_DEV} cargo metadata --locked --format-version 1 > /dev/null
       - name: cargo fmt --check
