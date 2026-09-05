@@ -919,14 +919,19 @@
    the source block when there's no chart — over that block's corner
    whitespace, not on a line above and not floating over the widget.
    The tag stays faint as a label; the buttons brighten on hover. */
+/* Not `relative` any more: the header is a child of the widget and must
+   anchor to the card, not to whichever pane it happens to sit in. A
+   positioned pane would capture it and put the controls back on the
+   chart. */
 .editor-root .md-keyflow-render,
 .editor-root .md-keyflow-sourcebox {
-    position: relative;
+    position: static;
 }
 .editor-root .md-keyflow-header {
     position: absolute;
-    top: 6px;
-    right: 6px;
+    /* Inside the frame, which starts at the widget's 4px padding. */
+    top: 10px;
+    right: 8px;
     z-index: 2;
     display: inline-flex;
     align-items: center;

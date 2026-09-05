@@ -2231,20 +2231,23 @@ fn emit_rendered_fence(
                         tag = escape_html(info),
                     );
                     let highlighted = keyflow::highlight_keyflow(body);
+                    // The header — fence tag, copy, source toggle — is a
+                    // child of the WIDGET, not of either pane, so it
+                    // anchors to the top-right of the card as a whole.
+                    // It used to sit inside the chart, which put the
+                    // controls on top of the engraving; now they land on
+                    // whatever is actually at the top, which is the
+                    // source when one is shown and the chart when it is
+                    // not.
                     let html = svg.map_or_else(
                     || {
-                        // Source only: header anchors to the
-                        // source block's top-right.
                         format!(
-                            r#"<div class="md-keyflow-widget{show}{only}" data-focus-pos="{content_start}"><div class="md-keyflow-sourcebox">{header}<pre class="md-keyflow-source"><code class="kf-code">{highlighted}</code></pre></div></div>"#,
+                            r#"<div class="md-keyflow-widget{show}{only}" data-focus-pos="{content_start}">{header}<div class="md-keyflow-sourcebox"><pre class="md-keyflow-source"><code class="kf-code">{highlighted}</code></pre></div></div>"#,
                         )
                     },
                     |svg| {
-                        // Chart present: header anchors to the
-                        // chart's top-right; the source block (if
-                        // shown) stacks above it.
                         format!(
-                            r#"<div class="md-keyflow-widget{show}{only}" data-focus-pos="{content_start}"><div class="md-keyflow-sourcebox"><pre class="md-keyflow-source"><code class="kf-code">{highlighted}</code></pre></div><div class="md-keyflow-render">{header}{svg}</div></div>"#,
+                            r#"<div class="md-keyflow-widget{show}{only}" data-focus-pos="{content_start}">{header}<div class="md-keyflow-sourcebox"><pre class="md-keyflow-source"><code class="kf-code">{highlighted}</code></pre></div><div class="md-keyflow-render">{svg}</div></div>"#,
                         )
                     },
                 );
