@@ -65,6 +65,9 @@ fn registry() -> &'static RwLock<HashMap<String, Arc<dyn FenceRenderer>>> {
 /// case-insensitively against the fence's info string, and is the *base*
 /// language — the keyflow family (`kf`, `kf+`, `kf-`) all resolve to `kf`.
 pub fn register_fence_renderer(language: &str, renderer: Arc<dyn FenceRenderer>) {
+    // Mirrored into the plugin registry so a language registered through
+    // this older seam is still findable the one way — see `crate::plugin`.
+    crate::plugin::adopt_renderer(language, Arc::clone(&renderer));
     if let Ok(mut map) = registry().write() {
         map.insert(language.to_ascii_lowercase(), renderer);
     }

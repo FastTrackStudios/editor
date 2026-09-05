@@ -95,6 +95,62 @@ pub fn languages() -> Vec<String> {
     )
 }
 
+/// Register the languages this crate renders itself.
+///
+/// Called once, from the decoration pass. Mermaid and Typst live behind
+/// the same trait as anything a host registers — the only thing that
+/// makes them "built in" is that `editor-state` happens to depend on
+/// their renderers, and the dispatch cannot tell the difference.
+pub(crate) fn ensure_builtins() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        register("mermaid", Arc::new(crate::markdown::mermaid::MermaidPlugin));
+        register("typst", Arc::new(crate::markdown::typst::TypstPlugin));
+    });
+}
+
+/// Adapts a [`FenceRenderer`](crate::fence_renderer::FenceRenderer) to
+/// the plugin trait.
+///
+/// `fence_renderer` is the older, narrower seam and hosts outside this
+/// repo register through it — keyflow's chart renderer is one. Rather
+/// than break them, every such registration is wrapped and lands in this
+/// registry too, so there is one place to look a language up even while
+/// two ways to register survive.
+struct RendererAdapter {
+    inner: Arc<dyn crate::fence_renderer::FenceRenderer>,
+    class: &'static str,
+}
+
+impl FencePlugin for RendererAdapter {
+    fn render(&self, source: &str) -> Option<String> {
+        self.inner.render_svg(source)
+    }
+    fn highlight(&self, source: &str) -> String {
+        self.inner.highlight_html(source)
+    }
+    fn widget_class(&self) -> &'static str {
+        self.class
+    }
+}
+
+/// Mirror a `fence_renderer` registration into the plugin registry.
+pub(crate) fn adopt_renderer(
+    language: &str,
+    renderer: Arc<dyn crate::fence_renderer::FenceRenderer>,
+) {
+    register(
+        language,
+        Arc::new(RendererAdapter {
+            inner: renderer,
+            // Languages registered through the old seam draw their own
+            // widget markup at the dispatch; this class is only the
+            // fallback wrapper for one that does not.
+            class: "md-fence-widget",
+        }),
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

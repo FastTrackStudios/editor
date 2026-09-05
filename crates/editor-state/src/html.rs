@@ -267,15 +267,6 @@ impl Ev {
     }
 }
 
-const fn char_len(b: u8) -> usize {
-    match b {
-        0x00..=0x7F => 1,
-        0xC0..=0xDF => 2,
-        0xE0..=0xEF => 3,
-        _ => 4,
-    }
-}
-
 fn push_escaped(out: &mut String, c: char) {
     match c {
         '&' => out.push_str("&amp;"),

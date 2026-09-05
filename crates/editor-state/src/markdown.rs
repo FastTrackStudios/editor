@@ -271,6 +271,7 @@ pub fn live_preview_with_lookups(
     // case at a couple of cold compiles per render so a doc
     // full of fresh math doesn't block typing. See `typst`
     // submodule for the budget value and rationale.
+    crate::plugin::ensure_builtins();
     reset_compile_budget();
     reset_mermaid_budget();
     reset_keyflow_budget();
@@ -351,11 +352,11 @@ pub mod frontmatter;
 use frontmatter::render_properties_html;
 pub use frontmatter::{FrontMatter, PropValue, Property, parse_frontmatter, serialize_property};
 
-mod typst;
+pub(crate) mod typst;
 use typst::{TypstKind, render_typst, reset_compile_budget};
 
-mod mermaid;
-use mermaid::{render_mermaid, reset_compile_budget as reset_mermaid_budget};
+pub(crate) mod mermaid;
+use mermaid::reset_compile_budget as reset_mermaid_budget;
 
 mod keyflow;
 use keyflow::{render_keyflow, reset_compile_budget as reset_keyflow_budget};
@@ -1820,8 +1821,10 @@ fn emit_rendered_fence(
     out: &mut Vec<DecoratedRange>,
 ) -> bool {
     let (mc, mlen) = marker;
-    if info.eq_ignore_ascii_case("typst")
-        || info.eq_ignore_ascii_case("mermaid")
+    // A language renders as a widget if something registered a plugin for
+    // it. `kf*` and `tabs` build their widget markup inline below rather
+    // than through a plugin, so they are named; nothing else is.
+    if crate::plugin::get(info).is_some()
         || info.eq_ignore_ascii_case("kf")
         || info.eq_ignore_ascii_case("kf+")
         || info.eq_ignore_ascii_case("kf-")
@@ -1839,7 +1842,6 @@ fn emit_rendered_fence(
         }
         let fence_range = line_from..close_end;
         if !cursor_touches(primary, fence_range.clone()) && !body.trim().is_empty() {
-            let is_mermaid = info.eq_ignore_ascii_case("mermaid");
             // The keyflow fence family — the AUTHOR picks per
             // snippet what shows, portable in the markdown:
             //   ```kf   → engraved chart only (default)
@@ -1932,18 +1934,15 @@ fn emit_rendered_fence(
                     out.push(Decoration::replace(fence_range.clone()));
                     out.push(Decoration::widget(fence_range.start, html));
                 }
-            } else {
-                let svg = if is_mermaid {
-                    render_mermaid(body)
-                } else {
-                    render_typst(TypstKind::Block, body)
-                };
-                if let Some(svg) = svg {
-                    let class = if is_mermaid {
-                        "md-mermaid-widget"
-                    } else {
-                        "md-typst-widget"
-                    };
+            } else if let Some(plugin) = crate::plugin::get(info) {
+                // Every other renderable fence, by registration rather
+                // than by name. This arm does not know that mermaid and
+                // typst exist — it asks the registry what `info` means,
+                // and a language nobody registered falls through to an
+                // ordinary code block, which is the right answer for a
+                // fence tag that is just a label.
+                if let Some(svg) = plugin.render(body) {
+                    let class = plugin.widget_class();
                     let html = format!(
                         r#"<div class="{class}" data-focus-pos="{content_start}">{svg}</div>"#,
                     );
@@ -2006,8 +2005,12 @@ fn open_fence_at_line(
         // Keyflow fences build their own header (tag + copy) inside
         // the widget, so skip the absolute-positioned code header
         // that ordinary fences overlay.
-        let is_rendered_fence = info.eq_ignore_ascii_case("typst")
-            || info.eq_ignore_ascii_case("mermaid")
+        // Asked of the registry, not a list of names: any language with
+        // a plugin draws its own widget, so the floating header would be
+        // a leftover sitting on top of it. `kf*` and `tabs` are the two
+        // that build their widgets inline in `emit_rendered_fence`
+        // rather than through a plugin, so they still say so here.
+        let is_rendered_fence = crate::plugin::get(info).is_some()
             || info.eq_ignore_ascii_case("kf")
             || info.eq_ignore_ascii_case("kf+")
             || info.eq_ignore_ascii_case("kf-")
