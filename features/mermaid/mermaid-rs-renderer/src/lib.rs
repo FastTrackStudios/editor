@@ -88,8 +88,9 @@
 //! mermaid-rs-renderer = { version = "0.1", default-features = false }
 //! ```
 
-#[cfg(feature = "cli")]
 pub mod cli;
+#[cfg(feature = "cli")]
+pub mod clock;
 pub mod config;
 pub mod ir;
 pub mod layout;
@@ -306,20 +307,18 @@ pub fn render_with_detailed_timing(
     input: &str,
     options: RenderOptions,
 ) -> anyhow::Result<RenderDetailedResult> {
-    use web_time::Instant;
-
-    let t0 = Instant::now();
+    let t0 = crate::clock::Stopwatch::start();
     let parsed = parse_mermaid(input)?;
-    let parse_us = t0.elapsed().as_micros();
+    let parse_us = t0.elapsed_us();
 
-    let t1 = Instant::now();
+    let t1 = crate::clock::Stopwatch::start();
     let (layout, layout_stages) =
         compute_layout_with_metrics(&parsed.graph, &options.theme, &options.layout);
-    let layout_us = t1.elapsed().as_micros();
+    let layout_us = t1.elapsed_us();
 
-    let t2 = Instant::now();
+    let t2 = crate::clock::Stopwatch::start();
     let svg = render_svg(&layout, &options.theme, &options.layout);
-    let render_us = t2.elapsed().as_micros();
+    let render_us = t2.elapsed_us();
 
     Ok(RenderDetailedResult {
         svg,

@@ -4950,7 +4950,6 @@ dependencies = [
  "thiserror 2.0.20",
  "ttf-parser 0.25.1",
  "usvg 0.46.0",
- "web-time",
 ]
 
 [[package]]

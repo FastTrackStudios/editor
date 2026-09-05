@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
-use web_time::Instant;
 
 use crate::config::LayoutConfig;
 use crate::ir::{DiagramKind, Graph};
@@ -141,7 +140,7 @@ pub(in crate::layout) fn build_routed_edges(ctx: RoutedEdgeBuildContext<'_>) -> 
     };
     let mut stage_metrics = stage_metrics;
 
-    let port_assignment_start = Instant::now();
+    let port_assignment_start = crate::clock::Stopwatch::start();
     let mut node_degrees: HashMap<String, usize> = HashMap::new();
     for edge in &graph.edges {
         *node_degrees.entry(edge.from.clone()).or_insert(0) += 1;
@@ -411,10 +410,10 @@ pub(in crate::layout) fn build_routed_edges(ctx: RoutedEdgeBuildContext<'_>) -> 
     if let Some(metrics) = stage_metrics.as_mut() {
         metrics.port_assignment_us = metrics
             .port_assignment_us
-            .saturating_add(port_assignment_start.elapsed().as_micros());
+            .saturating_add(port_assignment_start.elapsed_us());
     }
 
-    let edge_routing_start = Instant::now();
+    let edge_routing_start = crate::clock::Stopwatch::start();
     let pair_counts = build_edge_pair_counts(&graph.edges);
     let mut pair_seen: HashMap<(String, String), usize> = HashMap::new();
     let mut pair_index: Vec<usize> = vec![0; graph.edges.len()];
@@ -848,7 +847,7 @@ pub(in crate::layout) fn build_routed_edges(ctx: RoutedEdgeBuildContext<'_>) -> 
     if let Some(metrics) = stage_metrics {
         metrics.edge_routing_us = metrics
             .edge_routing_us
-            .saturating_add(edge_routing_start.elapsed().as_micros());
+            .saturating_add(edge_routing_start.elapsed_us());
     }
 
     post_route::build_edge_layouts(

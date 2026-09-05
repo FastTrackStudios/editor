@@ -169,19 +169,19 @@ pub fn run() -> Result<()> {
     };
 
     if diagrams.len() == 1 {
-        let t_parse_start = web_time::Instant::now();
+        let t_parse_start = crate::clock::Stopwatch::start();
         let parsed = parse_mermaid(&diagrams[0])?;
-        let parse_us = t_parse_start.elapsed().as_micros();
+        let parse_us = t_parse_start.elapsed_us();
 
         let mut config = base_config.clone();
         if let Some(init_cfg) = parsed.init_config {
             config = merge_init_config(config, init_cfg);
         }
 
-        let t_layout_start = web_time::Instant::now();
+        let t_layout_start = crate::clock::Stopwatch::start();
         let (layout, layout_stages) =
             compute_layout_with_metrics(&parsed.graph, &config.theme, &config.layout);
-        let layout_us = t_layout_start.elapsed().as_micros();
+        let layout_us = t_layout_start.elapsed_us();
 
         if let Some(outputs) = layout_outputs.as_ref()
             && let Some(path) = outputs.first()
@@ -189,9 +189,9 @@ pub fn run() -> Result<()> {
             write_layout_dump(path, &layout, &parsed.graph)?;
         }
 
-        let t_render_start = web_time::Instant::now();
+        let t_render_start = crate::clock::Stopwatch::start();
         let svg = render_svg(&layout, &config.theme, &config.layout);
-        let render_us = t_render_start.elapsed().as_micros();
+        let render_us = t_render_start.elapsed_us();
 
         match args.output_format {
             OutputFormat::Svg => {

@@ -79,13 +79,6 @@ harness = false
 [dependencies.anyhow]
 version = "1.0"
 
-# `web-time` is a drop-in replacement for `std::time::Instant`
-# that works on `wasm32-unknown-unknown`. Locally vendored
-# patch: the upstream crate calls `Instant::now()` from inside
-# `compute_layout` (not feature-gated), which panics on the web.
-[dependencies.web-time]
-version = "1"
-
 [dependencies.clap]
 version = "4.5"
 features = ["derive"]
