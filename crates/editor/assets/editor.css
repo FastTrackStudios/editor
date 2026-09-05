@@ -881,6 +881,29 @@
    chart and always shows the source. In an editable editor, clicking
    the chart drops the caret into the fence body (data-focus-pos) so
    the raw source opens for editing. */
+/* Widget content is RENDERED HTML, not source.
+   
+   `.editor-root` is `white-space: pre-wrap` so that a line keeps its own
+   spacing — that is the editor's whole job. Inside a widget there is no
+   source to preserve, and the rule turns every newline a renderer's
+   serializer happens to emit into an anonymous line box: an engraved
+   chart arrived with a blank row above and below it, inside its own
+   frame, because the SVG was preceded by a comment and a newline.
+   
+   Trimming the renderers' output fixes the whitespace we control; this
+   fixes the whitespace we do not. A `<pre>` inside a widget sets its own
+   `white-space` and is unaffected. */
+.editor-root .md-keyflow-widget,
+.editor-root .md-keyflow-render,
+.editor-root .md-keyflow-sourcebox,
+.editor-root .md-math-widget,
+.editor-root .md-typst-widget,
+.editor-root .md-mermaid-widget,
+.editor-root .md-embed-card,
+.editor-root .md-block-embed-card {
+    white-space: normal;
+}
+
 .editor-root .md-keyflow-widget {
     display: block;
     position: relative;
