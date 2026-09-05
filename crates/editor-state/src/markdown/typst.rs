@@ -140,3 +140,25 @@ fn with_typst_cache<R>(f: impl FnOnce(&mut TypstCache) -> R) -> R {
     }
     CACHE.with(|c| f(&mut c.borrow_mut()))
 }
+
+/// Typst as a fence plugin, for ```` ```typst ```` blocks.
+///
+/// Inline and display math reach the compiler by a different path —
+/// they are spans inside a paragraph, not fences — so this covers the
+/// block form only. The budget is shared with them, which is why it is
+/// two rather than one.
+pub struct TypstPlugin;
+
+impl crate::plugin::FencePlugin for TypstPlugin {
+    fn render(&self, source: &str) -> Option<String> {
+        render_typst(TypstKind::Block, source)
+    }
+
+    fn widget_class(&self) -> &'static str {
+        "md-typst-widget"
+    }
+
+    fn budget_per_pass(&self) -> u8 {
+        COMPILE_BUDGET_PER_PASS
+    }
+}

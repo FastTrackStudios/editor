@@ -159,3 +159,20 @@ mod tests {
         assert!(out.contains("#abc123"));
     }
 }
+
+/// Mermaid as a fence plugin.
+///
+/// The cache, the budget and the theming all already lived in this
+/// module; the plugin is the thin shell that lets the dispatch find them
+/// without naming mermaid.
+pub struct MermaidPlugin;
+
+impl crate::plugin::FencePlugin for MermaidPlugin {
+    fn render(&self, source: &str) -> Option<String> {
+        render_mermaid(source)
+    }
+
+    fn widget_class(&self) -> &'static str {
+        "md-mermaid-widget"
+    }
+}
