@@ -101,6 +101,31 @@ fn emit(
 /// Builds the HTML. Split from [`emit`] so the walk stays a short loop
 /// and each thing that can happen at an offset is one method.
 /// Is this one of the six heading line classes?
+/// Is this destination safe to put in an `href`?
+///
+/// A link's destination comes from the document, and a document can come
+/// from anywhere. `javascript:` in an `href` runs on click, so a scheme
+/// allowlist is what stands between a pasted note and script execution.
+/// Anything without a scheme — `/guide/chords`, `#heading`, `pic.png` —
+/// is a relative URL and cannot carry one.
+fn is_safe_href(href: &str) -> bool {
+    let trimmed = href.trim_start();
+    // A scheme runs to the first `:`, and may not contain `/`, `?` or `#`
+    // — so `/a:b` and `a/b:c` are paths, not schemes.
+    match trimmed.split_once(':') {
+        None => true,
+        Some((scheme, _)) => {
+            if scheme.contains('/') || scheme.contains('?') || scheme.contains('#') {
+                return true;
+            }
+            matches!(
+                scheme.trim().to_ascii_lowercase().as_str(),
+                "http" | "https" | "mailto" | "tel" | "ftp"
+            )
+        }
+    }
+}
+
 fn is_heading_class(class: &str) -> bool {
     matches!(
         class,
@@ -185,18 +210,28 @@ impl<'a> Emitter<'a> {
         match kind {
             Ev::Line(class) => self.line_classes.push(class.clone()),
             Ev::MarkStart(class, attrs) => {
-                // A wikilink becomes a real anchor when the host can say
-                // where it points. The editor's own markup is a span the
-                // app makes clickable with a listener, which on a static
-                // page is a link that does nothing.
-                let href = self.link_href.and_then(|f| {
-                    class.contains("md-wikilink").then(|| {
-                        attrs
-                            .iter()
-                            .find(|(k, _)| k == "data-href")
-                            .and_then(|(_, target)| f(target))
-                    })?
-                });
+                // An ordinary link already knows where it points, so it
+                // is an anchor. Only a WIKIlink needs the host to resolve
+                // it — `[[Chords]]` is a page name, not a URL — and
+                // without a resolver it stays a span the app makes
+                // clickable with a listener.
+                //
+                // Emitting a span for both is what made every
+                // cross-reference in a published guide inert: styled,
+                // resolved, and dead to a click.
+                let target = attrs
+                    .iter()
+                    .find(|(k, _)| k == "data-href")
+                    .map(|(_, v)| v.as_str());
+                let href = if class.contains("md-wikilink") {
+                    self.link_href
+                        .and_then(|f| target.and_then(|t| f(t)))
+                        .filter(|h| is_safe_href(h))
+                } else if class.contains("md-link") || class.contains("md-autolink") {
+                    target.filter(|t| is_safe_href(t)).map(ToOwned::to_owned)
+                } else {
+                    None
+                };
                 let (elem, close) = if href.is_some() {
                     ("a", "</a>")
                 } else {
@@ -709,6 +744,48 @@ mod tests {
         let resolved = render_markdown_html_with("see [[header]]", &OnePage);
         assert!(resolved.contains("md-wikilink"), "{resolved}");
         assert!(!resolved.contains("md-wikilink-unresolved"), "{resolved}");
+    }
+
+    #[test]
+    fn an_ordinary_link_is_an_anchor() {
+        // A published cross-reference has to be clickable. Both of these
+        // rendered as spans, so every link in a generated guide was
+        // styled, resolved and dead.
+        let out = html("[Chords](/guide/chords) and <https://example.com>");
+        assert!(
+            out.contains(r#"<a class="md-link" href="/guide/chords""#),
+            "{out}"
+        );
+        assert!(out.contains(r#"href="https://example.com""#), "{out}");
+    }
+
+    #[test]
+    fn a_dangerous_scheme_is_not_put_in_an_href() {
+        // A link's destination comes from the document, and `javascript:`
+        // in an href runs on click.
+        for bad in [
+            "[x](javascript:alert(1))",
+            "[x](JavaScript:alert(1))",
+            "[x](  javascript:alert(1))",
+            "[x](data:text/html,<script>)",
+            "[x](vbscript:msgbox)",
+        ] {
+            let out = html(bad);
+            assert!(!out.contains("<a "), "{bad} became an anchor:\n{out}");
+        }
+        // Relative and ordinary destinations still are.
+        for good in [
+            "[x](/guide/a)",
+            "[x](#heading)",
+            "[x](pic.png)",
+            "[x](mailto:a@b.c)",
+        ] {
+            assert!(
+                html(good).contains("<a "),
+                "{good} did not:\n{}",
+                html(good)
+            );
+        }
     }
 
     #[test]

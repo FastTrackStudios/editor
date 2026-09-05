@@ -1425,7 +1425,11 @@ fn decorate_link_span(
                 None => None,
             }
         }
-        "md-wikilink" => Some(text.slice(span.body.clone()).to_string()),
+        // For both of these the body IS the destination — a page name
+        // for a wikilink, a URL for an autolink. The autolink carries a
+        // `data-href` for the same reason a `[text](url)` does: that is
+        // what the HTML emitter turns into an anchor.
+        "md-wikilink" | "md-autolink" => Some(text.slice(span.body.clone()).to_string()),
         _ => None,
     };
     // An unmatched reference label is literal text — no styling,
