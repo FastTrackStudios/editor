@@ -1,3 +1,10 @@
+//! A language the editor has never heard of renders because someone
+//! registered a plugin for it.
+//!
+//! An integration test on purpose: it registers from OUTSIDE the crate,
+//! which is the thing that would break if the fence dispatch went back to
+//! naming its languages.
+
 use editor_state::plugin::{self, FencePlugin};
 use std::sync::Arc;
 
