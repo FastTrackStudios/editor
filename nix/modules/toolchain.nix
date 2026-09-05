@@ -98,9 +98,6 @@
       ++ lib.optionals pkgs.stdenv.isLinux [
         # cargo-sweep — reclaims stale target/ artifacts; cargo never GCs.
         cargo-sweep
-        # sccache — compiler cache, wired as RUSTC_WRAPPER in
-        # nix/modules/shells/default.nix.
-        sccache
       ];
 
       # Env every dev/CI shell needs — build-script and bindgen paths,

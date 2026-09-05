@@ -1,5 +1,5 @@
 # CI shell — the default shell minus every interactive convenience.
-# No .env sourcing, no dx/Playwright/editor tooling, no sccache. Toolchain
+# No .env sourcing, no dx/Playwright/editor tooling. Toolchain
 # + native headers + the env the build scripts need, nothing else.
 # Workflows enter it via `nix develop .#ci`.
 #
