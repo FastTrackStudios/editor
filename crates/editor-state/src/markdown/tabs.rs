@@ -180,7 +180,8 @@ fn build_html(tabs: &[Tab], u: &str) -> String {
     }
 
     let css = format!(
-        ".md-tabs-{u}{{display:block;margin:0.4em 0}}\
+        ".md-tabs-{u}{{display:block;margin:0.4em 0;\
+         font-family:var(--ed-font);white-space:normal}}\
          .md-tabs-{u} .md-tabs-radio{{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;clip:rect(0 0 0 0);overflow:hidden}}\
          .md-tabs-{u} .md-tabs-strip{{display:flex;flex-wrap:wrap;gap:0.15em;border-bottom:1px solid rgba(128,128,128,0.35);margin-bottom:0.2em}}\
          .md-tabs-{u} .md-tabs-strip label{{padding:0.3em 0.75em;cursor:pointer;opacity:0.6;border-bottom:2px solid transparent;margin-bottom:-1px;user-select:none;white-space:nowrap}}\
