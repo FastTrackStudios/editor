@@ -149,9 +149,14 @@ pub fn render_typst(kind: TypstKind, body: &str) -> Option<String> {
             // Typst emits hex literals lowercase but be
             // defensive about an uppercase variant if it ever
             // changes.
+            // Trimmed: see the note in the keyflow renderer — a
+            // newline around the SVG becomes a blank row under
+            // `white-space: pre-wrap`.
             let themed = svg
                 .replace("#ff00fe", "currentColor")
-                .replace("#FF00FE", "currentColor");
+                .replace("#FF00FE", "currentColor")
+                .trim()
+                .to_owned();
             // Math only. A `typst` fence is a whole document laid out at
             // its own scale; sizing it to the body text shrank the block
             // to a caption.

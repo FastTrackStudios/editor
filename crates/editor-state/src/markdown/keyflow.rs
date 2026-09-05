@@ -59,6 +59,13 @@ pub fn render_keyflow(body: &str) -> Option<String> {
             None
         },
         |svg| {
+            // Trimmed before caching. A renderer's serializer may wrap
+            // its output in newlines, and `.editor-root` is
+            // `white-space: pre-wrap` — so one survives as an anonymous
+            // line box and pads the widget with a blank row above and
+            // below, inside its own frame. The same trap as whitespace
+            // between rendered lines; widget HTML is subject to it too.
+            let svg = svg.trim().to_owned();
             with_keyflow_cache(|c| c.put(body.to_string(), svg.clone()));
             Some(svg)
         },

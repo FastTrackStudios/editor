@@ -48,7 +48,10 @@ pub fn render_mermaid(body: &str) -> Option<String> {
 
     match editor_mermaid::render_svg(body) {
         Ok(svg) => {
-            let themed = themify_svg(&svg);
+            // Trimmed: see the note in the keyflow renderer — a
+            // newline around the SVG becomes a blank row under
+            // `white-space: pre-wrap`.
+            let themed = themify_svg(&svg).trim().to_owned();
             with_mermaid_cache(|c| c.put(body.to_string(), themed.clone()));
             Some(themed)
         }

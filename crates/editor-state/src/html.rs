@@ -577,6 +577,21 @@ mod tests {
     }
 
     #[test]
+    fn a_rendered_widget_carries_no_stray_whitespace() {
+        // `.editor-root` is `white-space: pre-wrap`, so a newline around
+        // a renderer's SVG survives as an anonymous line box and pads
+        // the widget with a blank row inside its own frame. The renderers
+        // trim before caching; this pins that they do.
+        let out = html("```mermaid\nflowchart LR\nA-->B\n```");
+        assert!(out.contains("md-mermaid-widget"), "{out}");
+        assert!(
+            !out.contains(">\n<svg") && !out.contains("</svg>\n<"),
+            "whitespace around the rendered svg:\n{}",
+            &out[..out.len().min(400)]
+        );
+    }
+
+    #[test]
     fn list_bullets_step_by_depth() {
         let out = html("- top\n  - one\n    - two");
         assert!(out.contains("•"), "{out}");

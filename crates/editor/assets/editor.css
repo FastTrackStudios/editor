@@ -948,13 +948,23 @@
     color: var(--ed-link);
     background: color-mix(in oklab, var(--ed-link) 18%, transparent);
 }
+/* The source and the chart it makes are ONE object, not two stacked
+   ones. They used to be: each carried its own border and 8px radius with
+   a 10px gap between them, which reads as a code block that happens to
+   be followed by a picture rather than as a chart and the text that
+   produced it.
+   
+   So the pair shares a frame. The source keeps the top corners, the
+   chart keeps the bottom ones, a hairline divides them, and nothing sits
+   between. */
 .editor-root .md-keyflow-source {
     display: none;
-    /* Full-width source block, above the chart. */
-    margin: 0 0 10px;
+    /* Flush to the chart below: the divider is the border, not a gap. */
+    margin: 0;
     padding: 10px 12px;
-    border-radius: 8px;
     border: 1px solid var(--ed-border);
+    border-radius: 8px 8px 0 0;
+    border-bottom: 0;
     background: var(--ed-bg-elev);
     font-family: var(--ed-mono);
     font-size: 0.9em;
@@ -962,6 +972,12 @@
     white-space: pre;
     overflow-x: auto;
     color: inherit;
+}
+/* With no source shown the chart is the whole object and keeps all four
+   corners; with one above it, only the bottom two. */
+.editor-root .md-keyflow-widget.md-keyflow-show-source .md-keyflow-render {
+    border-radius: 0 0 8px 8px;
+    border-top: 1px solid var(--ed-border);
 }
 .editor-root .md-keyflow-widget.md-keyflow-show-source .md-keyflow-source,
 .editor-root .md-keyflow-source-only .md-keyflow-source {
@@ -978,6 +994,14 @@
     /* Full-width engraved chart — fills the column width. */
     width: 100%;
     overflow-x: auto;
+    /* The chart's own paper. Matches the source's frame so the two read
+       as one card when both are shown — see `.md-keyflow-source`. */
+    border: 1px solid var(--ed-border);
+    border-radius: 8px;
+    /* The engraving is drawn on white and the SVG has no radius of its
+       own, so without this its square corners poke through the frame's
+       rounded ones. */
+    overflow: hidden;
 }
 .editor-root .md-keyflow-render svg {
     /* Fill the available width rather than sitting narrow and
