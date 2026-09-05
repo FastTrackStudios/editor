@@ -1038,6 +1038,7 @@ fn decorate_inline_spans(
     strip_runs: &mut Option<std::collections::HashMap<usize, StripRunCtx>>,
     out: &mut Vec<DecoratedRange>,
 ) {
+    let defs = link_definitions(text);
     for span in find_spans(text) {
         if in_fenced_code(fenced_ranges, span.outer.start) {
             continue;
@@ -1065,7 +1066,9 @@ fn decorate_inline_spans(
             if decorate_leaf_span(&span, text, primary, vault, kbd, out) {
                 continue;
             }
-            decorate_link_span(&span, text, primary, vault, strip_runs, out);
+            if !decorate_link_span(&span, text, primary, &defs, vault, strip_runs, out) {
+                continue;
+            }
         }
         if !cursor_touches(primary, span.outer.clone()) {
             // Hide the opening bracket(s) and, for an aliased wikilink,
@@ -1335,18 +1338,49 @@ fn decorate_link_span(
     span: &Span,
     text: &str,
     primary: Range,
+    defs: &std::collections::HashMap<String, (String, Option<String>)>,
     vault: Option<&dyn VaultLookup>,
     strip_runs: &mut Option<std::collections::HashMap<usize, StripRunCtx>>,
     out: &mut Vec<DecoratedRange>,
-) {
+) -> bool {
+    let mut link_title: Option<String> = None;
     let href = match span.class {
-        "md-link" => Some(
-            text.slice(span.body.end.saturating_add(2)..span.outer.end.saturating_sub(1))
-                .to_string(),
-        ),
+        "md-link" => {
+            let dest =
+                text.slice(span.body.end.saturating_add(2)..span.outer.end.saturating_sub(1));
+            let (url, title) = split_destination(dest);
+            link_title = title;
+            Some(url)
+        }
+        // `[text][label]`, `[text][]` and bare `[label]`. The
+        // label is whatever sits in the second bracket pair, or
+        // the display text itself for the collapsed / shortcut
+        // forms. An unresolved label is not a link at all.
+        "md-reflink" => {
+            let label = text
+                .slice(span.body.end.saturating_add(2)..span.outer.end.saturating_sub(1))
+                .trim();
+            let key = if label.is_empty() {
+                normalize_label(text.slice(span.body.clone()))
+            } else {
+                normalize_label(label)
+            };
+            match defs.get(&key) {
+                Some((url, title)) => {
+                    link_title.clone_from(title);
+                    Some(url.clone())
+                }
+                None => None,
+            }
+        }
         "md-wikilink" => Some(text.slice(span.body.clone()).to_string()),
         _ => None,
     };
+    // An unmatched reference label is literal text — no styling,
+    // and the brackets stay visible.
+    if span.class == "md-reflink" && href.is_none() {
+        return false;
+    }
     // For `[[target|display]]` only the display text is shown —
     // the `target|` prefix is hidden (like the brackets). The
     // display range is the body after the first `|`; without an
@@ -1368,7 +1402,7 @@ fn decorate_link_span(
     // wires via `data-href="song-play:<target>"`). Caret on the
     // line falls through to the normal editable link.
     if decorate_standalone_wikilink(span, text, primary, vault, href.as_deref(), strip_runs, out) {
-        return;
+        return true;
     }
     if let Some(h) = href {
         // Wikilinks: consult the vault to decide
@@ -1396,10 +1430,15 @@ fn decorate_link_span(
             } else {
                 "md-wikilink md-wikilink-unresolved"
             }
+        } else if span.class == "md-reflink" {
+            "md-link"
         } else {
             span.class
         };
         let mut attrs = vec![("data-href".into(), h)];
+        if let Some(t) = link_title {
+            attrs.push(("title".into(), t));
+        }
         if let Some(text) = scripture_hit.and_then(|sc| {
             sc.text
                 .map(|t| format!("{} ({})\n{}", sc.display, sc.translation, t))
@@ -1417,6 +1456,7 @@ fn decorate_link_span(
     } else {
         out.push(Decoration::mark(span.body.clone(), span.class));
     }
+    true
 }
 
 /// Span classes whose decoration is self-contained: `^[inline footnotes]`,
@@ -1425,6 +1465,86 @@ fn decorate_link_span(
 /// Returns `true` when the span was consumed — see
 /// [`decorate_embed_like_span`] for the same convention. Split out of
 /// [`decorate_inline_spans`]; the arms are unchanged.
+/// Split a `CommonMark` link destination — the bytes between `(` and `)` —
+/// into the URL and its optional title.
+///
+/// `(/u "T")`, `(/u 'T')` and `(/u (T))` all carry a title; the title is
+/// advisory and becomes a `title=` attribute. Without this the whole
+/// payload went into `href`, so `[a](u "T")` linked to `u "T"`.
+/// Angle-bracketed destinations (`(<u v>)`) are unwrapped, which is how
+/// `CommonMark` spells a URL containing spaces.
+fn split_destination(raw: &str) -> (String, Option<String>) {
+    let raw = raw.trim();
+    if let Some(rest) = raw.strip_prefix('<')
+        && let Some(url) = rest.split_once('>')
+    {
+        let title = title_of(url.1);
+        return (url.0.to_owned(), title);
+    }
+    match raw.split_once(char::is_whitespace) {
+        Some((url, rest)) => (url.to_owned(), title_of(rest)),
+        None => (raw.to_owned(), None),
+    }
+}
+
+/// The quoted title trailing a link destination, unwrapped.
+fn title_of(rest: &str) -> Option<String> {
+    let rest = rest.trim();
+    let inner = rest
+        .strip_prefix('"')
+        .and_then(|r| r.strip_suffix('"'))
+        .or_else(|| rest.strip_prefix('\'').and_then(|r| r.strip_suffix('\'')))
+        .or_else(|| rest.strip_prefix('(').and_then(|r| r.strip_suffix(')')))?;
+    Some(inner.to_owned())
+}
+
+/// Collect `[label]: url "title"` link-reference definitions.
+///
+/// `CommonMark` lets a link name its destination once and refer to it by
+/// label anywhere — including *before* the definition — so this runs as a
+/// pre-pass over the whole document. Labels are matched case-insensitively
+/// with whitespace collapsed, as the spec requires.
+fn link_definitions(text: &str) -> std::collections::HashMap<String, (String, Option<String>)> {
+    let mut defs = std::collections::HashMap::new();
+    for line in text.lines() {
+        let t = line.trim_start();
+        let Some(rest) = t.strip_prefix('[') else {
+            continue;
+        };
+        let Some((label, tail)) = rest.split_once("]:") else {
+            continue;
+        };
+        if label.is_empty() || label.starts_with('^') {
+            continue;
+        }
+        let (url, title) = split_destination(tail);
+        if !url.is_empty() {
+            defs.insert(normalize_label(label), (url, title));
+        }
+    }
+    defs
+}
+
+/// A link label, folded for comparison: case-insensitive, with internal
+/// whitespace runs collapsed to one space.
+/// Is this line a `[label]: url "title"` link-reference definition?
+fn is_link_definition(line: &str) -> bool {
+    let t = line.trim_start();
+    t.strip_prefix('[')
+        .and_then(|r| r.split_once("]:"))
+        .is_some_and(|(label, tail)| {
+            !label.is_empty() && !label.starts_with('^') && !tail.trim().is_empty()
+        })
+}
+
+fn normalize_label(label: &str) -> String {
+    label
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
 fn decorate_leaf_span(
     span: &Span,
     text: &str,
@@ -1444,6 +1564,65 @@ fn decorate_leaf_span(
                     r#"<sup class="md-inline-footnote-marker" data-focus-pos="{}">[*]</sup>"#,
                     span.body.start,
                 ),
+            ));
+        }
+        return true;
+    }
+    // `![alt](url)` — a CommonMark image. Rendered as a real
+    // `<img>` when the caret is off it, the same treatment
+    // `![[file.png]]` gets; Obsidian's `|width` / `|WxH` suffix
+    // on the alt text is honoured here too.
+    if span.class == "md-image" {
+        let alt_raw = text.slice(span.body.clone());
+        let dest = text.slice(span.body.end.saturating_add(2)..span.outer.end.saturating_sub(1));
+        let (url, title) = split_destination(dest);
+        if !cursor_touches(primary, span.outer.clone()) {
+            let (alt, size) = match alt_raw.split_once('|') {
+                Some((a, opts)) => (a, parse_size_opts(opts).unwrap_or_default()),
+                None => (alt_raw, String::new()),
+            };
+            let title_attr = title
+                .map(|t| format!(r#" title="{}""#, html_escape(&t)))
+                .unwrap_or_default();
+            out.push(Decoration::replace(span.outer.clone()));
+            out.push(Decoration::widget(
+                span.outer.start,
+                format!(
+                    r#"<img class="md-embed-image" src="{}" alt="{}"{title_attr}{size}>"#,
+                    html_escape(&url),
+                    html_escape(alt),
+                ),
+            ));
+            out.push(Decoration::atomic(span.outer.clone()));
+            return true;
+        }
+        // Caret on the span: leave the source editable, styled
+        // like a link so it still reads as one thing.
+        out.push(Decoration::mark(span.body.clone(), "md-link"));
+        return true;
+    }
+    // `:rocket:` → 🚀. The source stays while the caret is on it.
+    if span.class == "md-emoji" {
+        if let Some(glyph) = crate::emoji::emoji_for(text.slice(span.body.clone()))
+            && !cursor_touches(primary, span.outer.clone())
+        {
+            out.push(Decoration::replace(span.outer.clone()));
+            out.push(Decoration::widget(
+                span.outer.start,
+                format!(r#"<span class="md-emoji">{glyph}</span>"#),
+            ));
+            out.push(Decoration::atomic(span.outer.clone()));
+        }
+        return true;
+    }
+    // Two trailing spaces — a hard line break. They occupy no
+    // width, so hide them and leave the line wrap to do the work.
+    if span.class == "md-hard-break" {
+        if !cursor_touches(primary, span.outer.clone()) {
+            out.push(Decoration::replace(span.outer.clone()));
+            out.push(Decoration::widget(
+                span.outer.start,
+                r#"<span class="md-hard-break"></span>"#.to_owned(),
             ));
         }
         return true;
@@ -1622,52 +1801,8 @@ fn emit_block_line(
         }
         let after_marker = line.after(marker_end);
         // Callout header at the deepest open level.
-        if let Some((kind, header_end_off)) = parse_callout_header(after_marker) {
-            // Extend the stack with synthetic ancestors if
-            // the user opens a depth-3 callout without
-            // having opened a depth-2 first. Real docs
-            // almost never hit this; the fallback keeps
-            // indexing safe.
-            while callout_stack.len() < depth.saturating_sub(1) {
-                callout_stack.push("note");
-            }
-            if callout_stack.len() == depth.saturating_sub(1) {
-                callout_stack.push(kind);
-            } else if let Some(slot) = callout_stack.get_mut(depth.saturating_sub(1)) {
-                *slot = kind;
-            }
-            let line_class = callout_class(kind, true);
-            out.push(Decoration::line(line_from, line_class));
-            if depth > 1 {
-                out.push(Decoration::line(line_from, callout_depth_class(depth)));
-            }
-            // Hide the `> > [!type] Title` markers when
-            // caret is off the line — the icon widget and the
-            // line class stand in for them. The marker span
-            // covers all `>` chars + their spaces.
-            let abs_header_end = abs_marker_end.saturating_add(header_end_off);
-            if !cursor_touches(primary, line_from..line_to) {
-                out.push(Decoration::mark(
-                    line_from..abs_marker_end,
-                    "md-quote-marker",
-                ));
-                out.push(Decoration::replace(abs_marker_end..abs_header_end));
-                // Obsidian's Lucide glyph, at the head of the
-                // title. Anchored at the *start* of the replaced
-                // syntax so it lands before the title text.
-                if let Some(svg) = crate::callout_icon::callout_icon(kind) {
-                    out.push(Decoration::widget(abs_marker_end, svg.to_owned()));
-                }
-                // A bare `> [!tip]` has no title text. Obsidian
-                // titles it with the type name; without this the
-                // header line renders as an empty coloured bar.
-                if after_marker.after(header_end_off).trim().is_empty() {
-                    out.push(Decoration::widget(
-                        abs_header_end,
-                        callout_default_title(kind).to_owned(),
-                    ));
-                }
-            }
+        if parse_callout_header(after_marker).is_some() {
+            emit_callout_header(line, line_from, line_to, primary, callout_stack, out);
             return;
         }
         // Plain blockquote or callout body — pick the kind
@@ -1686,15 +1821,137 @@ fn emit_block_line(
                 "md-quote-marker",
             ));
         }
+        // A list inside the quote is still a list. The body after
+        // the `>` markers is ordinary block content, so hand it to
+        // the same emitter the top level uses — with positions
+        // shifted past the markers.
+        let body = line.after(marker_end);
+        if parse_list_marker(body).is_some() {
+            emit_list_line(body, abs_marker_end, line_to, primary, out);
+        }
         return;
     }
     // A line without `>` drains the whole nesting stack.
     callout_stack.clear();
 
     // ── List (unordered or ordered) ────────────────────
+    if parse_list_marker(line).is_some() {
+        emit_list_line(line, line_from, line_to, primary, out);
+    }
+}
+
+/// Emit the decorations for a callout's header line — the type classes,
+/// the Lucide icon, a default title when the source gives none, and the
+/// fold control for a collapsible callout.
+///
+/// Split out of [`emit_block_line`], which outgrew its line budget once
+/// callouts learned icons and folding.
+fn emit_callout_header(
+    line: &str,
+    line_from: usize,
+    line_to: usize,
+    primary: Range,
+    callout_stack: &mut Vec<&'static str>,
+    out: &mut Vec<DecoratedRange>,
+) {
+    // Re-derived rather than passed: the caller has already matched
+    // this line as a blockquote, and two fewer parameters is worth one
+    // more walk over a handful of `>` bytes.
+    let Some((depth, marker_end)) = parse_blockquote_depth(line) else {
+        return;
+    };
+    let abs_marker_end = line_from.saturating_add(marker_end);
+    let after_marker = line.after(marker_end);
+    if let Some((kind, header_end_off, fold)) = parse_callout_header(after_marker) {
+        // Extend the stack with synthetic ancestors if
+        // the user opens a depth-3 callout without
+        // having opened a depth-2 first. Real docs
+        // almost never hit this; the fallback keeps
+        // indexing safe.
+        while callout_stack.len() < depth.saturating_sub(1) {
+            callout_stack.push("note");
+        }
+        if callout_stack.len() == depth.saturating_sub(1) {
+            callout_stack.push(kind);
+        } else if let Some(slot) = callout_stack.get_mut(depth.saturating_sub(1)) {
+            *slot = kind;
+        }
+        let line_class = callout_class(kind, true);
+        out.push(Decoration::line(line_from, line_class));
+        if let Some(folded) = fold {
+            out.push(Decoration::line(line_from, "md-callout-collapsible"));
+            if folded {
+                out.push(Decoration::line(line_from, "md-callout-folded"));
+            }
+        }
+        if depth > 1 {
+            out.push(Decoration::line(line_from, callout_depth_class(depth)));
+        }
+        // Hide the `> > [!type] Title` markers when
+        // caret is off the line — the icon widget and the
+        // line class stand in for them. The marker span
+        // covers all `>` chars + their spaces.
+        let abs_header_end = abs_marker_end.saturating_add(header_end_off);
+        if !cursor_touches(primary, line_from..line_to) {
+            out.push(Decoration::mark(
+                line_from..abs_marker_end,
+                "md-quote-marker",
+            ));
+            out.push(Decoration::replace(abs_marker_end..abs_header_end));
+            // Obsidian's Lucide glyph, at the head of the
+            // title. Anchored at the *start* of the replaced
+            // syntax so it lands before the title text.
+            if let Some(svg) = crate::callout_icon::callout_icon(kind) {
+                out.push(Decoration::widget(abs_marker_end, svg.to_owned()));
+            }
+            // Collapsible callout: Obsidian puts a chevron at
+            // the end of the title bar and folds the body. The
+            // host toggles `md-callout-collapsed` on the
+            // header; CSS hides the following body lines.
+            if let Some(folded) = fold {
+                out.push(Decoration::widget(
+                        line_to,
+                        format!(
+                            r#"<button class="md-callout-fold" data-folded="{folded}" aria-label="Toggle callout">&rsaquo;</button>"#
+                        ),
+                    ));
+            }
+            // A bare `> [!tip]` has no title text. Obsidian
+            // titles it with the type name; without this the
+            // header line renders as an empty coloured bar.
+            if after_marker.after(header_end_off).trim().is_empty() {
+                out.push(Decoration::widget(
+                    abs_header_end,
+                    callout_default_title(kind).to_owned(),
+                ));
+            }
+        }
+    }
+}
+
+/// Emit the decorations for one list item — the `md-list-item` line class,
+/// its indent depth, and the bullet / number widget.
+///
+/// Split out of [`emit_block_line`] so a list inside a blockquote or a
+/// callout gets the same treatment; before, `> - a` kept a literal `-`
+/// because only the top-level branch ever ran.
+fn emit_list_line(
+    line: &str,
+    line_from: usize,
+    line_to: usize,
+    primary: Range,
+    out: &mut Vec<DecoratedRange>,
+) {
     if let Some(marker_end) = parse_list_marker(line) {
         let abs_marker_end = line_from.saturating_add(marker_end);
         out.push(Decoration::line(line_from, "md-list-item"));
+        // Indent depth. A sub-list is indented by two spaces per
+        // level (or one tab); the class drives padding in CSS so
+        // the marker column steps in with it. Without this every
+        // level rendered flush left and nesting was invisible.
+        if let Some(cls) = list_depth_class(line) {
+            out.push(Decoration::line(line_from, cls));
+        }
         // Caret on the line: keep the raw `- ` / `1. ` source
         // visible (muted) so clicks land on real text and vim
         // motions don't fall through the Replace into the
@@ -2087,7 +2344,11 @@ fn emit_table_widget(
     let table_end = rows.last().map_or(line_to, |r| r.1);
     // Header / separator + body cells.
     let cells = collect_table_cells(text, &rows);
-    let html = render_table_html(&cells);
+    let align = rows
+        .get(1)
+        .map(|(f, t)| column_alignments(text.slice(*f..*t)))
+        .unwrap_or_default();
+    let html = render_table_html(&cells, &align);
     // When caret is anywhere in the table, leave the source visible
     // (Obsidian behavior — typing in tables works against the source).
     // Otherwise replace + widget.
@@ -2236,6 +2497,10 @@ fn scan_blocks(
     // fewer `>` markers pops back. Non-blockquote lines drain
     // the whole stack. Indexed by depth - 1 (depth 1 → [0]).
     let mut callout_stack: Vec<&'static str> = Vec::new();
+    // Block context the indented-code rule needs: an indent means
+    // "code" only at the start of a block, never inside a list.
+    let mut prev_blank = true;
+    let mut in_list = false;
 
     // Setext-style heading detection. For each window of two
     // consecutive lines, if the first is content and the second
@@ -2324,6 +2589,27 @@ fn scan_blocks(
             continue;
         }
 
+        // ── Indented code block ────────────────────────────
+        // Four spaces (or a tab) of indent is a code block, but
+        // only where a *new block* can start: after a blank line
+        // and not inside a list, where the same indent means a
+        // continuation. Getting that wrong would turn every
+        // wrapped list item into code.
+        if prev_blank && !in_list && line.starts_with("    ") && !line.trim().is_empty() {
+            out.push(Decoration::line(line_from, "md-code-block"));
+            out.push(Decoration::line(line_from, "md-code-indented"));
+            prev_blank = false;
+            continue;
+        }
+        // A link-reference definition (`[label]: url "title"`) is
+        // configuration, not content — it carries no output of its
+        // own, so it is hidden the way frontmatter is.
+        if is_link_definition(line) && !cursor_touches(primary, line_from..line_to) {
+            out.push(Decoration::replace(line_from..line_to));
+            out.push(Decoration::line(line_from, "md-link-def"));
+            continue;
+        }
+
         // ── Starting a fence ───────────────────────────────
         let trimmed = line.trim_start();
         if open_fence_at_line(text, trimmed, line_from, line_to, primary, &mut fence, out) {
@@ -2349,6 +2635,10 @@ fn scan_blocks(
 
         // ── HR ─────────────────────────────────────────────
         emit_block_line(line, line_from, line_to, primary, &mut callout_stack, out);
+        // Carried to the next iteration: an indented line is only
+        // a code block at the head of one.
+        in_list = parse_list_marker(line).is_some() || (in_list && line.starts_with("  "));
+        prev_blank = line.trim().is_empty();
     }
 
     // EOF with unclosed fence — close it implicitly at doc end so
@@ -2397,7 +2687,7 @@ fn heading_class(level: usize) -> &'static str {
 /// cased + alias-resolved) and the byte offset within `after`
 /// where the `[!type]` syntax ends (excluding any title). The
 /// type list mirrors Obsidian / Quartz: `ofm.ts:63-91`.
-fn parse_callout_header(after: &str) -> Option<(&'static str, usize)> {
+fn parse_callout_header(after: &str) -> Option<(&'static str, usize, Option<bool>)> {
     let b = after.as_bytes();
     if !b.starts_with(b"[!") {
         return None;
@@ -2408,14 +2698,21 @@ fn parse_callout_header(after: &str) -> Option<(&'static str, usize)> {
     // `+`/`-` on the closing bracket — `[!note]+` / `[!note]-`.
     let kind = canonical_callout_kind(raw)?;
     let mut end = close.saturating_add(3);
-    if matches!(b.get(end), Some(b'+' | b'-')) {
+    // `[!note]+` starts expanded, `[!note]-` starts folded. Both
+    // mark the callout as collapsible; a bare `[!note]` is not.
+    let fold = match b.get(end) {
+        Some(b'+') => Some(false),
+        Some(b'-') => Some(true),
+        _ => None,
+    };
+    if fold.is_some() {
         end = end.saturating_add(1);
     }
     // Consume the space that typically follows.
     if b.get(end) == Some(&b' ') {
         end = end.saturating_add(1);
     }
-    Some((kind, end))
+    Some((kind, end, fold))
 }
 
 /// The title Obsidian shows for a callout whose header carries no title
@@ -2668,16 +2965,45 @@ fn render_table_cell(cell: &str) -> String {
     out
 }
 
-fn render_table_html(cells: &[Vec<String>]) -> String {
+/// Per-column alignment from a GFM separator row: `:--` left, `--:` right,
+/// `:-:` centre, `---` unset.
+///
+/// The separator was parsed for validity and then discarded, so
+/// `|:-:|--:|` laid out exactly like `|---|---|`.
+fn column_alignments(sep: &str) -> Vec<Option<&'static str>> {
+    split_pipe_cells(sep)
+        .into_iter()
+        .map(|c| {
+            let c = c.trim();
+            match (c.starts_with(':'), c.ends_with(':')) {
+                (true, true) => Some("center"),
+                (true, false) => Some("left"),
+                (false, true) => Some("right"),
+                (false, false) => None,
+            }
+        })
+        .collect()
+}
+
+fn render_table_html(cells: &[Vec<String>], align: &[Option<&'static str>]) -> String {
     if cells.is_empty() {
         return String::new();
     }
+    // `style="text-align:…"` for the column, or nothing.
+    let style = |idx: usize| {
+        align
+            .get(idx)
+            .copied()
+            .flatten()
+            .map(|a| format!(r#" style="text-align:{a}""#))
+            .unwrap_or_default()
+    };
     let mut s = String::from(r#"<table class="md-table">"#);
     let mut iter = cells.iter();
     if let Some(header) = iter.next() {
         s.push_str("<thead><tr>");
-        for c in header {
-            s.push_str(r"<th>");
+        for (i, c) in header.iter().enumerate() {
+            let _ = write!(s, "<th{}>", style(i));
             s.push_str(&render_table_cell(c));
             s.push_str("</th>");
         }
@@ -2686,8 +3012,8 @@ fn render_table_html(cells: &[Vec<String>]) -> String {
     s.push_str("<tbody>");
     for row in iter {
         s.push_str("<tr>");
-        for c in row {
-            s.push_str(r"<td>");
+        for (i, c) in row.iter().enumerate() {
+            let _ = write!(s, "<td{}>", style(i));
             s.push_str(&render_table_cell(c));
             s.push_str("</td>");
         }
@@ -2846,6 +3172,26 @@ fn parse_task_marker(line: &str) -> Option<(usize, bool)> {
     let checked = matches!(inner, b'x' | b'X');
     let end = if b.get(5) == Some(&b' ') { 6 } else { 5 };
     Some((end, checked))
+}
+
+/// The indent-depth class for a list line, or `None` at the top level.
+///
+/// Two spaces (or one tab) per level, which is what every editor that
+/// writes markdown emits, capped at four so a runaway indent can't invent
+/// classes the stylesheet doesn't have.
+fn list_depth_class(line: &str) -> Option<&'static str> {
+    let cols = line
+        .bytes()
+        .take_while(|&c| c == b' ' || c == b'\t')
+        .map(|c| if c == b'\t' { 4 } else { 1 })
+        .sum::<usize>();
+    match cols / 2 {
+        0 => None,
+        1 => Some("md-list-depth-1"),
+        2 => Some("md-list-depth-2"),
+        3 => Some("md-list-depth-3"),
+        _ => Some("md-list-depth-4"),
+    }
 }
 
 fn parse_list_marker(line: &str) -> Option<usize> {
@@ -3109,6 +3455,71 @@ fn scan_paired_marker_span(b: &[u8], i: usize, out: &mut Vec<Span>) -> Option<us
 ///
 /// Pushes any span it recognises onto `out` and returns the offset to resume
 /// from. Split out of [`scan_link_like_span`]; the arms are unchanged.
+/// `[text][label]` / `[label][]` / `[label]` — reference links.
+///
+/// The destination lives in a `[label]: url` definition line elsewhere in
+/// the document; [`link_definitions`] collects those in a pre-pass and
+/// [`decorate_link_span`] resolves them. A label with no matching
+/// definition is left as plain text, which is what `CommonMark` requires.
+/// `:smile:` — an emoji shortcode.
+///
+/// The name must be one unbroken run of shortcode characters *and* has to
+/// resolve in [`crate::emoji`]; both conditions together are what stop a
+/// bare `10:30 - 11:00` from being eaten as a shortcode.
+fn scan_emoji_span(text: &str, b: &[u8], i: usize, out: &mut Vec<Span>) -> Option<usize> {
+    if b.at(i) != b':' || (i > 0 && b.at(i.saturating_sub(1)).is_ascii_alphanumeric()) {
+        return None;
+    }
+    let mut j = i.saturating_add(1);
+    while j < b.len() && (b.at(j).is_ascii_alphanumeric() || matches!(b.at(j), b'_' | b'+' | b'-'))
+    {
+        j = j.saturating_add(1);
+    }
+    if j > i.saturating_add(1)
+        && b.get(j) == Some(&b':')
+        && crate::emoji::emoji_for(text.slice(i.saturating_add(1)..j)).is_some()
+    {
+        out.push(Span {
+            outer: i..j.saturating_add(1),
+            body: i.saturating_add(1)..j,
+            class: "md-emoji",
+        });
+        return Some(j.saturating_add(1));
+    }
+    None
+}
+
+fn scan_reference_link_span(b: &[u8], i: usize, out: &mut Vec<Span>) -> Option<usize> {
+    if b.at(i) != b'[' {
+        return None;
+    }
+    let close_text = find_close(b, i.saturating_add(1), b"]")?;
+    let after = close_text.saturating_add(1);
+    // Collapsed / full form: `[text][]` or `[text][label]`.
+    if b.get(after) == Some(&b'[')
+        && let Some(close_label) = find_close(b, after.saturating_add(1), b"]")
+    {
+        out.push(Span {
+            outer: i..close_label.saturating_add(1),
+            body: i.saturating_add(1)..close_text,
+            class: "md-reflink",
+        });
+        return Some(close_label.saturating_add(1));
+    }
+    // Shortcut form: bare `[label]`, but only when it is not the head of
+    // a definition line (`[label]: url`), which the block pass hides
+    // wholesale.
+    if b.get(after) != Some(&b':') && close_text > i.saturating_add(1) {
+        out.push(Span {
+            outer: i..after,
+            body: i.saturating_add(1)..close_text,
+            class: "md-reflink",
+        });
+        return Some(after);
+    }
+    None
+}
+
 fn scan_block_ref_span(text: &str, b: &[u8], i: usize, out: &mut Vec<Span>) -> Option<usize> {
     if i.saturating_add(13) <= b.len() && b.slice(i..i.saturating_add(9)) == b"{{embed (" {
         // Look for `))}}` closing.
@@ -3164,6 +3575,24 @@ fn scan_block_ref_span(text: &str, b: &[u8], i: usize, out: &mut Vec<Span>) -> O
             return Some(end.saturating_add(1));
         }
     }
+    // `![alt](url)` — a CommonMark image. Checked before the link
+    // arm and anchored on the `!`, so the bang is inside `outer`
+    // and gets hidden with the rest of the syntax. Without this
+    // the bang survived as literal text and the remainder
+    // rendered as an ordinary link.
+    if b.at(i) == b'!'
+        && b.get(i.saturating_add(1)) == Some(&b'[')
+        && let Some(close_text) = find_close(b, i.saturating_add(2), b"]")
+        && b.get(close_text.saturating_add(1)) == Some(&b'(')
+        && let Some(close_paren) = find_close(b, close_text.saturating_add(2), b")")
+    {
+        out.push(Span {
+            outer: i..close_paren.saturating_add(1),
+            body: i.saturating_add(2)..close_text,
+            class: "md-image",
+        });
+        return Some(close_paren.saturating_add(1));
+    }
     // [text](url) — find `]` then verify `(...)` follows.
     if b.at(i) == b'['
         && let Some(close_text) = find_close(b, i.saturating_add(1), b"]")
@@ -3176,6 +3605,12 @@ fn scan_block_ref_span(text: &str, b: &[u8], i: usize, out: &mut Vec<Span>) -> O
             class: "md-link",
         });
         return Some(close_paren.saturating_add(1));
+    }
+    if let Some(next) = scan_reference_link_span(b, i, out) {
+        return Some(next);
+    }
+    if let Some(next) = scan_emoji_span(text, b, i, out) {
+        return Some(next);
     }
     // #tag  — `#` at doc start or after non-word char,
     // followed by tag chars (alnum / `-` / `_` / `/`). The
@@ -3207,6 +3642,39 @@ fn find_spans(text: &str) -> Vec<Span> {
     while i < b.len() {
         if b.at(i) == b'\n' {
             i = i.saturating_add(1);
+            continue;
+        }
+        // `\*` — a backslash escape. CommonMark lets any ASCII
+        // punctuation be escaped, and the escaped character is
+        // literal: neither it nor the backslash may start a
+        // marker. Claiming the pair here is what makes that true,
+        // because every scan below starts at `i`.
+        if b.at(i) == b'\\'
+            && b.get(i.saturating_add(1))
+                .is_some_and(u8::is_ascii_punctuation)
+        {
+            out.push(Span {
+                outer: i..i.saturating_add(2),
+                body: i.saturating_add(1)..i.saturating_add(2),
+                class: "md-escape",
+            });
+            i = i.saturating_add(2);
+            continue;
+        }
+        // Two or more spaces before a newline is a hard line
+        // break. They render as nothing and mean `<br>`; left
+        // alone they were emitted as literal trailing spaces.
+        if b.at(i) == b' '
+            && b.get(i.saturating_add(1)) == Some(&b' ')
+            && let Some(nl) = b.after(i).iter().position(|&c| c == b'\n')
+            && b.slice(i..i.saturating_add(nl)).iter().all(|&c| c == b' ')
+        {
+            out.push(Span {
+                outer: i..i.saturating_add(nl),
+                body: i..i.saturating_add(nl),
+                class: "md-hard-break",
+            });
+            i = i.saturating_add(nl);
             continue;
         }
         // ***bold-italic***  — must precede `**` so the triple
@@ -3694,7 +4162,7 @@ mod tests {
             vec!["System".into(), "Example".into()],
             vec!["**Letter name**".into(), "`C`, `F#`, `Bb`".into()],
         ];
-        let html = render_table_html(&cells);
+        let html = render_table_html(&cells, &[]);
         assert!(!html.contains("**"), "raw bold markers survived: {html}");
         assert!(!html.contains('`'), "raw code markers survived: {html}");
     }

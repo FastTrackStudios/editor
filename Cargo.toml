@@ -51,6 +51,11 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/FastTrackStudios/editor"
 
 [workspace.dependencies]
+# CommonMark reference parser. A dev-dependency only: it is the oracle
+# the markdown pass is diffed against in `conformance.rs`, never part of
+# a shipped build. `OffsetIter` gives byte ranges for every event, which
+# is the same shape the decoration model wants — see that test's header.
+pulldown-cmark = { version = "0.10", default-features = false }
 # ── Internal ──────────────────────────────────────────────────────────
 # `editor` is the facade. `editor-state` is the document model and the
 # markdown pass; everything else hangs off it.

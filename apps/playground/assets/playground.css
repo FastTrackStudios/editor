@@ -1263,3 +1263,79 @@ section h2 {
     max-height: 320px;
     overflow: auto;
 }
+
+/* ── Additions: nested lists, images, fold controls, escapes ───────── */
+
+/* Sub-list indent. Two spaces per level in the source; the step here
+   lines the marker column up under the parent's text. */
+.editor-root .cm-line.md-list-depth-1 { padding-left: 1.6em; }
+.editor-root .cm-line.md-list-depth-2 { padding-left: 3.2em; }
+.editor-root .cm-line.md-list-depth-3 { padding-left: 4.8em; }
+.editor-root .cm-line.md-list-depth-4 { padding-left: 6.4em; }
+
+/* A `\*` escape: the backslash is hidden by the Replace, and what is
+   left is ordinary text. The class exists so the escaped character can
+   still be found in the DOM. */
+.editor-root .md-escape { color: inherit; }
+
+/* Two trailing spaces — a hard break. It occupies no width; the line
+   division does the work. */
+.editor-root .md-hard-break { display: inline; }
+
+/* Emoji sit on the text baseline at text size, not the emoji font's
+   own larger default. */
+.editor-root .md-emoji {
+    font-family: var(--ed-font);
+    font-style: normal;
+}
+
+/* An indented (four-space) code block has no fence to hang a header
+   off, so it carries the code background alone. */
+.editor-root .cm-line.md-code-indented {
+    font-family: var(--ed-mono);
+}
+
+/* A link-reference definition line is hidden entirely (it is
+   configuration, not content) — the Replace empties it, and this
+   collapses the row it would otherwise leave behind. */
+.editor-root .cm-line.md-link-def:empty { height: 0; }
+
+/* Collapsible callouts. The chevron sits at the right edge of the
+   title bar and rotates when folded; the folded state hides the body
+   lines that follow the header. */
+.editor-root .cm-line.md-callout-collapsible { position: relative; }
+.editor-root .md-callout-fold {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%) rotate(90deg);
+    background: none;
+    border: none;
+    padding: 0 4px;
+    color: inherit;
+    opacity: 0.65;
+    cursor: pointer;
+    font-size: 1.2em;
+    line-height: 1;
+    transition: transform 120ms ease, opacity 120ms ease;
+}
+.editor-root .md-callout-fold:hover { opacity: 1; }
+.editor-root .md-callout-fold[data-folded="true"] {
+    transform: translateY(-50%) rotate(0deg);
+}
+/* Folded: every callout body line up to the next non-callout line. The
+   sibling selector works because body lines always follow their header
+   directly. */
+.editor-root .cm-line.md-callout-folded ~ .cm-line.md-callout:not(.md-callout-header) {
+    display: none;
+}
+.editor-root .cm-line.md-callout-folded ~ .cm-line.md-callout-header ~ .cm-line.md-callout {
+    display: revert;
+}
+
+/* Images from `![alt](url)` reuse the embed styling. */
+.editor-root img.md-embed-image {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+}

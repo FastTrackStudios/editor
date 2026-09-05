@@ -100,6 +100,32 @@ fn emit(
 
 /// Builds the HTML. Split from [`emit`] so the walk stays a short loop
 /// and each thing that can happen at an offset is one method.
+/// Is this one of the six heading line classes?
+fn is_heading_class(class: &str) -> bool {
+    matches!(
+        class,
+        "md-h1" | "md-h2" | "md-h3" | "md-h4" | "md-h5" | "md-h6"
+    )
+}
+
+/// GitHub's heading-anchor slug: lowercase, spaces to hyphens, and every
+/// other character that isn't alphanumeric, `-` or `_` dropped.
+///
+/// Matching GitHub matters because it is also what `ssg-vault` generates
+/// on the static-site side; a link that works in the wiki has to work in
+/// the editor's own HTML too.
+fn slugify(text: &str) -> String {
+    let mut out = String::new();
+    for ch in text.trim().chars() {
+        if ch.is_alphanumeric() || ch == '-' || ch == '_' {
+            out.extend(ch.to_lowercase());
+        } else if ch.is_whitespace() && !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    out.trim_matches('-').to_owned()
+}
+
 struct Emitter<'a> {
     link_href: Option<&'a dyn Fn(&str) -> Option<String>>,
     out: String,
@@ -108,6 +134,13 @@ struct Emitter<'a> {
     pending: Vec<String>,
     hidden_until: Option<usize>,
     line_open: bool,
+    /// Byte index in `out` where the open tag's attribute list can be
+    /// extended, and the visible text seen on this line so far. Together
+    /// they let [`Self::end_line`] give a heading an `id` derived from
+    /// its own text — the anchor in-page links and a table of contents
+    /// need, which cannot be known when the tag is opened.
+    line_attr_at: usize,
+    line_text: String,
     at: usize,
 }
 
@@ -121,6 +154,8 @@ impl<'a> Emitter<'a> {
             pending: Vec::new(),
             hidden_until: None,
             line_open: false,
+            line_attr_at: 0,
+            line_text: String::new(),
             at: 0,
         }
     }
@@ -138,6 +173,7 @@ impl<'a> Emitter<'a> {
             self.out.push(' ');
             self.out.push_str(c);
         }
+        self.line_attr_at = self.out.len();
         self.out.push_str("\">");
         for m in std::mem::take(&mut self.pending) {
             self.out.push_str(&m);
@@ -210,6 +246,7 @@ impl<'a> Emitter<'a> {
         }
         self.hidden_until = None;
         self.open_line();
+        self.line_text.push(ch);
         push_escaped(&mut self.out, ch);
     }
 
@@ -229,6 +266,7 @@ impl<'a> Emitter<'a> {
         // Marks do not span lines in the editor's model, but a malformed
         // decoration must not emit unbalanced tags.
         self.close_marks();
+        self.stamp_heading_id();
         self.pending.clear();
         self.line_classes.clear();
         self.line_open = false;
@@ -243,9 +281,26 @@ impl<'a> Emitter<'a> {
         self.out.push('>');
     }
 
+    /// Give a heading line an `id` slugged from its own text, so in-page
+    /// links and a generated table of contents have something to point
+    /// at. Runs at line close because the text is only known then — and
+    /// from both close paths, since a document with no trailing newline
+    /// ends in [`Self::finish`] rather than [`Self::end_line`].
+    fn stamp_heading_id(&mut self) {
+        if self.line_classes.iter().any(|c| is_heading_class(c)) {
+            let slug = slugify(&self.line_text);
+            if !slug.is_empty() {
+                self.out
+                    .insert_str(self.line_attr_at, &format!("\" id=\"{slug}"));
+            }
+        }
+        self.line_text.clear();
+    }
+
     fn finish(mut self) -> String {
         if self.line_open {
             self.close_marks();
+            self.stamp_heading_id();
             self.out.push_str("</");
             self.out.push_str(LINE_TAG);
             self.out.push('>');
@@ -393,6 +448,88 @@ mod tests {
 
     fn html(src: &str) -> String {
         render_state_html(&EditorState::new(src.to_string()))
+    }
+
+    #[test]
+    fn an_image_becomes_an_img_element() {
+        let out = html("![alt](pic.png)");
+        assert!(
+            out.contains(r#"<img class="md-embed-image" src="pic.png""#),
+            "{out}"
+        );
+        // The bang belongs to the syntax, not the text.
+        assert!(!out.contains(">!"), "the bang leaked:\n{out}");
+    }
+
+    #[test]
+    fn a_link_title_does_not_land_in_the_href() {
+        let out = html(r#"[a](u "T")"#);
+        assert!(out.contains(r#"data-href="u""#), "{out}");
+        assert!(out.contains(r#"title="T""#), "{out}");
+    }
+
+    #[test]
+    fn a_sub_list_carries_its_depth() {
+        let out = html("- a\n  - b\n    - c");
+        assert!(out.contains("md-list-depth-1"), "{out}");
+        assert!(out.contains("md-list-depth-2"), "{out}");
+    }
+
+    #[test]
+    fn a_list_inside_a_quote_is_still_a_list() {
+        let out = html("> - a\n> - b");
+        assert!(out.contains("md-list-marker"), "{out}");
+    }
+
+    #[test]
+    fn a_table_keeps_its_column_alignment() {
+        let out = html("| a | b | c |\n|:--|:-:|--:|\n| 1 | 2 | 3 |");
+        assert!(out.contains("text-align:left"), "{out}");
+        assert!(out.contains("text-align:center"), "{out}");
+        assert!(out.contains("text-align:right"), "{out}");
+    }
+
+    #[test]
+    fn a_heading_gets_an_anchor_id() {
+        // Slugged GitHub-style, and present on a document whose last
+        // line has no trailing newline.
+        assert!(html("## My Heading!").contains(r#"id="my-heading""#));
+        assert!(html("## A\n").contains(r#"id="a""#));
+    }
+
+    #[test]
+    fn an_emoji_shortcode_resolves_but_a_time_range_does_not() {
+        let out = html(":rocket: at 10:30 - 11:00");
+        assert!(out.contains("\u{1f680}"), "{out}");
+        assert!(out.contains("10:30 - 11:00"), "the time was eaten:\n{out}");
+    }
+
+    #[test]
+    fn an_indent_is_code_only_at_the_head_of_a_block() {
+        assert!(html("para\n\n    let x = 1;").contains("md-code-indented"));
+        // Inside a list the same indent is a continuation line.
+        assert!(!html("- item\n    wrapped").contains("md-code-indented"));
+    }
+
+    #[test]
+    fn a_collapsible_callout_gets_a_fold_control() {
+        let out = html("> [!warning]- Folded\n> body");
+        assert!(out.contains("md-callout-collapsible"), "{out}");
+        assert!(out.contains("md-callout-folded"), "{out}");
+        assert!(out.contains("md-callout-fold"), "{out}");
+        // A plain callout has none of it.
+        assert!(!html("> [!note] N\n> b").contains("md-callout-fold"));
+    }
+
+    #[test]
+    fn a_bare_callout_titles_itself() {
+        assert!(html("> [!tip]\n> body").contains("Tip"));
+    }
+
+    #[test]
+    fn a_link_definition_line_renders_nothing() {
+        let out = html("[r]: http://x");
+        assert!(!out.contains("http://x"), "{out}");
     }
 
     #[test]

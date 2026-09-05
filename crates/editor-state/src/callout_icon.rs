@@ -19,6 +19,7 @@
 /// [`canonical_callout_kind`](crate::markdown::canonical_callout_kind),
 /// already alias-resolved: `summary` and `tldr` both arrive as
 /// `abstract`.
+#[must_use]
 pub fn callout_icon(kind: &str) -> Option<&'static str> {
     Some(match kind {
         // lucide `pencil`
