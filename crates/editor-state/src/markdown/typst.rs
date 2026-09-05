@@ -69,11 +69,14 @@ pub fn reset_compile_budget() {
 /// raw source in either case — the user can keep editing.
 /// Typst points per em of body text.
 ///
-/// The prelude sets typst's text to 14pt, and CSS renders 1pt as 4/3 px,
-/// so 14pt of typst ink is 18.67px — a third larger than a 14px body
-/// font. Dividing the viewBox by this puts typst's glyphs at exactly the
-/// size of the text around them.
-const PT_PER_EM: f64 = 14.0 * 4.0 / 3.0;
+/// Calibrated, not derived. The arithmetic answer is 14pt × 4/3 = 18.67,
+/// but typst sets math in New Computer Modern, whose x-height is small
+/// enough that matching ems makes the maths look a size too small beside
+/// the body face. 10pt/em reproduces the height the old fixed
+/// `height: 0.95em` gave `E = mc^2`, which read correctly — the point of
+/// the change is that a *taller* equation is now taller, not that simple
+/// ones move.
+const PT_PER_EM: f64 = 10.07;
 
 /// Give the SVG an explicit `em` width and height taken from its own
 /// viewBox, so it scales with the surrounding text instead of being
@@ -149,7 +152,14 @@ pub fn render_typst(kind: TypstKind, body: &str) -> Option<String> {
             let themed = svg
                 .replace("#ff00fe", "currentColor")
                 .replace("#FF00FE", "currentColor");
-            let themed = size_to_body_text(&themed);
+            // Math only. A `typst` fence is a whole document laid out at
+            // its own scale; sizing it to the body text shrank the block
+            // to a caption.
+            let themed = if matches!(kind, TypstKind::MathInline | TypstKind::MathBlock) {
+                size_to_body_text(&themed)
+            } else {
+                themed
+            };
             with_typst_cache(|c| c.put(kind, body.to_string(), themed.clone()));
             Some(themed)
         }
