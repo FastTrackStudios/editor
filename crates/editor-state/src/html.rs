@@ -33,7 +33,7 @@ const LINE_TAG: &str = "div";
 #[must_use]
 pub fn render_html(text: &str, decorations: &[DecoratedRange]) -> String {
     let events = collect_events(decorations);
-    emit(text, &events)
+    emit(text, &events, None)
 }
 
 /// Decoration ranges as ordered boundary events, the same shape the
@@ -67,8 +67,12 @@ fn collect_events(decorations: &[DecoratedRange]) -> Vec<(usize, Ev)> {
     events
 }
 
-fn emit(text: &str, events: &[(usize, Ev)]) -> String {
-    let mut e = Emitter::new(text.len());
+fn emit(
+    text: &str,
+    events: &[(usize, Ev)],
+    link_href: Option<&dyn Fn(&str) -> Option<String>>,
+) -> String {
+    let mut e = Emitter::new(text.len(), link_href);
     let mut ev = 0usize;
 
     for (i, ch) in text
@@ -96,7 +100,8 @@ fn emit(text: &str, events: &[(usize, Ev)]) -> String {
 
 /// Builds the HTML. Split from [`emit`] so the walk stays a short loop
 /// and each thing that can happen at an offset is one method.
-struct Emitter {
+struct Emitter<'a> {
+    link_href: Option<&'a dyn Fn(&str) -> Option<String>>,
     out: String,
     marks: Vec<String>,
     line_classes: Vec<String>,
@@ -106,9 +111,10 @@ struct Emitter {
     at: usize,
 }
 
-impl Emitter {
-    fn new(len: usize) -> Self {
+impl<'a> Emitter<'a> {
+    fn new(len: usize, link_href: Option<&'a dyn Fn(&str) -> Option<String>>) -> Self {
         Self {
+            link_href,
             out: String::with_capacity(len.saturating_mul(2)),
             marks: Vec::new(),
             line_classes: Vec::new(),
@@ -143,7 +149,29 @@ impl Emitter {
         match kind {
             Ev::Line(class) => self.line_classes.push(class.clone()),
             Ev::MarkStart(class, attrs) => {
-                let mut tag = format!("<span class=\"{}\"", escape_attr(class));
+                // A wikilink becomes a real anchor when the host can say
+                // where it points. The editor's own markup is a span the
+                // app makes clickable with a listener, which on a static
+                // page is a link that does nothing.
+                let href = self.link_href.and_then(|f| {
+                    class.contains("md-wikilink").then(|| {
+                        attrs
+                            .iter()
+                            .find(|(k, _)| k == "data-href")
+                            .and_then(|(_, target)| f(target))
+                    })?
+                });
+                let (elem, close) = if href.is_some() {
+                    ("a", "</a>")
+                } else {
+                    ("span", "</span>")
+                };
+                let mut tag = format!("<{elem} class=\"{}\"", escape_attr(class));
+                if let Some(href) = &href {
+                    tag.push_str(" href=\"");
+                    tag.push_str(&escape_attr(href));
+                    tag.push('"');
+                }
                 for (k, v) in attrs {
                     tag.push(' ');
                     tag.push_str(&escape_attr(k));
@@ -152,7 +180,7 @@ impl Emitter {
                     tag.push('"');
                 }
                 tag.push('>');
-                self.marks.push("</span>".to_owned());
+                self.marks.push(close.to_owned());
                 if self.line_open {
                     self.out.push_str(&tag);
                 } else {
@@ -257,11 +285,56 @@ pub fn render_markdown_html(source: &str) -> String {
 /// card in the editor resolves to one on the page.
 #[must_use]
 pub fn render_markdown_html_with(source: &str, vault: &dyn crate::markdown::VaultLookup) -> String {
+    render_markdown_html_opts(source, &HtmlOptions::new().vault(vault))
+}
+
+/// How to render a document to HTML.
+#[derive(Default)]
+pub struct HtmlOptions<'a> {
+    vault: Option<&'a dyn crate::markdown::VaultLookup>,
+    link_href: Option<&'a dyn Fn(&str) -> Option<String>>,
+}
+
+impl<'a> HtmlOptions<'a> {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            vault: None,
+            link_href: None,
+        }
+    }
+
+    /// Resolve `[[wikilinks]]` and embeds against this vault.
+    #[must_use]
+    pub const fn vault(mut self, vault: &'a dyn crate::markdown::VaultLookup) -> Self {
+        self.vault = Some(vault);
+        self
+    }
+
+    /// Turn wikilinks into real anchors, given the target name.
+    ///
+    /// Without this a wikilink renders the way the editor renders it: a
+    /// `<span>` carrying `data-href`, which the app makes clickable with
+    /// a listener. On a page with no listener that is not a link at all —
+    /// it looks like one and does nothing. Returning `None` for a name
+    /// leaves the span alone, which is the honest rendering for a target
+    /// that does not exist.
+    #[must_use]
+    pub const fn link_href(mut self, f: &'a dyn Fn(&str) -> Option<String>) -> Self {
+        self.link_href = Some(f);
+        self
+    }
+}
+
+/// Render markdown to HTML under `opts`.
+#[must_use]
+pub fn render_markdown_html_opts(source: &str, opts: &HtmlOptions<'_>) -> String {
     let mut state = crate::EditorState::new(source.to_string());
     state.reading_mode = true;
     let text = state.doc.to_string();
-    let decorations = crate::markdown::live_preview_with(&state, Some(vault));
-    render_html(&text, &decorations)
+    let decorations = crate::markdown::live_preview_with(&state, opts.vault);
+    let events = collect_events(&decorations);
+    emit(&text, &events, opts.link_href)
 }
 
 enum Ev {
@@ -386,6 +459,30 @@ mod tests {
         let resolved = render_markdown_html_with("see [[header]]", &OnePage);
         assert!(resolved.contains("md-wikilink"), "{resolved}");
         assert!(!resolved.contains("md-wikilink-unresolved"), "{resolved}");
+    }
+
+    #[test]
+    fn a_resolvable_wikilink_becomes_a_real_anchor() {
+        // The editor's markup is a span the app makes clickable with a
+        // listener. A published page has no listener, so a span is a
+        // link that looks like one and does nothing.
+        let to_url = |name: &str| -> Option<String> {
+            (name.eq_ignore_ascii_case("header")).then(|| format!("/guide/{name}"))
+        };
+        let opts = HtmlOptions::new().link_href(&to_url);
+        let out = render_markdown_html_opts("see [[header]]", &opts);
+        assert!(out.contains(r#"<a class="md-wikilink"#), "{out}");
+        assert!(out.contains(r#"href="/guide/header""#), "{out}");
+        assert!(out.contains("</a>"), "{out}");
+    }
+
+    #[test]
+    fn an_unresolvable_wikilink_stays_a_span() {
+        let to_url = |_: &str| -> Option<String> { None };
+        let opts = HtmlOptions::new().link_href(&to_url);
+        let out = render_markdown_html_opts("see [[nowhere]]", &opts);
+        assert!(!out.contains("<a "), "{out}");
+        assert!(out.contains("md-wikilink"), "{out}");
     }
 
     #[test]
