@@ -234,7 +234,13 @@ impl<'a> Emitter<'a> {
         self.line_open = false;
         self.out.push_str("</");
         self.out.push_str(LINE_TAG);
-        self.out.push_str(">\n");
+        // No separator between line elements. `.editor-root` is
+        // `white-space: pre-wrap`, so a newline here survives as an
+        // anonymous line box and paints a phantom blank row between
+        // every line — splitting callouts into two bars. The live
+        // editor builds its DOM with no text nodes between lines;
+        // this path must match it exactly.
+        self.out.push('>');
     }
 
     fn finish(mut self) -> String {
@@ -387,6 +393,22 @@ mod tests {
 
     fn html(src: &str) -> String {
         render_state_html(&EditorState::new(src.to_string()))
+    }
+
+    #[test]
+    fn lines_are_not_separated_by_whitespace() {
+        // `.editor-root` is `white-space: pre-wrap`. Any text node
+        // between two line elements survives as an anonymous line box
+        // and paints a phantom blank row on the page.
+        let out = html("one\ntwo\nthree");
+        assert!(
+            !out.contains("></"),
+            "unexpected empty line element:\n{out}"
+        );
+        assert!(
+            !out.contains(">\n<") && !out.contains("> <"),
+            "whitespace between line elements:\n{out}"
+        );
     }
 
     #[test]

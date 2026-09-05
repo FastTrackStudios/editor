@@ -10,6 +10,10 @@ publish = false
 
 [dependencies]
 editor = { workspace = true }
+# Without it a wasm panic reaches the console as a bare
+# `RuntimeError: unreachable` with stripped symbols — no message, no
+# location, nothing to act on. A playground exists to be debugged in.
+console_error_panic_hook = "0.1"
 dioxus = { workspace = true }
 tracing = { workspace = true }
 

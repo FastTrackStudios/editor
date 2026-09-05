@@ -67,6 +67,13 @@ fn demo_completion(
 const STYLE: Asset = asset!("/assets/playground.css");
 
 fn main() {
+    // A wasm panic without this is a bare `RuntimeError: unreachable`
+    // with stripped symbols. With it, the message and location reach the
+    // console — which is the difference between "the editor is blank"
+    // and knowing which decoration blew up.
+    #[cfg(target_arch = "wasm32")]
+    console_error_panic_hook::set_once();
+
     init_tracing();
     tracing::info!("playground starting");
     // Native uses the fork's `dioxus_native::launch` (Blitz window + vello).
