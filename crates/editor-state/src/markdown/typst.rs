@@ -67,6 +67,49 @@ pub fn reset_compile_budget() {
 /// when (a) compile fails, or (b) the per-pass budget is
 /// exhausted and the body isn't cached. The caller shows the
 /// raw source in either case — the user can keep editing.
+/// Typst points per em of body text.
+///
+/// The prelude sets typst's text to 14pt, and CSS renders 1pt as 4/3 px,
+/// so 14pt of typst ink is 18.67px — a third larger than a 14px body
+/// font. Dividing the viewBox by this puts typst's glyphs at exactly the
+/// size of the text around them.
+const PT_PER_EM: f64 = 14.0 * 4.0 / 3.0;
+
+/// Give the SVG an explicit `em` width and height taken from its own
+/// viewBox, so it scales with the surrounding text instead of being
+/// clamped to a fixed height.
+///
+/// A fixed `height` in CSS cannot work: it forces every equation to one
+/// height whatever its structure, so a sum with limits and a fraction —
+/// three times as tall as `E = mc^2` — had its glyphs shrunk to a third
+/// of body size to fit.
+fn size_to_body_text(svg: &str) -> String {
+    let Some((w, h)) = view_box_size(svg) else {
+        return svg.to_owned();
+    };
+    let (w, h) = (w / PT_PER_EM, h / PT_PER_EM);
+    // Replace typst's own `pt` width/height, which are the same numbers
+    // in a unit that does not track the reader's font size.
+    let mut out = svg.to_owned();
+    if let Some(start) = out.find("<svg") {
+        let insert = start.saturating_add(4);
+        out.insert_str(
+            insert,
+            &format!(r#" style="width:{w:.4}em;height:{h:.4}em""#),
+        );
+    }
+    out
+}
+
+/// The width and height from an SVG's `viewBox`, in typst points.
+fn view_box_size(svg: &str) -> Option<(f64, f64)> {
+    let vb = svg.split_once("viewBox=\"")?.1.split_once('"')?.0;
+    let mut parts = vb.split_whitespace().skip(2);
+    let w = parts.next()?.parse().ok()?;
+    let h = parts.next()?.parse().ok()?;
+    Some((w, h))
+}
+
 pub fn render_typst(kind: TypstKind, body: &str) -> Option<String> {
     if let Some(cached) = with_typst_cache(|c| c.get(kind, body)) {
         return Some(cached);
@@ -86,8 +129,14 @@ pub fn render_typst(kind: TypstKind, body: &str) -> Option<String> {
          #set text(size: 14pt, fill: rgb(\"{SENTINEL}\"))\n"
     );
     let wrapped = match kind {
-        TypstKind::MathInline => format!("{prelude}${body}$"),
-        TypstKind::MathBlock => format!("{prelude}$ {body} $"),
+        // Both math kinds compile the same way — `$ x $`, with the spaces.
+        // Not cosmetic: typst reports the *line* box for `$x$` set in a
+        // paragraph (9.59pt for a sum whose ink is really 35.76pt), and
+        // the browser then scales the whole equation down to fit that
+        // box, so anything with limits or a fraction rendered at about
+        // half the size of the surrounding text. The spaced form reports
+        // the ink. Inline and block differ in CSS, not in the compile.
+        TypstKind::MathInline | TypstKind::MathBlock => format!("{prelude}$ {body} $"),
         TypstKind::Block => format!("{prelude}{body}"),
     };
     let mut compiler = editor_typst::Compiler::new();
@@ -100,6 +149,7 @@ pub fn render_typst(kind: TypstKind, body: &str) -> Option<String> {
             let themed = svg
                 .replace("#ff00fe", "currentColor")
                 .replace("#FF00FE", "currentColor");
+            let themed = size_to_body_text(&themed);
             with_typst_cache(|c| c.put(kind, body.to_string(), themed.clone()));
             Some(themed)
         }

@@ -549,6 +549,34 @@ mod tests {
     }
 
     #[test]
+    fn math_is_sized_from_its_own_ink() {
+        // A structurally tall equation must be taller on the page. It was
+        // clamped to a fixed height, so a sum with limits and a fraction
+        // rendered at a third of body size to fit the same box as
+        // `E = mc^2`.
+        let em = |src: &str| -> f64 {
+            let out = html(src);
+            let style = out
+                .split("style=\"")
+                .nth(1)
+                .unwrap()
+                .split('"')
+                .next()
+                .unwrap();
+            style
+                .split("height:")
+                .nth(1)
+                .unwrap()
+                .trim_end_matches("em")
+                .parse()
+                .unwrap()
+        };
+        let simple = em("$E = m c^2$");
+        let tall = em("$sum_(i=1)^n i = n(n+1)/2$");
+        assert!(tall > simple * 2.0, "simple={simple}em tall={tall}em");
+    }
+
+    #[test]
     fn list_bullets_step_by_depth() {
         let out = html("- top\n  - one\n    - two");
         assert!(out.contains("•"), "{out}");

@@ -832,12 +832,13 @@
     cursor: text;
 }
 .editor-root .md-math-widget-inline svg {
-    /* Match the surrounding text size — Typst renders the
-       inline math at the prelude's `#set text(size: 14pt)`,
-       which would dominate the run otherwise. `0.95em` keeps
-       it visually balanced against body copy. */
-    height: 0.95em;
-    width: auto;
+    /* Size comes from the SVG's own viewBox, written as an inline
+       `em` style at render time (`size_to_body_text`), so typst's
+       14pt glyphs land at exactly body size whatever the equation's
+       structure. A fixed `height` here cannot work: it forces every
+       equation to one height, so a sum with limits and a fraction —
+       three times as tall as `E = mc^2` — was shrunk to a third of
+       body size to fit it. */
     max-width: 100%;
     display: inline-block;
 }
