@@ -28,6 +28,11 @@ parking_lot = "0.12"
 # "time not implemented on this platform". Brings in `js-sys` +
 # `wasm-bindgen` transitively.
 chrono = { version = "0.4", default-features = false, features = ["clock", "wasmbind"] }
+
+# Not used directly — this is typst's own parallelism, pulled in so the
+# global pool can be configured before typst first touches it. On wasm the
+# pool must spawn no threads at all; see `install_inline_thread_pool`.
+rayon = "1.12"
 thiserror = { workspace = true }
 tracing = { workspace = true }
 

@@ -37,6 +37,32 @@ pub struct Compiler {
     world: World,
 }
 
+/// Make rayon usable on `wasm32-unknown-unknown`.
+///
+/// typst parallelises page layout (`typst-library`'s engine calls
+/// `into_par_iter`) and defers font loading through `rayon::spawn`. rayon's
+/// global pool builds itself on first use by spawning OS threads, and
+/// `std::thread::spawn` is unsupported on this target — so the first typst
+/// compile in the browser trapped, killing the whole editor before it
+/// rendered a single line. With `panic = "abort"` there was no message
+/// either, just `RuntimeError: unreachable`.
+///
+/// `num_threads(1)` + `use_current_thread()` builds a pool that spawns
+/// nothing and runs every task inline on the caller. Installed once,
+/// before the first compile; a second call would fail (the global pool can
+/// only be set once) and is deliberately ignored.
+#[cfg(target_arch = "wasm32")]
+fn install_inline_thread_pool() {
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let _ = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .use_current_thread()
+            .build_global();
+    });
+}
+
 impl Compiler {
     /// Build a compiler with the default bundled font set
     /// (`typst-assets`'s `fonts` feature). The Editor only
@@ -62,6 +88,9 @@ impl Compiler {
     /// # Errors
     /// Returns [`CompileError::Diagnostics`] if the source does not compile.
     pub fn compile_svg(&mut self) -> Result<String, CompileError> {
+        #[cfg(target_arch = "wasm32")]
+        install_inline_thread_pool();
+
         let document = typst::compile::<typst::layout::PagedDocument>(&self.world)
             .output
             .map_err(|errs| CompileError::Diagnostics(format_diagnostics(&errs, &self.world)))?;
@@ -82,6 +111,9 @@ impl Compiler {
     /// Returns [`CompileError::Diagnostics`] if the source does not compile,
     /// or [`CompileError::Pdf`] if typst cannot serialise the PDF.
     pub fn compile_pdf(&mut self) -> Result<Vec<u8>, CompileError> {
+        #[cfg(target_arch = "wasm32")]
+        install_inline_thread_pool();
+
         let document = typst::compile::<typst::layout::PagedDocument>(&self.world)
             .output
             .map_err(|errs| CompileError::Diagnostics(format_diagnostics(&errs, &self.world)))?;
