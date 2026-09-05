@@ -218,12 +218,48 @@ fn build_html(tabs: &[Tab], u: &str) -> String {
     )
 }
 
-/// Minimal, XSS-safe markdown for a panel body: HTML-escape
-/// everything first, then apply a small set of inline
-/// transforms over the *already-escaped* text (so no transform
-/// can introduce unescaped markup). Blank-line-separated blocks
-/// become `<p>`; single newlines become `<br>`.
+thread_local! {
+    /// How deep the panel renderer is currently nested.
+    ///
+    /// A panel renders through the same markdown pass as the document
+    /// around it, and that pass renders panels — so a `tabs` fence inside
+    /// a `tabs` fence recurses. Content nests two or three deep at most
+    /// in practice; the cap is what stops a pathological document from
+    /// taking the process with it.
+    static DEPTH: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+}
+
+/// The deepest a panel may nest before falling back to plain text.
+const MAX_DEPTH: u8 = 3;
+
+/// Render a panel body as full markdown.
+///
+/// Panels used to get an inline-only subset: escape everything, then
+/// apply a handful of transforms over the escaped text. That was safe,
+/// and it meant a panel could hold emphasis and code spans and nothing
+/// else — a chart, a callout, a table or a list inside a tab arrived as
+/// escaped source. Tabs are for showing the same thing several ways, and
+/// the things worth showing that way are exactly the ones the subset
+/// could not draw.
+///
+/// The full pass is no less safe: it escapes text and emits only its own
+/// markup, which is the same guarantee every other line on the page
+/// relies on.
 fn render_panel_markdown(src: &str) -> String {
+    let depth = DEPTH.with(std::cell::Cell::get);
+    if depth >= MAX_DEPTH {
+        return fallback_panel_markdown(src);
+    }
+    DEPTH.with(|d| d.set(depth.saturating_add(1)));
+    let html = crate::html::render_markdown_html(src);
+    DEPTH.with(|d| d.set(depth));
+    html
+}
+
+/// The old inline-only renderer, kept for the nesting cap: escape
+/// everything, then apply inline transforms over the *escaped* text, so
+/// no transform can introduce unescaped markup.
+fn fallback_panel_markdown(src: &str) -> String {
     let mut out = String::new();
     for block in split_blocks(src) {
         let escaped = escape_html(block);
@@ -384,6 +420,34 @@ fn with_cache<R>(f: impl FnOnce(&mut TabsCache) -> R) -> R {
 }
 
 #[cfg(test)]
+mod panel_tests {
+    use super::*;
+
+    #[test]
+    fn a_panel_renders_full_markdown() {
+        // Tabs exist to show one thing several ways, and the things
+        // worth showing that way — a table, a callout, a chart — are
+        // exactly what the old inline-only subset could not draw.
+        let html = render_panel_markdown("| a |\n|---|\n| 1 |\n\n> [!tip] T\n> body");
+        assert!(html.contains("<table"), "{html}");
+        assert!(html.contains("md-callout"), "{html}");
+        assert!(
+            !html.contains("&lt;table"),
+            "escaped its own markup:\n{html}"
+        );
+    }
+
+    #[test]
+    fn nesting_is_capped() {
+        // A panel renders through the pass that renders panels, so the
+        // depth guard is what stops a pathological document recursing.
+        let deep = "```tabs\n=== A\n".repeat(usize::from(MAX_DEPTH) + 2);
+        let html = render_panel_markdown(&deep);
+        assert!(!html.is_empty());
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -414,11 +478,15 @@ mod tests {
 
     #[test]
     fn inline_markdown_bold_italic_code() {
+        // The editor's own classes, not `<strong>`/`<em>`: a panel now
+        // renders through the same markdown pass as the rest of the
+        // page, so its emphasis is styled by the same stylesheet.
         let body = "=== A\nsome **bold** and *italic* and `code` text";
         let html = render_tabs(body, 7).expect("renders");
-        assert!(html.contains("<strong>bold</strong>"));
-        assert!(html.contains("<em>italic</em>"));
-        assert!(html.contains("<code>code</code>"));
+        assert!(html.contains("md-bold"), "{html}");
+        assert!(html.contains("md-italic"), "{html}");
+        assert!(html.contains("md-code"), "{html}");
+        assert!(html.contains("bold") && html.contains("italic") && html.contains("code"));
     }
 
     #[test]
