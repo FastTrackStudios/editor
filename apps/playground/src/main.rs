@@ -414,6 +414,60 @@ fn App() -> Element {
                  \n\
                  ![[#^demo-block-id]]\n\
                  \n\
+                 ### CommonMark basics\n\
+                 \n\
+                 Markdown image: ![a kitten](https://placekitten.com/80/60 \"A title\")\n\
+                 and a sized one: ![kitten|60](https://placekitten.com/80/60)\n\
+                 \n\
+                 Escapes stay literal: \\*not emphasis\\* and \\`not code\\`.\n\
+                 \n\
+                 Reference links: [the spec][cm] and the shortcut form [cm].\n\
+                 An undefined one stays text: [nope][missing].\n\
+                 \n\
+                 A hard break ends this line with two spaces,  \n\
+                 so this continues as a new line in the same paragraph.\n\
+                 \n\
+                 Emoji shortcodes: :rocket: :musical_note: :+1: — but a time\n\
+                 range like 10:30 - 11:00 is left alone.\n\
+                 \n\
+                 Nested lists:\n\
+                 \n\
+                 - top level\n\
+                   - one deep\n\
+                     - two deep\n\
+                 1. ordered top\n\
+                   1. ordered nested\n\
+                 \n\
+                 A list inside a quote:\n\
+                 \n\
+                 > - quoted item\n\
+                 > - another\n\
+                 \n\
+                 An indented code block (four spaces):\n\
+                 \n\
+                     let x = 1;\n\
+                     println!(\"{x}\");\n\
+                 \n\
+                 ### Aligned table\n\
+                 \n\
+                 | Left | Centre | Right |\n\
+                 |:-----|:------:|------:|\n\
+                 | a    | b      | c     |\n\
+                 | 1    | 2      | 3     |\n\
+                 \n\
+                 ### Collapsible callouts\n\
+                 \n\
+                 > [!tip]+ Starts open\n\
+                 > The chevron folds it.\n\
+                 \n\
+                 > [!danger]- Starts folded\n\
+                 > Hidden until you open it.\n\
+                 \n\
+                 > [!question]\n\
+                 > A bare callout titles itself from its type.\n\
+                 \n\
+                 [cm]: https://commonmark.org \"CommonMark\"\n\
+                 \n\
                  ### Code fences (syntax highlighting)\n\
                  \n\
                  ```rust\n\

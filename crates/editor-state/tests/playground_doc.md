@@ -25,16 +25,16 @@ Subtitle via dashes
 ## Inline styles
 
 **bold**, *italic*, ***bold italic***, ~~strikethrough~~, \
-==highlight==, `inline code`, and an inline footnote^[click the marker to edit me].
+                 ==highlight==, `inline code`, and an inline footnote^[click the marker to edit me].
 
 Links: standard [Anthropic](https://anthropic.com), \
-an autolink <https://obsidian.md>, \
-wikilinks: [[Editor Roadmap]], [[Project README|the readme]], \
-and to a header [[Editor Roadmap#Goals]]. Unresolved targets render red \
-(no vault yet, so every wikilink is unresolved). \
-Tags like #editor #live-preview #notes/howto, \
-and a footnote ref [^1]. \
-Block id at end of paragraph ^demo-block-id
+                 an autolink <https://obsidian.md>, \
+                 wikilinks: [[Editor Roadmap]], [[Project README|the readme]], \
+                 and to a header [[Editor Roadmap#Goals]]. Unresolved targets render red \
+                 (no vault yet, so every wikilink is unresolved). \
+                 Tags like #editor #live-preview #notes/howto, \
+                 and a footnote ref [^1]. \
+                 Block id at end of paragraph ^demo-block-id
 
 ## Block styles
 
@@ -69,7 +69,7 @@ Block id at end of paragraph ^demo-block-id
 
 > [!info] Info
 > Use the slash menu `/callout` to insert any of the others — \
-abstract, info, success, question, failure, bug, example, quote.
+                 abstract, info, success, question, failure, bug, example, quote.
 
 > [!example] Nested callouts
 > The outer is an example callout.
@@ -94,7 +94,7 @@ abstract, info, success, question, failure, bug, example, quote.
 ### Math
 
 Inline math compiles via Typst: $E = m c^2$, and a longer one — \
-$sum_(i=1)^n i = n(n+1)/2$.
+                 $sum_(i=1)^n i = n(n+1)/2$.
 
 $$ integral_0^1 x^2 d x = 1/3 $$
 
@@ -159,6 +159,60 @@ Embed a section by heading — resolves intra-doc if the heading lives in this f
 Embed a block by Obsidian short-id (the `^demo-block-id` anchor near the top):
 
 ![[#^demo-block-id]]
+
+### CommonMark basics
+
+Markdown image: ![a kitten](https://placekitten.com/80/60 "A title")
+and a sized one: ![kitten|60](https://placekitten.com/80/60)
+
+Escapes stay literal: \*not emphasis\* and \`not code\`.
+
+Reference links: [the spec][cm] and the shortcut form [cm].
+An undefined one stays text: [nope][missing].
+
+A hard break ends this line with two spaces,  
+so this continues as a new line in the same paragraph.
+
+Emoji shortcodes: :rocket: :musical_note: :+1: — but a time
+range like 10:30 - 11:00 is left alone.
+
+Nested lists:
+
+- top level
+  - one deep
+    - two deep
+1. ordered top
+  1. ordered nested
+
+A list inside a quote:
+
+> - quoted item
+> - another
+
+An indented code block (four spaces):
+
+    let x = 1;
+    println!("{x}");
+
+### Aligned table
+
+| Left | Centre | Right |
+|:-----|:------:|------:|
+| a    | b      | c     |
+| 1    | 2      | 3     |
+
+### Collapsible callouts
+
+> [!tip]+ Starts open
+> The chevron folds it.
+
+> [!danger]- Starts folded
+> Hidden until you open it.
+
+> [!question]
+> A bare callout titles itself from its type.
+
+[cm]: https://commonmark.org "CommonMark"
 
 ### Code fences (syntax highlighting)
 
