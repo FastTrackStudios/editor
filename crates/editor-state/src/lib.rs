@@ -17,6 +17,7 @@ pub mod history;
 pub mod hover;
 pub mod html;
 pub mod markdown;
+pub mod plugin;
 pub mod selection;
 pub mod state;
 pub mod text;
