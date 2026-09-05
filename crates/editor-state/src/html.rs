@@ -453,10 +453,9 @@ mod tests {
     #[test]
     fn an_image_becomes_an_img_element() {
         let out = html("![alt](pic.png)");
-        assert!(
-            out.contains(r#"<img class="md-embed-image" src="pic.png""#),
-            "{out}"
-        );
+        assert!(out.contains(r#"src="pic.png""#), "{out}");
+        // Inline, not the block treatment `![[embeds]]` get.
+        assert!(out.contains("md-image-inline"), "{out}");
         // The bang belongs to the syntax, not the text.
         assert!(!out.contains(">!"), "the bang leaked:\n{out}");
     }
@@ -507,6 +506,9 @@ mod tests {
     #[test]
     fn an_indent_is_code_only_at_the_head_of_a_block() {
         assert!(html("para\n\n    let x = 1;").contains("md-code-indented"));
+        // Every line of the block, not just the first.
+        let out = html("para\n\n    one\n    two");
+        assert_eq!(out.matches("md-code-indented").count(), 2, "{out}");
         // Inside a list the same indent is a continuation line.
         assert!(!html("- item\n    wrapped").contains("md-code-indented"));
     }

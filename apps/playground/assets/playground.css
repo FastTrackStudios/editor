@@ -1339,3 +1339,11 @@ section h2 {
     height: auto;
     border-radius: 6px;
 }
+
+/* An image written inline (`![alt](url)`) stays in the text flow; the
+   block treatment belongs to `![[embeds]]` on a line of their own. */
+.editor-root img.md-image-inline {
+    display: inline-block;
+    vertical-align: text-bottom;
+    margin: 0;
+}

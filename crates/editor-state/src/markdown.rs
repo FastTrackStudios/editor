@@ -1588,7 +1588,7 @@ fn decorate_leaf_span(
             out.push(Decoration::widget(
                 span.outer.start,
                 format!(
-                    r#"<img class="md-embed-image" src="{}" alt="{}"{title_attr}{size}>"#,
+                    r#"<img class="md-embed-image md-image-inline" src="{}" alt="{}"{title_attr}{size}>"#,
                     html_escape(&url),
                     html_escape(alt),
                 ),
@@ -2438,6 +2438,88 @@ fn scan_setext_underlines(
 /// blocks. Pushes the right `Decoration`s onto `out` and returns
 /// the byte ranges occupied by fenced-code *content* so the
 /// caller can skip inline parsing inside them.
+/// The block-run state [`emit_plain_block_line`] needs: whether a new block
+/// could start here, and whether we are inside a list or an indented code
+/// block already.
+struct BlockRun<'a> {
+    prev_blank: bool,
+    in_list: bool,
+    in_indented_code: &'a mut bool,
+}
+
+/// The two line kinds handled before headings and fences: an indented
+/// (four-space) code block, and a link-reference definition.
+///
+/// Returns `true` when the line is fully handled. Split out of
+/// [`scan_blocks`], which was at its line budget.
+fn emit_plain_block_line(
+    line: &str,
+    line_from: usize,
+    line_to: usize,
+    primary: Range,
+    run: &mut BlockRun<'_>,
+    out: &mut Vec<DecoratedRange>,
+) -> bool {
+    // An indented block runs on until the indent stops, so every line of
+    // it is code — not just the first, which is all a head-of-block test
+    // alone would catch. Inside a list the same indent is a continuation
+    // line, never code.
+    if (run.prev_blank || *run.in_indented_code)
+        && !run.in_list
+        && line.starts_with("    ")
+        && !line.trim().is_empty()
+    {
+        out.push(Decoration::line(line_from, "md-code-block"));
+        out.push(Decoration::line(line_from, "md-code-indented"));
+        *run.in_indented_code = true;
+        return true;
+    }
+    *run.in_indented_code = false;
+    // A link-reference definition (`[label]: url "title"`) is
+    // configuration, not content — it carries no output of its own, so it
+    // is hidden the way frontmatter is.
+    if is_link_definition(line) && !cursor_touches(primary, line_from..line_to) {
+        out.push(Decoration::replace(line_from..line_to));
+        out.push(Decoration::line(line_from, "md-link-def"));
+        return true;
+    }
+    false
+}
+
+/// A line inside an open code fence: the code-block class, and — on the
+/// closing fence — hiding the ```` ``` ```` and recording the fenced range
+/// so the inline pass skips it.
+///
+/// Split out of [`scan_blocks`], which was at its line budget.
+fn emit_fenced_line(
+    line: &str,
+    line_from: usize,
+    line_to: usize,
+    primary: Range,
+    fence: &mut Option<(usize, u8, usize, bool)>,
+    fenced_ranges: &mut Vec<std::ops::Range<usize>>,
+    out: &mut Vec<DecoratedRange>,
+) {
+    let Some((_, mc, mlen, is_kf)) = *fence else {
+        return;
+    };
+    out.push(Decoration::line(line_from, "md-code-block"));
+    if is_kf {
+        out.push(Decoration::line(line_from, "md-keyflow-bare"));
+    }
+    if is_closing_fence(line, mc, mlen) {
+        // Caret on the closing fence: source stays visible so the user
+        // can edit the ```` ``` ````. Off: hidden via Replace so the
+        // line just shows the code-block background.
+        if !cursor_touches(primary, line_from..line_to) {
+            out.push(Decoration::replace(line_from..line_to));
+        }
+        if let Some((open_end, _, _, _)) = fence.take() {
+            fenced_ranges.push(open_end..line_to);
+        }
+    }
+}
+
 fn scan_blocks(
     text: &str,
     primary: Range,
@@ -2489,9 +2571,6 @@ fn scan_blocks(
     // the engraved chart (and its own source block) stands full width,
     // not boxed like code. `kf-src` is NOT flagged: it stays a code block.
     let mut fence: Option<(usize, u8, usize, bool)> = None;
-    // Callout-tracking state: while we're inside a `> [!type]…`
-    // block, every subsequent `>`-prefixed line inherits the
-    // callout's class so CSS can group them visually.
     // Callout stack: one entry per nesting depth. `> [!note]\n>
     // > [!warning]` pushes "note" then "warning"; a line with
     // fewer `>` markers pops back. Non-blockquote lines drain
@@ -2501,18 +2580,10 @@ fn scan_blocks(
     // "code" only at the start of a block, never inside a list.
     let mut prev_blank = true;
     let mut in_list = false;
-
-    // Setext-style heading detection. For each window of two
-    // consecutive lines, if the first is content and the second
-    // is `===` or `---` (any length), the pair becomes an H1 or
-    // H2. Stash the underline-line offsets so the main loop can
-    // skip them, and stash the content-line offsets so we know
-    // which level to emit.
-    //
-    // `---` is also a HR — disambiguation: setext wins when the
-    // line above is non-blank AND not a block-opening marker
-    // (heading, list, blockquote, fence, frontmatter). HR wins
-    // otherwise.
+    let mut in_indented_code = false;
+    // Setext headings: a content line followed by `===` / `---`. `---`
+    // is also a HR — setext wins when the line above is non-blank and
+    // not itself a block-opening marker. See [`scan_setext_underlines`].
     let (setext_content_level, setext_underline) = scan_setext_underlines(text);
 
     for (line_from, line_to) in line_ranges(text) {
@@ -2564,28 +2635,16 @@ fn scan_blocks(
         }
 
         // ── Inside a fence ─────────────────────────────────
-        if let Some((_, mc, mlen, is_kf)) = fence {
-            if is_closing_fence(line, mc, mlen) {
-                out.push(Decoration::line(line_from, "md-code-block"));
-                if is_kf {
-                    out.push(Decoration::line(line_from, "md-keyflow-bare"));
-                }
-                // Caret on the closing fence: source stays
-                // visible so the user can edit the `\`\`\``.
-                // Off: hidden via Replace so the line just shows
-                // the code-block background.
-                if !cursor_touches(primary, line_from..line_to) {
-                    out.push(Decoration::replace(line_from..line_to));
-                }
-                if let Some((open_end, _, _, _)) = fence.take() {
-                    fenced_ranges.push(open_end..line_to);
-                }
-                continue;
-            }
-            out.push(Decoration::line(line_from, "md-code-block"));
-            if is_kf {
-                out.push(Decoration::line(line_from, "md-keyflow-bare"));
-            }
+        if fence.is_some() {
+            emit_fenced_line(
+                line,
+                line_from,
+                line_to,
+                primary,
+                &mut fence,
+                &mut fenced_ranges,
+                out,
+            );
             continue;
         }
 
@@ -2595,18 +2654,19 @@ fn scan_blocks(
         // and not inside a list, where the same indent means a
         // continuation. Getting that wrong would turn every
         // wrapped list item into code.
-        if prev_blank && !in_list && line.starts_with("    ") && !line.trim().is_empty() {
-            out.push(Decoration::line(line_from, "md-code-block"));
-            out.push(Decoration::line(line_from, "md-code-indented"));
+        if emit_plain_block_line(
+            line,
+            line_from,
+            line_to,
+            primary,
+            &mut BlockRun {
+                prev_blank,
+                in_list,
+                in_indented_code: &mut in_indented_code,
+            },
+            out,
+        ) {
             prev_blank = false;
-            continue;
-        }
-        // A link-reference definition (`[label]: url "title"`) is
-        // configuration, not content — it carries no output of its
-        // own, so it is hidden the way frontmatter is.
-        if is_link_definition(line) && !cursor_touches(primary, line_from..line_to) {
-            out.push(Decoration::replace(line_from..line_to));
-            out.push(Decoration::line(line_from, "md-link-def"));
             continue;
         }
 
