@@ -1642,9 +1642,9 @@ fn emit_block_line(
                 out.push(Decoration::line(line_from, callout_depth_class(depth)));
             }
             // Hide the `> > [!type] Title` markers when
-            // caret is off the line — the line class draws
-            // the icon / title styling instead. The marker
-            // span covers all `>` chars + their spaces.
+            // caret is off the line — the icon widget and the
+            // line class stand in for them. The marker span
+            // covers all `>` chars + their spaces.
             let abs_header_end = abs_marker_end.saturating_add(header_end_off);
             if !cursor_touches(primary, line_from..line_to) {
                 out.push(Decoration::mark(
@@ -1652,6 +1652,21 @@ fn emit_block_line(
                     "md-quote-marker",
                 ));
                 out.push(Decoration::replace(abs_marker_end..abs_header_end));
+                // Obsidian's Lucide glyph, at the head of the
+                // title. Anchored at the *start* of the replaced
+                // syntax so it lands before the title text.
+                if let Some(svg) = crate::callout_icon::callout_icon(kind) {
+                    out.push(Decoration::widget(abs_marker_end, svg.to_owned()));
+                }
+                // A bare `> [!tip]` has no title text. Obsidian
+                // titles it with the type name; without this the
+                // header line renders as an empty coloured bar.
+                if after_marker.after(header_end_off).trim().is_empty() {
+                    out.push(Decoration::widget(
+                        abs_header_end,
+                        callout_default_title(kind).to_owned(),
+                    ));
+                }
             }
             return;
         }
@@ -2401,6 +2416,26 @@ fn parse_callout_header(after: &str) -> Option<(&'static str, usize)> {
         end = end.saturating_add(1);
     }
     Some((kind, end))
+}
+
+/// The title Obsidian shows for a callout whose header carries no title
+/// text of its own — the type name, capitalised.
+const fn callout_default_title(kind: &str) -> &'static str {
+    match kind.as_bytes() {
+        b"note" => "Note",
+        b"abstract" => "Abstract",
+        b"info" => "Info",
+        b"todo" => "Todo",
+        b"tip" => "Tip",
+        b"success" => "Success",
+        b"question" => "Question",
+        b"warning" => "Warning",
+        b"failure" => "Failure",
+        b"danger" => "Danger",
+        b"bug" => "Bug",
+        b"example" => "Example",
+        _ => "Quote",
+    }
 }
 
 fn canonical_callout_kind(raw: &str) -> Option<&'static str> {

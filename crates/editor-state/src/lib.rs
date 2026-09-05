@@ -7,6 +7,7 @@
 //! `~/Development/research/codemirror/state/src/`.
 
 pub mod bracket_match;
+pub mod callout_icon;
 pub mod change;
 pub mod command;
 pub mod commands;

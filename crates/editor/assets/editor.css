@@ -1127,6 +1127,17 @@
     font-weight: 600;
     padding-top: 4px;
 }
+/* Obsidian's Lucide glyph at the head of the title. It inherits the
+   header's colour through `currentColor`, so the thirteen types need
+   no per-type icon rule — only the `::before` bar carries a colour. */
+.editor-root .md-callout-icon {
+    display: inline-block;
+    vertical-align: -0.15em;
+    width: 1.05em;
+    height: 1.05em;
+    margin-right: 0.4em;
+    flex: none;
+}
 .editor-root .cm-line.md-callout-header + .cm-line.md-callout {
     padding-bottom: 4px;
 }
