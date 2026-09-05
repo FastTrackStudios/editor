@@ -33,7 +33,14 @@ thread_local! {
 /// Re-arm the per-pass budget. Call at the top of every
 /// `live_preview` pass.
 pub fn reset_render_budget() {
-    RENDER_BUDGET.with(|c| c.set(RENDER_BUDGET_PER_PASS));
+    // A one-shot render has no next pass to converge on, so it gets an
+    // unlimited budget — see [`crate::markdown::render_everything`].
+    let limit = if crate::markdown::rendering_everything() {
+        u8::MAX
+    } else {
+        RENDER_BUDGET_PER_PASS
+    };
+    RENDER_BUDGET.with(|c| c.set(limit));
 }
 
 /// A single parsed tab: its title and raw (unescaped) body.

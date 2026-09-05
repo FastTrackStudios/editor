@@ -53,7 +53,14 @@ thread_local! {
 /// Re-arm the per-pass compile budget. Call once at the top of
 /// every `live_preview` pass before any [`render_typst`] calls.
 pub fn reset_compile_budget() {
-    COMPILE_BUDGET.with(|c| c.set(COMPILE_BUDGET_PER_PASS));
+    // A one-shot render has no next pass to converge on, so it gets an
+    // unlimited budget — see [`crate::markdown::render_everything`].
+    let limit = if crate::markdown::rendering_everything() {
+        u8::MAX
+    } else {
+        COMPILE_BUDGET_PER_PASS
+    };
+    COMPILE_BUDGET.with(|c| c.set(limit));
 }
 
 /// Render a Typst source fragment to inline SVG. Returns `None`

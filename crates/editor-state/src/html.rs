@@ -323,7 +323,10 @@ pub fn render_state_html(state: &crate::EditorState) -> String {
     let text = state.doc.to_string();
     let mut reading = state.clone();
     reading.reading_mode = true;
-    let decorations = crate::markdown::live_preview(&reading);
+    // One pass, so nothing may be deferred to a next one — see
+    // `markdown::render_everything`.
+    let decorations =
+        crate::markdown::render_everything(|| crate::markdown::live_preview(&reading));
     render_html(&text, &decorations)
 }
 
@@ -532,6 +535,49 @@ mod tests {
     fn a_link_definition_line_renders_nothing() {
         let out = html("[r]: http://x");
         assert!(!out.contains("http://x"), "{out}");
+    }
+
+    #[test]
+    fn a_one_shot_render_compiles_every_equation() {
+        // The per-pass compile budget is a live-typing optimisation: a
+        // live document converges over several passes. A static render
+        // gets one pass, so under the budget the third equation on a page
+        // shipped as raw `$…$` source, permanently.
+        let out = html("$a^1$ $b^2$ $c^3$ $d^4$ $e^5$");
+        assert_eq!(out.matches("md-math-widget-inline").count(), 5, "{out}");
+        assert!(!out.contains('$'), "unrendered math left as source:\n{out}");
+    }
+
+    #[test]
+    fn list_bullets_step_by_depth() {
+        let out = html("- top\n  - one\n    - two");
+        assert!(out.contains("•"), "{out}");
+        assert!(out.contains("◦"), "{out}");
+        assert!(out.contains("▪"), "{out}");
+        // The source marker is not what the reader sees.
+        assert!(!out.contains(">-&nbsp;"), "{out}");
+    }
+
+    #[test]
+    fn a_page_embed_is_a_card_not_an_image() {
+        let out = html("![[Chords]]");
+        assert!(out.contains("md-embed-page"), "{out}");
+        assert!(!out.contains("<img"), "{out}");
+    }
+
+    #[test]
+    fn an_embed_card_renders_its_body() {
+        // An embed shows a block as it reads, not as it is written.
+        let uuid = "5f9c1234-abcd-4ef0-8123-fedcba012345";
+        let src = format!(
+            "A block with [a link](http://x) and **bold**.\nid:: {uuid}\n\n{{{{embed (({uuid}))}}}}"
+        );
+        let out = html(&src);
+        assert!(out.contains("md-block-embed-card"), "{out}");
+        assert!(
+            !out.contains("[a link](http://x)"),
+            "card showed its own source:\n{out}"
+        );
     }
 
     #[test]

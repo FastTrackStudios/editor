@@ -249,6 +249,41 @@ fn kbd_chord_labels(token: &str) -> Vec<String> {
     parts
 }
 
+thread_local! {
+    /// Set while a one-shot render is in progress. See
+    /// [`render_everything`].
+    static RENDER_EVERYTHING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Is a one-shot render in progress?
+///
+/// The per-pass compile budgets consult this: when it is set they arm
+/// themselves to `u8::MAX` instead of their usual couple of cold compiles.
+#[must_use]
+pub fn rendering_everything() -> bool {
+    RENDER_EVERYTHING.with(std::cell::Cell::get)
+}
+
+/// Run `f` with every per-pass compile budget lifted.
+///
+/// The budgets exist because the decoration pass runs on every keystroke:
+/// a note full of fresh math would compile all of it per character typed,
+/// so each pass spends a couple of cold compiles and the rest fall back to
+/// source until the next pass. Over a few passes a live document
+/// converges, and the cache carries what is already rendered.
+///
+/// A one-shot render — the static HTML the guide is built from — has no
+/// next pass. Under the live budget the third equation on a page was
+/// never compiled at all and shipped as raw `$…$` source, permanently.
+/// Anything rendering once must call this.
+pub fn render_everything<R>(f: impl FnOnce() -> R) -> R {
+    RENDER_EVERYTHING.with(|c| c.set(true));
+    let out = f();
+    RENDER_EVERYTHING.with(|c| c.set(false));
+    out
+}
+
+/// Decorations for `state`, with no vault or keybinding lookups.
 #[must_use]
 pub fn live_preview(state: &EditorState) -> Vec<DecoratedRange> {
     live_preview_with_lookups(state, None, None)
@@ -943,10 +978,24 @@ fn resolve_block_short_id(doc: &str, short_id: &str) -> Option<String> {
     )
 }
 
+/// Render the body of an embed card: the same inline subset table cells
+/// get, applied line by line.
+///
+/// Card bodies used to be `html_escape`d, so an embedded block showed its
+/// own source — `[Anthropic](https://anthropic.com)`, `[[An Introduction]]`
+/// and `**bold**` as literal text — which is exactly what an embed is
+/// supposed to spare the reader.
+fn render_embed_preview(body: &str) -> String {
+    body.lines()
+        .map(render_table_cell)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn render_embed_card_page(icon: &str, page: &str, resolved: Option<&str>) -> String {
     let body = resolved.map_or_else(
         || r#"<span class="md-embed-placeholder">multi-file lookup pending</span>"#.to_string(),
-        html_escape,
+        render_embed_preview,
     );
     format!(
         r#"<div class="md-embed-card md-embed-page"><div class="md-embed-head">{icon} <span class="md-embed-title">{page}</span></div><div class="md-embed-body">{body}</div></div>"#
@@ -961,7 +1010,7 @@ fn render_embed_card_section(
 ) -> String {
     let body = resolved.map_or_else(
         || r#"<span class="md-embed-placeholder">multi-file lookup pending</span>"#.to_string(),
-        html_escape,
+        render_embed_preview,
     );
     format!(
         r#"<div class="md-embed-card md-embed-section"><div class="md-embed-head">{icon} <span class="md-embed-title">{page}</span> <span class="md-embed-sep">›</span> <span class="md-embed-frag">{heading}</span></div><div class="md-embed-body">{body}</div></div>"#
@@ -971,7 +1020,7 @@ fn render_embed_card_section(
 fn render_embed_card_short(icon: &str, page: &str, short: &str, resolved: Option<&str>) -> String {
     let body = resolved.map_or_else(
         || r#"<span class="md-embed-placeholder">multi-file lookup pending</span>"#.to_string(),
-        html_escape,
+        render_embed_preview,
     );
     format!(
         r#"<div class="md-embed-card md-embed-block"><div class="md-embed-head">{icon} <span class="md-embed-title">{page}</span> <span class="md-embed-sep">›</span> <span class="md-embed-frag">{short}</span></div><div class="md-embed-body">{body}</div></div>"#
@@ -1243,7 +1292,10 @@ fn decorate_embed_like_span(
         let html = format!(
             r#"<div class="{cls}" data-uuid="{uuid}">{page_chip}{content}</div>"#,
             uuid = escape_html(uuid),
-            content = escape_html(&content),
+            // An embed exists to show the block as it reads, not as it is
+            // written; escaping it put `[a link](url)` and `**bold**` on
+            // the page verbatim.
+            content = render_embed_preview(&content),
         );
         out.push(Decoration::replace(span.outer.clone()));
         out.push(Decoration::widget(span.outer.start, html));
@@ -1970,7 +2022,16 @@ fn emit_list_line(
                 let num = line.trim_start().before(num_end);
                 format!(r#"<span class="md-list-marker">{num}.&nbsp;</span>"#)
             } else {
-                r#"<span class="md-list-marker">-&nbsp;</span>"#.into()
+                // A real bullet, not the source's `-`/`*`/`+`. Obsidian
+                // steps the glyph by depth; so does this, which is the
+                // only cue a reader gets that a sub-list is a sub-list
+                // once the indent is small.
+                let glyph = match list_depth_class(line) {
+                    Some("md-list-depth-1") => "◦",
+                    Some("md-list-depth-2") => "▪",
+                    _ => "•",
+                };
+                format!(r#"<span class="md-list-marker">{glyph}&nbsp;</span>"#)
             };
             out.push(Decoration::replace(line_from..abs_marker_end));
             out.push(Decoration::widget(line_from, widget_html));
