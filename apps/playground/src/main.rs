@@ -432,11 +432,8 @@ fn App() -> Element {
                  \n\
                  Nested lists:\n\
                  \n\
-                 - top level\n\
-                   - one deep\n\
-                     - two deep\n\
-                 1. ordered top\n\
-                   1. ordered nested\n\
+                 - top level\n  - one deep\n    - two deep\n\
+                 1. ordered top\n  1. ordered nested\n\
                  \n\
                  A list inside a quote:\n\
                  \n\
@@ -444,9 +441,7 @@ fn App() -> Element {
                  > - another\n\
                  \n\
                  An indented code block (four spaces):\n\
-                 \n\
-                     let x = 1;\n\
-                     println!(\"{x}\");\n\
+                 \n    let x = 1;\n    println!(\"{x}\");\n\
                  \n\
                  ### Aligned table\n\
                  \n\

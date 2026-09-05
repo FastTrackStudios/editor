@@ -7,12 +7,12 @@ author: cody
 created: 2026-05-20
 priority: 3
 description: |
-  Multi-line YAML scalar — used to demo block-
-  scalar parsing and editing in the Properties
-  panel above.
+Multi-line YAML scalar — used to demo block-
+scalar parsing and editing in the Properties
+panel above.
 aliases:
-  - playground
-  - demo doc
+- playground
+- demo doc
 ---
 # Welcome to the Editor playground
 
@@ -24,17 +24,9 @@ Subtitle via dashes
 
 ## Inline styles
 
-**bold**, *italic*, ***bold italic***, ~~strikethrough~~, \
-                 ==highlight==, `inline code`, and an inline footnote^[click the marker to edit me].
+**bold**, *italic*, ***bold italic***, ~~strikethrough~~, ==highlight==, `inline code`, and an inline footnote^[click the marker to edit me].
 
-Links: standard [Anthropic](https://anthropic.com), \
-                 an autolink <https://obsidian.md>, \
-                 wikilinks: [[Editor Roadmap]], [[Project README|the readme]], \
-                 and to a header [[Editor Roadmap#Goals]]. Unresolved targets render red \
-                 (no vault yet, so every wikilink is unresolved). \
-                 Tags like #editor #live-preview #notes/howto, \
-                 and a footnote ref [^1]. \
-                 Block id at end of paragraph ^demo-block-id
+Links: standard [Anthropic](https://anthropic.com), an autolink <https://obsidian.md>, wikilinks: [[Editor Roadmap]], [[Project README|the readme]], and to a header [[Editor Roadmap#Goals]]. Unresolved targets render red (no vault yet, so every wikilink is unresolved). Tags like #editor #live-preview #notes/howto, and a footnote ref [^1]. Block id at end of paragraph ^demo-block-id
 
 ## Block styles
 
@@ -68,8 +60,7 @@ Links: standard [Anthropic](https://anthropic.com), \
 > High-stakes call-out style.
 
 > [!info] Info
-> Use the slash menu `/callout` to insert any of the others — \
-                 abstract, info, success, question, failure, bug, example, quote.
+> Use the slash menu `/callout` to insert any of the others — abstract, info, success, question, failure, bug, example, quote.
 
 > [!example] Nested callouts
 > The outer is an example callout.
@@ -93,8 +84,7 @@ Links: standard [Anthropic](https://anthropic.com), \
 
 ### Math
 
-Inline math compiles via Typst: $E = m c^2$, and a longer one — \
-                 $sum_(i=1)^n i = n(n+1)/2$.
+Inline math compiles via Typst: $E = m c^2$, and a longer one — $sum_(i=1)^n i = n(n+1)/2$.
 
 $$ integral_0^1 x^2 d x = 1/3 $$
 
@@ -112,13 +102,13 @@ $ A = mat(1, 2; 3, 4) $
 
 ```mermaid
 flowchart LR
-  A[Keystroke] --> B{Live preview}
-  B -->|markdown| C[Decorations]
-  B -->|math| D[Typst SVG]
-  B -->|diagram| E[Mermaid SVG]
-  C --> F[DOM patch]
-  D --> F
-  E --> F
+A[Keystroke] --> B{Live preview}
+B -->|markdown| C[Decorations]
+B -->|math| D[Typst SVG]
+B -->|diagram| E[Mermaid SVG]
+C --> F[DOM patch]
+D --> F
+E --> F
 ```
 
 ### Editor commands
@@ -218,13 +208,13 @@ An indented code block (four spaces):
 
 ```rust
 fn greet(name: &str) -> String {
-    format!("Hello, {name}!")
+format!("Hello, {name}!")
 }
 ```
 
 ```python
 def greet(name):
-    return f"Hello, {name}!"
+return f"Hello, {name}!"
 ```
 
 ```ts
