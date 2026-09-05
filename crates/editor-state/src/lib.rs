@@ -15,6 +15,7 @@ pub mod doc;
 pub mod fence_renderer;
 pub mod history;
 pub mod hover;
+pub mod html;
 pub mod markdown;
 pub mod selection;
 pub mod state;
