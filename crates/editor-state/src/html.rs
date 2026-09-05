@@ -241,9 +241,27 @@ pub fn render_state_html(state: &crate::EditorState) -> String {
 /// Render markdown source as HTML, with every editor feature its
 /// decorations provide — callouts, wikilinks, task lists, and any fence
 /// whose language the host has registered a renderer for.
+///
+/// Wikilinks render, but every one of them is unresolved: with no vault
+/// to ask, the renderer cannot know whether `[[Header]]` names a page
+/// that exists. Use [`render_markdown_html_with`] where that matters,
+/// which for a published site is always.
 #[must_use]
 pub fn render_markdown_html(source: &str) -> String {
     render_state_html(&crate::EditorState::new(source.to_string()))
+}
+
+/// Render markdown source as HTML, resolving wikilinks against `vault`.
+///
+/// The same lookup the live editor uses, so a link that resolves to a
+/// card in the editor resolves to one on the page.
+#[must_use]
+pub fn render_markdown_html_with(source: &str, vault: &dyn crate::markdown::VaultLookup) -> String {
+    let mut state = crate::EditorState::new(source.to_string());
+    state.reading_mode = true;
+    let text = state.doc.to_string();
+    let decorations = crate::markdown::live_preview_with(&state, Some(vault));
+    render_html(&text, &decorations)
 }
 
 enum Ev {
@@ -337,6 +355,37 @@ mod tests {
         assert!(out.contains("bold"), "{out}");
         // The `**` is a Replace: gone from the render, still in the doc.
         assert!(!out.contains("**"), "{out}");
+    }
+
+    struct OnePage;
+    impl crate::markdown::VaultLookup for OnePage {
+        fn lookup_block(&self, _uuid: &str) -> Option<crate::markdown::VaultBlockHit> {
+            None
+        }
+        fn lookup_page(&self, name: &str) -> Option<crate::markdown::VaultPageHit> {
+            name.eq_ignore_ascii_case("header")
+                .then(|| crate::markdown::VaultPageHit {
+                    preview: "The header".to_owned(),
+                })
+        }
+        fn lookup_section(&self, _page: &str, _heading: &str) -> Option<String> {
+            None
+        }
+        fn lookup_block_short(&self, _page: &str, _short_id: &str) -> Option<String> {
+            None
+        }
+    }
+
+    #[test]
+    fn a_wikilink_resolves_against_the_vault() {
+        // Without a vault every link is unresolved, which on a published
+        // site would style every cross-reference as broken.
+        let bare = html("see [[header]]");
+        assert!(bare.contains("md-wikilink-unresolved"), "{bare}");
+
+        let resolved = render_markdown_html_with("see [[header]]", &OnePage);
+        assert!(resolved.contains("md-wikilink"), "{resolved}");
+        assert!(!resolved.contains("md-wikilink-unresolved"), "{resolved}");
     }
 
     #[test]
