@@ -313,7 +313,7 @@ fn App() -> Element {
                  > Callouts share the blockquote syntax.\n\
                  \n\
                  > [!tip] Tip\n\
-                 > Press `\\` (or Mod-K) anywhere to open the command palette.\n\
+                 > Press `\\` (or Mod-Shift-P) anywhere to open the command palette.\n\
                  \n\
                  > [!warning]+ Collapsible warning\n\
                  > The `+`/`-` on the type marker controls folded default.\n\
@@ -378,12 +378,12 @@ fn App() -> Element {
                  ### Editor commands\n\
                  \n\
                  - **Mod-B** / **Mod-I** — bold / italic\n\
-                 - **Mod-K** — wrap as `[…](url)`\n\
+                 - **Mod-Shift-P** — wrap as `[…](url)`\n\
                  - **Mod-L** — cycle list marker (none → `-` → `1.` → `- [ ]`)\n\
                  - **Mod-T** — toggle task on current line\n\
                  - **Mod-1**..**Mod-6** — heading levels; **Mod-0** strips\n\
                  - **Mod-E** — toggle reading mode\n\
-                 - **`\\`** or **Mod-K** — open the command palette\n\
+                 - **`\\`** or **Mod-Shift-P** — open the command palette\n\
                  \n\
                  ### Embeds\n\
                  \n\

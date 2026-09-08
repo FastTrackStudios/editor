@@ -72,7 +72,7 @@ wikilinks [[Editor Roadmap]] and [[Project README|the readme]], tags
 > Callouts share the blockquote syntax.
 
 > [!tip] Tip
-> Press `\\` (or Mod-K) anywhere to open the command palette.
+> Press `\\` (or Mod-Shift-P) anywhere to open the command palette.
 
 > [!warning] Warning
 > High-stakes call-out style.

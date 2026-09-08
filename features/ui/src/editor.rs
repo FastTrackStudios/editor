@@ -2194,8 +2194,14 @@ pub fn Editor(
         // typing more after the trigger keeps it active and the
         // doc change re-runs `detect_trigger`.
         //
-        // Mod-K opens it without reaching for the trigger key, which is
-        // what most hands already do. It literally TYPES the trigger
+        // Mod-Shift-P opens it without reaching for the trigger key. Not
+        // Mod-K, which is the near-universal "insert link" and is bound to
+        // `toggle_link` in the standard keymap — a palette that ate it
+        // would be a straight loss. Mod-Shift-P is the chord VS Code made
+        // the conventional one for exactly this, and nothing else here or
+        // in a browser claims it.
+        //
+        // It literally TYPES the trigger
         // rather than opening the menu behind the document's back: the
         // whole palette reads its query out of the doc, so a menu with no
         // trigger in the text would be closed again by the detect effect
@@ -2203,7 +2209,11 @@ pub fn Editor(
         // filtering, Enter replacing `\query`, Escape leaving what you
         // typed — is identical whichever way it was opened.
         if let Some(mut palette_sig) = palette_for_keys {
-            if palette_sig.peek().is_none() && press.r#mod && press.key == "K" {
+            if palette_sig.peek().is_none()
+                && press.r#mod
+                && press.shift
+                && press.key.eq_ignore_ascii_case("p")
+            {
                 let caret = cur.selection.primary().head;
                 let spec = TransactionSpec::new()
                     .changes(Changes::insert(caret, crate::palette::TRIGGER.to_string()))
