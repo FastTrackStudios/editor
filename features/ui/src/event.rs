@@ -3,7 +3,7 @@
 //!
 //! The `<Editor>` component owns a `Signal<EditorState>` it mutates
 //! from many internal paths: the JS bridge (typing, IME, property
-//! widgets, task toggles), the keymap, vim, and the slash palette.
+//! widgets, task toggles), the keymap, vim, and the command palette.
 //! [`apply_tx`] is the single choke point all of those route through.
 //! When the host sets the optional `on_transaction` prop, every
 //! applied transaction is mirrored out as a [`TransactionEvent`].
@@ -63,7 +63,7 @@ impl TransactionEvent {
         !self.changes.is_empty()
     }
 
-    /// The `origin` annotation, when present (`"input"`, `"slash"`,
+    /// The `origin` annotation, when present (`"input"`, `"palette"`,
     /// `"task-toggle"`, …).
     #[must_use]
     pub fn origin(&self) -> Option<&str> {

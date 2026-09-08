@@ -5,7 +5,7 @@
 //! runs the [`editor_state::HoverSource`], and stashes the result here as a
 //! [`HoverPopup`]. This component renders it as a floating panel anchored to
 //! the pointer, flipping/clamping at viewport edges (same JS approach as the
-//! slash menu in [`crate::slash`]).
+//! command palette in [`crate::palette`]).
 
 use dioxus::prelude::*;
 use editor_state::HoverTooltip;

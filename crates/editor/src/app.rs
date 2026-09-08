@@ -3,7 +3,7 @@
 //! Apps that just want "a working markdown editor" mount
 //! `EditorApp{}` and get: the [`Editor`] widget, markdown
 //! live-preview decorations, bracket-pair highlighting, vim
-//! modal editing, slash-command palette, and the bundled
+//! modal editing, palette-command palette, and the bundled
 //! stylesheet. No props, no setup.
 //!
 //! For more control (custom decorations, vault-aware
@@ -31,7 +31,7 @@ pub const EDITOR_STYLE: Asset = asset!("/assets/editor.css");
 
 /// Zero-config markdown editor component. Wraps [`Editor`] with
 /// the standard markdown setup: live-preview decorations,
-/// bracket matching, vim modal editing, slash-command palette,
+/// bracket matching, vim modal editing, palette-command palette,
 /// and the bundled stylesheet linked in `<head>`.
 ///
 /// Mount with:
@@ -51,7 +51,7 @@ pub fn EditorApp() -> Element {
     // so Normal mode on a phone is a trap. Decide once at mount:
     // coarse pointer → plain editing (`vim: None`).
     let vim = (!use_hook(editor_view::coarse_pointer)).then_some(vim);
-    let slash = use_signal(|| None::<editor_view::slash::SlashState>);
+    let palette = use_signal(|| None::<editor_view::palette::PaletteState>);
 
     rsx! {
         document::Link { rel: "stylesheet", href: EDITOR_STYLE }
@@ -62,9 +62,9 @@ pub fn EditorApp() -> Element {
                     keymap: keymap.read().clone(),
                     decorations: editor_view::DecorationSource::ptr(combined_decorations),
                     vim,
-                    slash: Some(slash),
+                    palette: Some(palette),
                 }
-                editor_view::slash::SlashMenu { state, slash }
+                editor_view::palette::CommandPalette { state, palette }
             }
         }
     }
@@ -119,6 +119,6 @@ pub fn standard_markdown_keymap() -> Keymap {
         .with("Delete", |s: &_| commands::delete_forward(s))
 }
 
-const WELCOME: &str = "# Welcome to Task\n\nStart typing. Markdown live-preview, vim, and `/` slash commands are wired in.\n";
+const WELCOME: &str = "# Welcome to Task\n\nStart typing. Markdown live-preview, vim, and `/` palette commands are wired in.\n";
 
 // (asset cache-bust: song-strip line CSS, 2026-07-22)

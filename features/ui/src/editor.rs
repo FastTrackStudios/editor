@@ -196,7 +196,7 @@ fn now_ms() -> f64 {
 }
 /// Synchronously query the DOM for "is a decoration widget
 /// cell currently focused?". Used by the editor's keydown
-/// dispatch to bail out before any vim/keymap/slash handler
+/// dispatch to bail out before any vim/keymap/palette handler
 /// fires, so cell-owned keystrokes (Mod-A inside a property
 /// text cell, Enter in a chip-add input, etc.) aren't double-
 /// handled by the doc.
@@ -281,14 +281,14 @@ pub fn Editor(
     /// browser-side text input.
     #[props(default)]
     vim: Option<Signal<editor_vim::VimState>>,
-    /// Optional slash-command menu state. When `Some`, the
+    /// Optional palette-command menu state. When `Some`, the
     /// editor watches doc changes and refreshes the open state
-    /// via `slash::detect_slash`. Arrow keys, Enter, and Escape
+    /// via `palette::detect_trigger`. Arrow keys, Enter, and Escape
     /// route into the menu when it's open. Owner is responsible
     /// for rendering the menu component itself — the editor just
     /// keeps the state in sync with the doc.
     #[props(default)]
-    slash: Option<Signal<Option<crate::slash::SlashState>>>,
+    palette: Option<Signal<Option<crate::palette::PaletteState>>>,
     /// Optional hover-tooltip source. When `Some`, the editor tracks the
     /// pointer (debounced), resolves it to a document offset, and calls this
     /// source; a returned [`editor_state::HoverTooltip`] is shown as a floating
@@ -297,7 +297,7 @@ pub fn Editor(
     hover: Option<editor_state::HoverSource>,
     /// Optional transaction sink. When `Some`, every transaction the
     /// editor itself applies — bridge input, keymap commands, vim,
-    /// slash palette, trigger completion — is mirrored out as a
+    /// palette palette, trigger completion — is mirrored out as a
     /// [`crate::TransactionEvent`] after it lands in `state`. Built
     /// for CRDT / persistence hosts: the event carries the `Changes`,
     /// the `user_event` tag (echo-guard convention: hosts tag remote
@@ -319,7 +319,7 @@ pub fn Editor(
     completion: Option<crate::trigger::CompletionSource>,
     /// When `false` the editor renders read-only: `contenteditable`
     /// off (the reading-mode root class applies) and the keydown
-    /// dispatch (vim / keymap / slash) is disabled, so nothing can
+    /// dispatch (vim / keymap / palette) is disabled, so nothing can
     /// mutate the doc. Pair with `state.reading_mode = true` when the
     /// live-preview pass should also keep every source marker hidden
     /// regardless of caret position. Link and `[[wikilink]]` clicks
@@ -361,7 +361,7 @@ pub fn Editor(
     // fires no focusin either). Web keeps the event-driven default.
     let editor_focused = use_signal(|| cfg!(feature = "native"));
     // Trigger-autocomplete open state (`[[` / `#`). Owned by the
-    // editor (unlike `slash`, which the host threads in) because the
+    // editor (unlike `palette`, which the host threads in) because the
     // host's only contract is the candidate source prop.
     let completion_state = use_signal(|| None::<crate::trigger::CompletionState>);
     // Hover-tooltip popup (resolved content + anchor coords). Driven by the
@@ -2136,7 +2136,7 @@ pub fn Editor(
     let sink_for_keys = on_transaction;
     let completion_for_keys = completion_state;
     let vim_for_keys = vim;
-    let slash_for_keys = slash;
+    let palette_for_keys = palette;
     let widget_focus_for_keys = widget_focus;
     // Only the web visual-arrow `Selection.modify` eval references this.
     #[cfg(not(feature = "native"))]
@@ -2150,7 +2150,7 @@ pub fn Editor(
         }
         // Widget cell has focus (e.g. a frontmatter property
         // contenteditable). The widget owns its keyboard, so
-        // every editor-side handler — vim, slash, keymap —
+        // every editor-side handler — vim, palette, keymap —
         // must bail. We check the DOM directly (synchronous)
         // because the `widget_focus_for_keys` signal is
         // bridge-driven and arrives a tick late, racing the
@@ -2192,14 +2192,14 @@ pub fn Editor(
         // without firing. Everything else falls through to vim
         // and the keymap below — including character keys, so
         // typing more after `/` keeps the trigger active and the
-        // doc change re-runs `detect_slash`.
-        if let Some(mut slash_sig) = slash_for_keys {
-            let snapshot = slash_sig.peek().clone();
+        // doc change re-runs `detect_trigger`.
+        if let Some(mut palette_sig) = palette_for_keys {
+            let snapshot = palette_sig.peek().clone();
             if let Some(current) = snapshot {
-                let hits = crate::slash::filter_commands(&current.query);
+                let hits = crate::palette::filter_commands(&current.query);
                 match press.key.as_str() {
                     "Escape" => {
-                        slash_sig.set(None);
+                        palette_sig.set(None);
                         evt.prevent_default();
                         return;
                     }
@@ -2212,7 +2212,7 @@ pub fn Editor(
                             .unwrap_or(0);
                         let mut new = current;
                         new.selected = next;
-                        slash_sig.set(Some(new));
+                        palette_sig.set(Some(new));
                         evt.prevent_default();
                         return;
                     }
@@ -2226,25 +2226,25 @@ pub fn Editor(
                             .unwrap_or(0);
                         let mut new = current;
                         new.selected = next;
-                        slash_sig.set(Some(new));
+                        palette_sig.set(Some(new));
                         evt.prevent_default();
                         return;
                     }
                     "Enter" => {
                         if let Some(entry) = hits.get(current.selected) {
                             let end = current
-                                .slash_start
+                                .trigger_start
                                 .saturating_add(1)
                                 .saturating_add(current.query.len());
-                            if let Some(spec) = crate::slash::run_command(
+                            if let Some(spec) = crate::palette::run_command(
                                 &cur,
-                                current.slash_start..end,
+                                current.trigger_start..end,
                                 entry.kind,
                             ) {
                                 crate::event::apply_tx(state, &cur, spec, sink_for_keys);
                             }
                         }
-                        slash_sig.set(None);
+                        palette_sig.set(None);
                         evt.prevent_default();
                         return;
                     }
@@ -2254,12 +2254,12 @@ pub fn Editor(
         }
         // ── Completion menu key routing ──
         //
-        // Same contract as the slash menu: Arrows cycle, Enter
+        // Same contract as the palette menu: Arrows cycle, Enter
         // accepts, Escape closes; everything else falls through so
         // continued typing updates the query via the detect effect.
-        // Runs AFTER slash so slash keeps its existing precedence in
+        // Runs AFTER palette so palette keeps its existing precedence in
         // the (degenerate) case where both menus are open at once.
-        // Unlike slash, Enter with zero candidates falls through —
+        // Unlike palette, Enter with zero candidates falls through —
         // swallowing a newline because the host had nothing to offer
         // would be hostile.
         {
@@ -2500,16 +2500,16 @@ pub fn Editor(
                 }
             }
 
-            // `/` in Normal mode opens the slash palette when the
+            // `/` in Normal mode opens the palette palette when the
             // host wired one (Obsidian UX) — it must win over
             // vim's `/` search, so check BEFORE handle_key. Hosts
-            // without a slash source get vim search on `/`;
+            // without a palette source get vim search on `/`;
             // `?` (backward search) is always vim's.
             if !press.ctrl
                 && !press.alt
                 && !press.meta
                 && press.key == "/"
-                && slash_for_keys.is_some()
+                && palette_for_keys.is_some()
                 && matches!(vim_sig.peek().mode, editor_vim::Mode::Normal)
                 && vim_sig.peek().pending_operator.is_none()
             {
@@ -2523,7 +2523,7 @@ pub fn Editor(
                     TransactionSpec::new()
                         .changes(Changes::insert(head, "/"))
                         .selection(Selection::caret(head.saturating_add(1)))
-                        .annotate("origin", "slash-trigger"),
+                        .annotate("origin", "palette-trigger"),
                     sink_for_keys,
                 );
                 evt.prevent_default();
@@ -2593,38 +2593,38 @@ pub fn Editor(
     // and the patcher fills + maintains everything inside.
     // CM6 model.
     // Slash-state refresh: every time the doc or selection
-    // changes, re-run `detect_slash` against the caret. Open the
+    // changes, re-run `detect_trigger` against the caret. Open the
     // menu when a fresh `/` trigger appears; close it when the
     // trigger goes away (user typed a space, deleted the `/`,
     // or moved the caret off the line).
-    if let Some(mut slash_sig) = slash {
+    if let Some(mut palette_sig) = palette {
         use_effect(move || {
             let s = state.read();
             let caret = s.selection.primary().head;
-            let detected = crate::slash::detect_slash(&s.doc.to_string(), caret);
-            let cur = slash_sig.peek().clone();
+            let detected = crate::palette::detect_trigger(&s.doc.to_string(), caret);
+            let cur = palette_sig.peek().clone();
             match (detected, cur) {
-                (Some((start, q)), Some(prev)) if prev.slash_start == start => {
+                (Some((start, q)), Some(prev)) if prev.trigger_start == start => {
                     // Same trigger, query updated. Clamp the
                     // selected row to the new hit count.
-                    let hits_len = crate::slash::filter_commands(&q).len();
+                    let hits_len = crate::palette::filter_commands(&q).len();
                     let selected = prev.selected.min(hits_len.saturating_sub(1));
                     if prev.query != q || prev.selected != selected {
-                        slash_sig.set(Some(crate::slash::SlashState {
-                            slash_start: start,
+                        palette_sig.set(Some(crate::palette::PaletteState {
+                            trigger_start: start,
                             query: q,
                             selected,
                         }));
                     }
                 }
                 (Some((start, q)), _) => {
-                    slash_sig.set(Some(crate::slash::SlashState {
-                        slash_start: start,
+                    palette_sig.set(Some(crate::palette::PaletteState {
+                        trigger_start: start,
                         query: q,
                         selected: 0,
                     }));
                 }
-                (None, Some(_)) => slash_sig.set(None),
+                (None, Some(_)) => palette_sig.set(None),
                 _ => {}
             }
         });
@@ -2634,7 +2634,7 @@ pub fn Editor(
     // re-run `detect_trigger` against the caret. Open the menu on a
     // fresh `[[` / `#` trigger (fetching candidates from the host's
     // source), refresh candidates as the query grows, close it when
-    // the trigger goes away. Mirrors the slash refresh above.
+    // the trigger goes away. Mirrors the palette refresh above.
     if let Some(source) = completion.clone() {
         let mut comp_sig = completion_state;
         use_effect(move || {

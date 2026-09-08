@@ -313,7 +313,7 @@ fn App() -> Element {
                  > Callouts share the blockquote syntax.\n\
                  \n\
                  > [!tip] Tip\n\
-                 > Press `/` anywhere to open the slash-command menu.\n\
+                 > Press `/` anywhere to open the palette-command menu.\n\
                  \n\
                  > [!warning]+ Collapsible warning\n\
                  > The `+`/`-` on the type marker controls folded default.\n\
@@ -322,7 +322,7 @@ fn App() -> Element {
                  > High-stakes call-out style.\n\
                  \n\
                  > [!info] Info\n\
-                 > Use the slash menu `/callout` to insert any of the others — \
+                 > Use the palette menu `/callout` to insert any of the others — \
                  abstract, info, success, question, failure, bug, example, quote.\n\
                  \n\
                  > [!example] Nested callouts\n\
@@ -383,7 +383,7 @@ fn App() -> Element {
                  - **Mod-T** — toggle task on current line\n\
                  - **Mod-1**..**Mod-6** — heading levels; **Mod-0** strips\n\
                  - **Mod-E** — toggle reading mode\n\
-                 - **`/`** — open the slash-command palette\n\
+                 - **`/`** — open the palette-command palette\n\
                  \n\
                  ### Embeds\n\
                  \n\
@@ -624,9 +624,9 @@ fn App() -> Element {
     });
 
     // Slash-command palette. The Editor refreshes this on every
-    // doc change via `detect_slash`; the `SlashMenu` component
+    // doc change via `detect_trigger`; the `CommandPalette` component
     // renders the popup directly inside the editor frame.
-    let slash = use_signal(|| None::<editor::editor_view::slash::SlashState>);
+    let palette = use_signal(|| None::<editor::editor_view::palette::PaletteState>);
 
     // Stylesheet node. Web/desktop link the bundled asset (served by `dx`).
     // Native inlines the CSS: a raw Blitz binary (run outside `dx`) can't
@@ -655,7 +655,7 @@ fn App() -> Element {
                                 state,
                                 keymap,
                                 vim: if vim_enabled { Some(vim) } else { None },
-                                slash: Some(slash),
+                                palette: Some(palette),
                                 on_transaction: on_tx,
                             }
                         } else {
@@ -664,14 +664,14 @@ fn App() -> Element {
                                 keymap,
                                 decorations: deco_source,
                                 vim: if vim_enabled { Some(vim) } else { None },
-                                slash: Some(slash),
+                                palette: Some(palette),
                                 completion: editor_view::trigger::CompletionSource::ptr(
                                     demo_completion,
                                 ),
                                 on_transaction: on_tx,
                             }
                         }
-                        editor::editor_view::slash::SlashMenu { state, slash }
+                        editor::editor_view::palette::CommandPalette { state, palette }
                     }
                 }
                 section { class: "debug-pane",

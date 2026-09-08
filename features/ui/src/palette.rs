@@ -1,5 +1,13 @@
-//! Slash-command palette. Trigger on `/`, fuzzy filter the
-//! catalog, dispatch the chosen command as a `TransactionSpec`.
+//! Command palette. Trigger on `\`, fuzzy filter the catalog,
+//! dispatch the chosen command as a `TransactionSpec`.
+//!
+//! The trigger is a BACKSLASH, not the slash most editors use. This
+//! editor is embedded in Keyflow, where `/` is ordinary text and
+//! constantly typed: `G/B` is a slash chord, `V/V` a secondary dominant,
+//! `4/4` a time signature, `////` a bar of rhythm, and `/ Title /` a
+//! header. A palette on `/` opened on almost every line of a chart.
+//! Backslash means nothing in that language, so it is free to mean
+//! "command".
 //!
 //! Ported from `~/Development/Task/crates/editor/src/handler/commands.rs`
 //! and adapted for our editor's `EditorState` / `Changes` API
@@ -9,8 +17,8 @@
 //! blocks, headings, etc.).
 //!
 //! Architecture follows `CodeMirror`'s `@codemirror/autocomplete`:
-//! a `SlashState` signal holds the open menu + query; each
-//! state update re-runs `detect_slash` against the current
+//! a `PaletteState` signal holds the open menu + query; each
+//! state update re-runs `detect_trigger` against the current
 //! line; selection nav fires `move_selection`; pick fires
 //! `run_command` and clears the state.
 
@@ -18,14 +26,14 @@ use dioxus::prelude::*;
 use editor_state::{Changes, EditorState, Selection, TextSlice, TransactionSpec};
 
 /// Slash-command popup. Reads the open state from the
-/// `slash` signal threaded down from the host (typically the
+/// `palette` signal threaded down from the host (typically the
 /// playground or whichever shell embeds the editor). Renders
 /// rows grouped by `group`; clicks pick a command. Keyboard
 /// nav lives in `Editor`'s `onkeydown` rather than here so it
 /// works without the menu element being focused.
 //
 // Dioxus 0.7 flags `key:` on non-first nodes in a block as
-// deprecated; the slash-row rsx! emits an optional header
+// deprecated; the palette-row rsx! emits an optional header
 // followed by the row div, which trips the lint. Suppressed
 // at the component level; refactoring to a single keyed
 // outer element would lose the leading group divider.
@@ -35,9 +43,9 @@ use editor_state::{Changes, EditorState, Selection, TextSlice, TransactionSpec};
               outer element would lose the leading group divider"
 )]
 #[component]
-pub fn SlashMenu(
+pub fn CommandPalette(
     state: Signal<EditorState>,
-    slash: Signal<Option<SlashState>>,
+    palette: Signal<Option<PaletteState>>,
     /// Optional transaction sink — pass the same callback given to
     /// `Editor`'s `on_transaction` so command picks made by *mouse*
     /// (clicking a row) report through the host's sink exactly like
@@ -45,7 +53,7 @@ pub fn SlashMenu(
     #[props(default)]
     on_transaction: Option<Callback<crate::TransactionEvent>>,
 ) -> Element {
-    let snapshot = slash.read().clone();
+    let snapshot = palette.read().clone();
     let Some(current) = snapshot else {
         return rsx! { Fragment {} };
     };
@@ -54,7 +62,7 @@ pub fn SlashMenu(
     // instead of docking at the bottom of the editor frame.
     use_effect(|| {
         let script = r"(()=>{
-            const menu = document.querySelector('.slash-menu');
+            const menu = document.querySelector('.palette-menu');
             if (!menu) return;
             const sel = window.getSelection && window.getSelection();
             if (!sel || sel.rangeCount === 0) return;
@@ -81,8 +89,8 @@ pub fn SlashMenu(
     let hits = filter_commands(&current.query);
     if hits.is_empty() {
         return rsx! {
-            div { class: "slash-menu",
-                div { class: "slash-empty", "No commands match." }
+            div { class: "palette-menu",
+                div { class: "palette-empty", "No commands match." }
             }
         };
     }
@@ -90,7 +98,7 @@ pub fn SlashMenu(
     let mut last_group: Option<&str> = None;
     let mut row_idx: usize = 0;
     rsx! {
-        div { class: "slash-menu",
+        div { class: "palette-menu",
             for entry in hits.iter().cloned() {
                 {
                     let show_header = last_group != Some(entry.group);
@@ -99,19 +107,19 @@ pub fn SlashMenu(
                     let idx_for_click = row_idx;
                     let entry_for_click = entry.clone();
                     let state_for_click = state;
-                    let mut slash_for_click = slash;
+                    let mut palette_for_click = palette;
                     let sink_for_click = on_transaction;
                     let current_for_click = current.clone();
                     row_idx += 1;
                     rsx! {
                         {
                             if show_header {
-                                rsx! { div { class: "slash-group", "{entry.group}" } }
+                                rsx! { div { class: "palette-group", "{entry.group}" } }
                             } else { rsx! {} }
                         }
                         div {
                             key: "{idx_for_click}",
-                            class: if is_selected { "slash-row selected" } else { "slash-row" },
+                            class: if is_selected { "palette-row selected" } else { "palette-row" },
                             // Mousedown.preventDefault keeps the
                             // editor's caret from blurring as the
                             // click lands, so the next render keeps
@@ -119,21 +127,21 @@ pub fn SlashMenu(
                             onmousedown: move |e: Event<MouseData>| e.prevent_default(),
                             onclick: move |_| {
                                 let cur = state_for_click.read().clone();
-                                let end = current_for_click.slash_start + 1 + current_for_click.query.len();
+                                let end = current_for_click.trigger_start + 1 + current_for_click.query.len();
                                 if let Some(spec) = run_command(
                                     &cur,
-                                    current_for_click.slash_start..end,
+                                    current_for_click.trigger_start..end,
                                     entry_for_click.kind,
                                 ) {
                                     crate::event::apply_tx(state_for_click, &cur, spec, sink_for_click);
                                 }
-                                slash_for_click.set(None);
+                                palette_for_click.set(None);
                             },
-                            div { class: "slash-row-icon", "{entry.icon}" }
-                            div { class: "slash-row-body",
-                                div { class: "slash-row-label", "{entry.label}" }
+                            div { class: "palette-row-icon", "{entry.icon}" }
+                            div { class: "palette-row-body",
+                                div { class: "palette-row-label", "{entry.label}" }
                                 if !entry.desc.is_empty() {
-                                    div { class: "slash-row-desc", "{entry.desc}" }
+                                    div { class: "palette-row-desc", "{entry.desc}" }
                                 }
                             }
                         }
@@ -152,9 +160,14 @@ pub struct CommandEntry {
     pub group: &'static str,
     pub desc: &'static str,
     pub kind: CommandKind,
-    /// Single-glyph icon shown left of the label — `LSP-completion`
-    /// vibe so the user can scan-by-kind. Falls back to a
-    /// blank space when empty so all rows align.
+    /// Short ASCII badge shown left of the label, in the mono face.
+    ///
+    /// It is the SYNTAX the command inserts — `[ ]` for a task, `$$` for a
+    /// math block, `[[` for a wikilink — which reads better in a markdown
+    /// editor than a pictogram would, and teaches the markup while it is
+    /// being pointed at. Deliberately ASCII: the previous set reached for
+    /// `☐ ❝ ▦ 𝒯 ⤳ ⑃ ∑ ∫ ⌘ 🦀 🔗 🖼 ⁿ`, almost none of which exist in the
+    /// host's font stack, so the column rendered as a row of tofu boxes.
     pub icon: &'static str,
 }
 
@@ -162,13 +175,13 @@ pub struct CommandEntry {
 /// runner needs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CommandKind {
-    /// Splice a literal snippet at the slash range. `caret_back`
+    /// Splice a literal snippet at the palette range. `caret_back`
     /// is how many bytes to move the caret back from the end of
     /// the insert (e.g. `("[[]]", 2)` lands the caret between
     /// the brackets).
     InsertSnippet(&'static str, usize),
-    /// Replace the slash range with a block-shaped snippet that
-    /// starts on its own line. If the line containing the slash
+    /// Replace the palette range with a block-shaped snippet that
+    /// starts on its own line. If the line containing the palette
     /// has other content, the runner inserts a newline first.
     /// Same `caret_back` semantics as `InsertSnippet`.
     InsertBlockSnippet(&'static str, usize),
@@ -192,27 +205,32 @@ pub enum ListKind {
     Task,
 }
 
-/// Open-state of the slash menu. `None` when the menu's closed.
+/// Open-state of the palette menu. `None` when the menu's closed.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SlashState {
-    /// Byte offset of the `/` that triggered the menu.
-    pub slash_start: usize,
-    /// Body typed after the slash (does NOT include the `/`).
+pub struct PaletteState {
+    /// Byte offset of the [`TRIGGER`] that opened the menu.
+    pub trigger_start: usize,
+    /// Body typed after the palette (does NOT include the `/`).
     pub query: String,
     /// Currently highlighted row.
     pub selected: usize,
 }
 
-/// Scan back from the caret for a `/` that hasn't been closed
-/// by whitespace, returning the trigger position + the query
-/// typed after it.
+/// Scan back from the caret for a [`TRIGGER`] that hasn't been closed by
+/// whitespace, returning its position and the query typed after it.
 ///
-/// Mirrors `~/Development/Task/.../editable.rs::detect_slash`
-/// but operates on the slice from the start of the current line
-/// up to the caret, so a `/` deep in the doc doesn't keep the
-/// menu open across line breaks.
+/// Operates on the slice from the start of the current line up to the
+/// caret, so a trigger deep in the doc doesn't hold the menu open across
+/// line breaks.
+/// The character that opens the palette.
+///
+/// Backslash rather than slash: see the module docs. `/` is ordinary,
+/// frequent text in a Keyflow chart, and a palette bound to it fired
+/// constantly against the user's intent.
+pub const TRIGGER: char = '\\';
+
 #[must_use]
-pub fn detect_slash(doc: &str, caret: usize) -> Option<(usize, String)> {
+pub fn detect_trigger(doc: &str, caret: usize) -> Option<(usize, String)> {
     let caret = caret.min(doc.len());
     let line_start = doc
         .before(caret)
@@ -223,16 +241,12 @@ pub fn detect_slash(doc: &str, caret: usize) -> Option<(usize, String)> {
     let mut i = bytes.len();
     while i > 0 {
         let c = *bytes.get(i.saturating_sub(1))?;
-        if c == b'/' {
-            // Reject URL-shaped patterns: `://` (after a scheme
-            // like `https:`) and `//` (already inside a URL).
-            // Everything else triggers — typing `/` after
-            // ordinary text in the middle of a paragraph should
-            // open the menu, the way Notion / most modern
-            // editors do it.
+        if c == TRIGGER as u8 {
+            // A doubled trigger is an escaped backslash (`\\`), which is a
+            // literal backslash in markdown and not a command.
             if i >= 2 {
                 let prev = *bytes.get(i.saturating_sub(2))?;
-                if prev == b':' || prev == b'/' {
+                if prev == TRIGGER as u8 {
                     return None;
                 }
             }
@@ -287,17 +301,17 @@ pub fn run_command(
                 TransactionSpec::new()
                     .changes(Changes::replace(slash_range, text))
                     .selection(Selection::caret(new_caret))
-                    .annotate("origin", "slash"),
+                    .annotate("origin", "palette"),
             )
         }
         CommandKind::InsertBlockSnippet(text, caret_back) => {
             Some(insert_block_snippet(&doc, slash_range, text, caret_back))
         }
         CommandKind::SetHeading(level) => {
-            // Replace the whole line containing the slash range
-            // with a heading-prefixed version of its non-slash
+            // Replace the whole line containing the palette range
+            // with a heading-prefixed version of its non-palette
             // content. Doing this as one atomic replace avoids
-            // the bug where stripping the slash separately and
+            // the bug where stripping the palette separately and
             // then calling `set_heading` on a synthetic doc
             // produces offsets that don't map back to the real
             // doc.
@@ -315,7 +329,7 @@ pub fn run_command(
                 TransactionSpec::new()
                     .changes(Changes::replace(line_start..line_end, new_line))
                     .selection(Selection::caret(caret))
-                    .annotate("origin", "slash"),
+                    .annotate("origin", "palette"),
             )
         }
         CommandKind::SetList(kind) => {
@@ -333,7 +347,7 @@ pub fn run_command(
                 TransactionSpec::new()
                     .changes(Changes::replace(line_start..line_end, new_line))
                     .selection(Selection::caret(caret))
-                    .annotate("origin", "slash"),
+                    .annotate("origin", "palette"),
             )
         }
         CommandKind::ToggleTask => {
@@ -361,15 +375,15 @@ pub fn run_command(
                 TransactionSpec::new()
                     .changes(Changes::replace(line_start..line_end, new_line))
                     .selection(Selection::caret(caret))
-                    .annotate("origin", "slash"),
+                    .annotate("origin", "palette"),
             )
         }
         CommandKind::AddBlockId => {
-            // Strip the slash first by reconstructing the line,
+            // Strip the palette first by reconstructing the line,
             // then run `add_block_id` on the result.
             let (line_start, line_end) = line_bounds(&doc, &slash_range);
             let body = line_without_slash(&doc, line_start, line_end, &slash_range);
-            // Build a synthetic state with the slash removed
+            // Build a synthetic state with the palette removed
             // and run the helper. Inline transcription avoids a
             // direct dep on the helper's `(spec, ref_str)`
             // shape — we just compute the final line.
@@ -383,7 +397,7 @@ pub fn run_command(
                 TransactionSpec::new()
                     .changes(Changes::replace(line_start..line_end, new_text))
                     .selection(Selection::caret(caret))
-                    .annotate("origin", "slash-block-id"),
+                    .annotate("origin", "palette-block-id"),
             )
         }
     }
@@ -394,8 +408,8 @@ fn uuid_v4_string() -> String {
     uuid::Uuid::now_v7().to_string()
 }
 
-/// Byte-range of the (single) line containing the slash. The
-/// slash range is guaranteed to live on one line because the
+/// Byte-range of the (single) line containing the palette. The
+/// palette range is guaranteed to live on one line because the
 /// parser closes on newlines.
 fn line_bounds(doc: &str, slash_range: &std::ops::Range<usize>) -> (usize, usize) {
     let line_start = doc
@@ -476,6 +490,19 @@ pub fn all_commands() -> Vec<CommandEntry> {
 
 /// Heading levels 1-6.
 ///
+/// `H1`…`H6`, so the row says which level it sets rather than all six
+/// wearing the same `H`.
+const fn heading_badge(level: u8) -> &'static str {
+    match level {
+        1 => "H1",
+        2 => "H2",
+        3 => "H3",
+        4 => "H4",
+        5 => "H5",
+        _ => "H6",
+    }
+}
+
 /// One of the sections of [`all_commands`], split out so that function stays
 /// a readable table of contents rather than a 240-line body.
 fn push_headings(out: &mut Vec<CommandEntry>) {
@@ -493,7 +520,7 @@ fn push_headings(out: &mut Vec<CommandEntry>) {
             group: "Heading",
             desc: "",
             kind: CommandKind::SetHeading(level),
-            icon: "H",
+            icon: heading_badge(level),
         });
     }
 }
@@ -524,28 +551,28 @@ fn push_lists(out: &mut Vec<CommandEntry>) {
             group: "Structure",
             desc: "- [ ] task",
             kind: CommandKind::SetList(ListKind::Task),
-            icon: "☐",
+            icon: "[ ]",
         },
         CommandEntry {
             label: "Toggle task",
             group: "Structure",
             desc: "Mark current line as / un-task",
             kind: CommandKind::ToggleTask,
-            icon: "☑",
+            icon: "[x]",
         },
         CommandEntry {
             label: "Quote",
             group: "Structure",
             desc: "> blockquote",
             kind: CommandKind::InsertSnippet("> ", 0),
-            icon: "❝",
+            icon: ">",
         },
         CommandEntry {
             label: "Horizontal rule",
             group: "Structure",
             desc: "---",
             kind: CommandKind::InsertBlockSnippet("---\n", 0),
-            icon: "—",
+            icon: "---",
         },
         CommandEntry {
             label: "Table",
@@ -555,7 +582,7 @@ fn push_lists(out: &mut Vec<CommandEntry>) {
                 "| col1 | col2 |\n| ---- | ---- |\n|      |      |\n",
                 21,
             ),
-            icon: "▦",
+            icon: "tbl",
         },
     ]);
 }
@@ -579,28 +606,28 @@ fn push_code_and_math(out: &mut Vec<CommandEntry>) {
             group: "Code",
             desc: "```rust",
             kind: CommandKind::InsertBlockSnippet("```rust\n\n```\n", 5),
-            icon: "🦀",
+            icon: "rs",
         },
         CommandEntry {
             label: "TypeScript code block",
             group: "Code",
             desc: "```ts",
             kind: CommandKind::InsertBlockSnippet("```ts\n\n```\n", 5),
-            icon: "TS",
+            icon: "ts",
         },
         CommandEntry {
             label: "Typst block",
             group: "Code",
             desc: "Compiled Typst — math, diagrams, layout",
             kind: CommandKind::InsertBlockSnippet("```typst\n\n```\n", 5),
-            icon: "𝒯",
+            icon: "typ",
         },
         CommandEntry {
             label: "Mermaid diagram",
             group: "Code",
             desc: "```mermaid",
             kind: CommandKind::InsertBlockSnippet("```mermaid\n\n```\n", 5),
-            icon: "⤳",
+            icon: "~>",
         },
         CommandEntry {
             label: "Tabs",
@@ -609,35 +636,35 @@ fn push_code_and_math(out: &mut Vec<CommandEntry>) {
             // Caret lands after the first `=== Tab 1\n` so the
             // user types straight into the opening panel.
             kind: CommandKind::InsertBlockSnippet("```tabs\n=== Tab 1\n\n=== Tab 2\n\n```\n", 16),
-            icon: "⑃",
+            icon: "tab",
         },
         CommandEntry {
             label: "Inline math",
             group: "Math",
             desc: "$x$",
             kind: CommandKind::InsertSnippet("$$", 1),
-            icon: "∑",
+            icon: "$",
         },
         CommandEntry {
             label: "Math block",
             group: "Math",
             desc: "$$\\n…\\n$$",
             kind: CommandKind::InsertBlockSnippet("$$\n\n$$\n", 4),
-            icon: "∫",
+            icon: "$$",
         },
         CommandEntry {
             label: "Keyboard shortcut",
             group: "Code",
             desc: "`kbd:<C-s>` — rendered as key caps",
             kind: CommandKind::InsertSnippet("`kbd:`", 1),
-            icon: "⌘",
+            icon: "kbd",
         },
         CommandEntry {
             label: "Shortcut for action",
             group: "Code",
             desc: "`kbd:@action` — the keys currently bound to an action id",
             kind: CommandKind::InsertSnippet("`kbd:@`", 1),
-            icon: "⌘",
+            icon: "kbd",
         },
     ]);
 }
@@ -695,14 +722,14 @@ fn push_callouts(out: &mut Vec<CommandEntry>) {
 /// a readable table of contents rather than a 240-line body.
 fn push_block_refs(out: &mut Vec<CommandEntry>) {
     // ── Block IDs / refs (Logseq-style) ─────────────────────
-    // `Mod-Shift-K` is the keymap binding; the slash entry is
+    // `Mod-Shift-K` is the keymap binding; the palette entry is
     // a discoverability path.
     out.push(CommandEntry {
         label: "Block id",
         group: "Block",
         desc: "Give this block an id so it can be referenced",
         kind: CommandKind::AddBlockId,
-        icon: "🔗",
+        icon: "#",
     });
 }
 
@@ -718,7 +745,7 @@ fn push_embeds_and_links(out: &mut Vec<CommandEntry>) {
             group: "Link",
             desc: "[text](url)",
             kind: CommandKind::InsertSnippet("[]()", 3),
-            icon: "🔗",
+            icon: "url",
         },
         CommandEntry {
             label: "Wikilink",
@@ -732,26 +759,26 @@ fn push_embeds_and_links(out: &mut Vec<CommandEntry>) {
             group: "Link",
             desc: "![[file]] — image / audio / video / pdf",
             kind: CommandKind::InsertSnippet("![[]]", 2),
-            icon: "🖼",
+            icon: "![[",
         },
         CommandEntry {
             label: "Footnote ref",
             group: "Link",
             desc: "[^id]",
             kind: CommandKind::InsertSnippet("[^]", 1),
-            icon: "ⁿ",
+            icon: "[^",
         },
         CommandEntry {
             label: "Inline footnote",
             group: "Link",
             desc: "^[note]",
             kind: CommandKind::InsertSnippet("^[]", 1),
-            icon: "ⁿ",
+            icon: "^[",
         },
     ]);
 }
 
-/// Insert a block-level snippet, replacing the slash query.
+/// Insert a block-level snippet, replacing the palette query.
 ///
 /// Split out of [`run_command`]'s `match`: this arm carries the block-context
 /// handling (leading blank line, list-prefix stripping) that the inline
@@ -763,7 +790,7 @@ fn insert_block_snippet(
     caret_back: usize,
 ) -> TransactionSpec {
     // Snap to the start of the current line. If there's
-    // other text before the slash on this line, drop the
+    // other text before the palette on this line, drop the
     // whole block on a fresh line below.
     let line_start = doc
         .before(slash_range.start)
@@ -796,7 +823,7 @@ fn insert_block_snippet(
     TransactionSpec::new()
         .changes(Changes::replace(0..doc.len(), final_doc))
         .selection(Selection::caret(new_caret))
-        .annotate("origin", "slash")
+        .annotate("origin", "palette")
 }
 
 #[cfg(test)]
@@ -804,46 +831,51 @@ mod tests {
     use super::*;
 
     #[test]
-    fn detect_slash_at_start_of_doc() {
-        assert_eq!(detect_slash("/cal", 4), Some((0, "cal".to_string())));
+    fn detect_at_start_of_doc() {
+        assert_eq!(detect_trigger("\\cal", 4), Some((0, "cal".to_string())));
     }
 
     #[test]
-    fn detect_slash_after_whitespace() {
-        assert_eq!(detect_slash("hi /code", 8), Some((3, "code".to_string())));
+    fn detect_after_whitespace() {
+        assert_eq!(detect_trigger("hi \\code", 8), Some((3, "code".to_string())));
     }
 
     #[test]
-    fn detect_slash_ignores_url_form() {
-        // `://` after a scheme — common URL pattern, must not
-        // open the menu when the cursor is right after the
-        // second `/`.
-        assert_eq!(detect_slash("https://", 8), None);
-        // Inside a URL path, e.g. `https://foo/bar` — the
-        // second `/` is preceded by another `/` already in
-        // the URL.
-        assert_eq!(detect_slash("foo//", 5), None);
+    fn a_slash_never_opens_the_palette() {
+        // The whole reason the trigger moved. `/` is ordinary text in a
+        // Keyflow chart — a slash chord, a time signature, a bar of
+        // rhythm — and every one of these used to open the menu.
+        assert_eq!(detect_trigger("G/B", 3), None);
+        assert_eq!(detect_trigger("4/4", 3), None);
+        assert_eq!(detect_trigger("V/V", 3), None);
+        assert_eq!(detect_trigger("////", 4), None);
+        assert_eq!(detect_trigger("https://", 8), None);
     }
 
     #[test]
-    fn detect_slash_triggers_after_ordinary_text() {
-        // Typing `/` at the end of normal prose should open
-        // the menu — matches Notion / most modern editors. The
-        // previous Logseq-strict behavior wouldn't fire here.
-        assert_eq!(detect_slash("hello/", 6), Some((5, String::new())));
-        assert_eq!(detect_slash("hello/cal", 9), Some((5, "cal".to_string())));
+    fn an_escaped_backslash_is_a_literal() {
+        // `\\` is markdown for one literal backslash, not a command.
+        assert_eq!(detect_trigger("\\\\", 2), None);
     }
 
     #[test]
-    fn detect_slash_closes_on_space() {
-        assert_eq!(detect_slash("/foo bar", 8), None);
+    fn detect_triggers_after_ordinary_text() {
+        // Typing the trigger at the end of prose opens the menu, the way
+        // Notion and most modern editors behave.
+        assert_eq!(detect_trigger("hello\\", 6), Some((5, String::new())));
+        assert_eq!(detect_trigger("hello\\cal", 9), Some((5, "cal".to_string())));
     }
 
     #[test]
-    fn detect_slash_scoped_to_current_line() {
-        // A slash on a previous line shouldn't keep the menu
-        // open across newlines.
-        assert_eq!(detect_slash("/old\nnew here", 13), None);
+    fn detect_closes_on_space() {
+        assert_eq!(detect_trigger("\\foo bar", 8), None);
+    }
+
+    #[test]
+    fn detect_scoped_to_current_line() {
+        // A trigger on a previous line shouldn't keep the menu open
+        // across newlines.
+        assert_eq!(detect_trigger("\\old\nnew here", 13), None);
     }
 
     #[test]

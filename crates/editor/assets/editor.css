@@ -1046,7 +1046,7 @@
 .editor-frame {
     position: relative;
 }
-.editor-frame .slash-menu {
+.editor-frame .ed-menu {
     position: fixed;
     z-index: 20;
     min-width: 280px;
@@ -1063,16 +1063,16 @@
     top: 100px;
     left: 100px;
 }
-.editor-frame .slash-group {
+.editor-frame .ed-menu-group {
     padding: 4px 10px 2px;
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--ed-text-dim, #7a7e8a);
 }
-.editor-frame .slash-row {
+.editor-frame .ed-menu-row {
     display: grid;
-    grid-template-columns: 28px 1fr;
+    grid-template-columns: 34px 1fr;
     align-items: center;
     gap: 8px;
     padding: 4px 10px;
@@ -1080,47 +1080,50 @@
     cursor: pointer;
     user-select: none;
 }
-.editor-frame .slash-row:hover {
+.editor-frame .ed-menu-row:hover {
     background: rgba(127, 167, 217, 0.08);
 }
-.editor-frame .slash-row.selected {
+.editor-frame .ed-menu-row.selected {
     background: rgba(127, 167, 217, 0.18);
     box-shadow: inset 2px 0 0 rgba(127, 167, 217, 0.7);
 }
-/* Icon column. LSP-completion vibe — small, monospace,
-   centered, muted unless the row is selected. */
-.editor-frame .slash-row-icon {
-    width: 24px;
-    height: 24px;
+/* Badge column. The badge is the syntax the command inserts (`[ ]`,
+   `$$`, `[[`), so it is monospace and sized for three characters —
+   `---`, `tbl`, `kbd`, `![[` are the widest. */
+.editor-frame .ed-menu-icon {
+    width: 30px;
+    height: 22px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     font-family: var(--ed-mono);
-    font-size: 13px;
+    font-size: 11px;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
     color: var(--ed-text-dim, #7a7e8a);
     background: color-mix(in oklab, var(--ed-text) 4%, transparent);
     border-radius: 4px;
     border: 1px solid color-mix(in oklab, var(--ed-text) 6%, transparent);
 }
-.editor-frame .slash-row.selected .slash-row-icon {
+.editor-frame .ed-menu-row.selected .ed-menu-icon {
     color: var(--ed-text, #d6d8df);
     background: rgba(127, 167, 217, 0.18);
     border-color: rgba(127, 167, 217, 0.4);
 }
-.editor-frame .slash-row-body {
+.editor-frame .ed-menu-body {
     display: flex;
     flex-direction: column;
     min-width: 0;
 }
-.editor-frame .slash-row-label {
+.editor-frame .ed-menu-label {
     color: var(--ed-text, #d6d8df);
 }
-.editor-frame .slash-row-desc {
+.editor-frame .ed-menu-desc {
     font-size: 0.85em;
     color: var(--ed-text-dim, #7a7e8a);
     margin-top: 2px;
 }
-.editor-frame .slash-empty {
+.editor-frame .ed-menu-empty {
     padding: 12px;
     color: var(--ed-text-dim, #7a7e8a);
     font-style: italic;
@@ -1130,13 +1133,13 @@
    bigger targets: 44px rows per the Apple HIG minimum, and the
    same no-zoom/no-flash treatment as the editor surface. Shared
    by the slash palette and the `[[`/`#` completion menu (it
-   reuses .slash-menu/.slash-row). */
+   reuses .ed-menu/.ed-menu-row). */
 @media (pointer: coarse) {
-    .editor-frame .slash-menu {
+    .editor-frame .ed-menu {
         touch-action: manipulation;
         -webkit-tap-highlight-color: transparent;
     }
-    .editor-frame .slash-row {
+    .editor-frame .ed-menu-row {
         min-height: 44px;
         padding-top: 8px;
         padding-bottom: 8px;

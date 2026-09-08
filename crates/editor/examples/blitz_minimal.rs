@@ -72,7 +72,7 @@ wikilinks [[Editor Roadmap]] and [[Project README|the readme]], tags
 > Callouts share the blockquote syntax.
 
 > [!tip] Tip
-> Press `/` anywhere to open the slash-command menu.
+> Press `\\` anywhere to open the command palette.
 
 > [!warning] Warning
 > High-stakes call-out style.

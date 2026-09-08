@@ -12,7 +12,7 @@ mod event;
 pub mod hover;
 #[cfg(feature = "native")]
 pub mod native;
-pub mod slash;
+pub mod palette;
 pub mod tile;
 pub mod trigger;
 

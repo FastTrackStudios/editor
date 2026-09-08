@@ -1580,7 +1580,7 @@ fn enter_mode_command(
             vim.clear_pending();
             None
         }
-        // `/` search. NOTE: hosts that wire a slash-command
+        // `/` search. NOTE: hosts that wire a command-palette
         // palette intercept `/` before vim sees it (Obsidian UX)
         // — `?` searches backward and is always available.
         '/' => {

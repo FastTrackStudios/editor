@@ -1,10 +1,10 @@
-//! Generic trigger-autocomplete machinery — the slash-palette
-//! pattern (`crate::slash`) extracted into a reusable shape and
+//! Generic trigger-autocomplete machinery — the command-palette
+//! pattern (`crate::palette`) extracted into a reusable shape and
 //! used to implement `[[` wikilink completion and `#` tag
 //! completion.
 //!
 //! The moving parts mirror CM6's `@codemirror/autocomplete`, the
-//! same way the slash module does:
+//! same way the palette module does:
 //!
 //! - [`detect_trigger`] is the `matchBefore` analogue: scan the
 //!   current line up to the caret for an open trigger (`[[…` or
@@ -19,10 +19,10 @@
 //!   trigger region with the final `[[Name]]` / `#tag` text through
 //!   the normal transaction path.
 //!
-//! The slash palette keeps its own module (its "candidates" are a
+//! The palette keeps its own module (its "candidates" are a
 //! static command catalog with run-semantics, not text inserts) and
 //! its behavior is unchanged; this module covers the
-//! text-completion family. When both a slash trigger and a
+//! text-completion family. When both a palette trigger and a
 //! completion trigger are somehow open at once (e.g. `[[x/y`), the
 //! editor's keyboard routing lets slash win — same precedence the
 //! slash menu always had.
@@ -140,7 +140,7 @@ impl std::fmt::Debug for CompletionSource {
 }
 
 /// Open-state of the completion menu. `None` when closed. Mirrors
-/// `slash::SlashState`, plus the fetched candidates (so keyboard
+/// `slash::PaletteState`, plus the fetched candidates (so keyboard
 /// routing doesn't re-query the source on every keypress).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompletionState {
@@ -273,7 +273,7 @@ pub fn accept_candidate(
 }
 
 /// Completion popup. Rendered by `<Editor>` itself (unlike
-/// `SlashMenu`, which the host mounts) — the host only supplies the
+/// `CommandPalette`, which the host mounts) — the host only supplies the
 /// `completion` candidate source. Reuses the slash menu's CSS
 /// classes so existing stylesheets cover it; `.completion-menu` is
 /// added for targeted overrides. Renders nothing when there are no
@@ -291,7 +291,7 @@ pub fn CompletionMenu(
             Fragment {}
         };
     };
-    // Caret-anchored positioning — same approach as `SlashMenu`.
+    // Caret-anchored positioning — same approach as `CommandPalette`.
     use_effect(|| {
         let script = r"(()=>{
             const menu = document.querySelector('.completion-menu');
@@ -331,7 +331,7 @@ pub fn CompletionMenu(
         CompletionKind::Tag => "#",
     };
     rsx! {
-        div { class: "slash-menu completion-menu",
+        div { class: "ed-menu completion-menu",
             for (idx , cand) in current.candidates.iter().cloned().enumerate() {
                 {
                     let is_selected = idx == selected;
@@ -343,9 +343,9 @@ pub fn CompletionMenu(
                     rsx! {
                         div {
                             key: "{idx}",
-                            class: if is_selected { "slash-row selected" } else { "slash-row" },
+                            class: if is_selected { "ed-menu-row selected" } else { "ed-menu-row" },
                             // Keep the editor's caret from blurring as
-                            // the click lands (same trick as SlashMenu).
+                            // the click lands (same trick as CommandPalette).
                             onmousedown: move |e: Event<MouseData>| e.prevent_default(),
                             onclick: move |_| {
                                 let cur = state_for_click.read().clone();
@@ -363,11 +363,11 @@ pub fn CompletionMenu(
                                 }
                                 comp_for_click.set(None);
                             },
-                            div { class: "slash-row-icon", "{kind_icon}" }
-                            div { class: "slash-row-body",
-                                div { class: "slash-row-label", "{cand.label}" }
+                            div { class: "ed-menu-icon", "{kind_icon}" }
+                            div { class: "ed-menu-body",
+                                div { class: "ed-menu-label", "{cand.label}" }
                                 if !cand.detail.is_empty() {
-                                    div { class: "slash-row-desc", "{cand.detail}" }
+                                    div { class: "ed-menu-desc", "{cand.detail}" }
                                 }
                             }
                         }
