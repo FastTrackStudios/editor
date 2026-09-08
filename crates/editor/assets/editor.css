@@ -1082,6 +1082,21 @@
     display: grid;
     grid-template-columns: 34px 1fr;
     align-items: center;
+}
+
+/* A row with a description is two lines tall, and centring the badge in it
+   drops the badge BELOW its own label — it ends up level with the
+   description instead. Align to the top there and nudge it onto the
+   label's cap height. Single-line rows keep centring, which is right for
+   them, so this is scoped by `:has` rather than applied to every row.
+   It matters most in a catalog where every row carries a description,
+   which is what Keyflow's is. */
+.ed-menu-row:has(.ed-menu-desc) {
+    align-items: start;
+}
+
+.ed-menu-row:has(.ed-menu-desc) .ed-menu-icon {
+    margin-top: 1px;
     gap: 8px;
     padding: 4px 10px;
     border-radius: 4px;

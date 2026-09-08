@@ -759,8 +759,18 @@ section h2 {
 }
 .ed-menu-row {
     display: grid;
-    grid-template-columns: 28px 1fr;
+    grid-template-columns: 34px 1fr;
     align-items: center;
+}
+
+/* See editor.css: centring a badge in a two-line row drops it below its
+   own label. */
+.ed-menu-row:has(.ed-menu-desc) {
+    align-items: start;
+}
+
+.ed-menu-row:has(.ed-menu-desc) .ed-menu-icon {
+    margin-top: 1px;
     gap: 8px;
     padding: 4px 10px;
     border-radius: 4px;
