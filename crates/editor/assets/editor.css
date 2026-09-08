@@ -1046,7 +1046,15 @@
 .editor-frame {
     position: relative;
 }
-.editor-frame .ed-menu {
+/* NOT scoped to `.editor-frame`. That class is supplied by the HOST —
+   the playground and the standalone app both wrap the editor in one, but
+   Keyflow's wrapper is `.kf-code-editor-frame`, and the palette is mounted
+   as a SIBLING of `Editor` rather than inside it. Every rule here used to
+   begin `.editor-frame `, so in Keyflow none of them matched and the
+   palette rendered as an unstyled column of text in the page flow. The
+   menu is `position: fixed` and anchored to the caret by script, so it
+   never needed an ancestor to hang off. */
+.ed-menu {
     position: fixed;
     z-index: 20;
     min-width: 280px;
@@ -1063,14 +1071,14 @@
     top: 100px;
     left: 100px;
 }
-.editor-frame .ed-menu-group {
+.ed-menu-group {
     padding: 4px 10px 2px;
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--ed-text-dim, #7a7e8a);
 }
-.editor-frame .ed-menu-row {
+.ed-menu-row {
     display: grid;
     grid-template-columns: 34px 1fr;
     align-items: center;
@@ -1080,17 +1088,17 @@
     cursor: pointer;
     user-select: none;
 }
-.editor-frame .ed-menu-row:hover {
+.ed-menu-row:hover {
     background: rgba(127, 167, 217, 0.08);
 }
-.editor-frame .ed-menu-row.selected {
+.ed-menu-row.selected {
     background: rgba(127, 167, 217, 0.18);
     box-shadow: inset 2px 0 0 rgba(127, 167, 217, 0.7);
 }
 /* Badge column. The badge is the syntax the command inserts (`[ ]`,
    `$$`, `[[`), so it is monospace and sized for three characters —
    `---`, `tbl`, `kbd`, `![[` are the widest. */
-.editor-frame .ed-menu-icon {
+.ed-menu-icon {
     width: 30px;
     height: 22px;
     display: inline-flex;
@@ -1105,25 +1113,25 @@
     border-radius: 4px;
     border: 1px solid color-mix(in oklab, var(--ed-text) 6%, transparent);
 }
-.editor-frame .ed-menu-row.selected .ed-menu-icon {
+.ed-menu-row.selected .ed-menu-icon {
     color: var(--ed-text, #d6d8df);
     background: rgba(127, 167, 217, 0.18);
     border-color: rgba(127, 167, 217, 0.4);
 }
-.editor-frame .ed-menu-body {
+.ed-menu-body {
     display: flex;
     flex-direction: column;
     min-width: 0;
 }
-.editor-frame .ed-menu-label {
+.ed-menu-label {
     color: var(--ed-text, #d6d8df);
 }
-.editor-frame .ed-menu-desc {
+.ed-menu-desc {
     font-size: 0.85em;
     color: var(--ed-text-dim, #7a7e8a);
     margin-top: 2px;
 }
-.editor-frame .ed-menu-empty {
+.ed-menu-empty {
     padding: 12px;
     color: var(--ed-text-dim, #7a7e8a);
     font-style: italic;
@@ -1135,11 +1143,11 @@
    by the slash palette and the `[[`/`#` completion menu (it
    reuses .ed-menu/.ed-menu-row). */
 @media (pointer: coarse) {
-    .editor-frame .ed-menu {
+    .ed-menu {
         touch-action: manipulation;
         -webkit-tap-highlight-color: transparent;
     }
-    .editor-frame .ed-menu-row {
+    .ed-menu-row {
         min-height: 44px;
         padding-top: 8px;
         padding-bottom: 8px;
