@@ -313,7 +313,7 @@ fn App() -> Element {
                  > Callouts share the blockquote syntax.\n\
                  \n\
                  > [!tip] Tip\n\
-                 > Press `/` anywhere to open the palette-command menu.\n\
+                 > Press `\\` anywhere to open the command palette.\n\
                  \n\
                  > [!warning]+ Collapsible warning\n\
                  > The `+`/`-` on the type marker controls folded default.\n\
@@ -383,7 +383,7 @@ fn App() -> Element {
                  - **Mod-T** — toggle task on current line\n\
                  - **Mod-1**..**Mod-6** — heading levels; **Mod-0** strips\n\
                  - **Mod-E** — toggle reading mode\n\
-                 - **`/`** — open the palette-command palette\n\
+                 - **`\\`** — open the command palette\n\
                  \n\
                  ### Embeds\n\
                  \n\

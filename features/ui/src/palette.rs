@@ -33,7 +33,7 @@ use editor_state::{Changes, EditorState, Selection, TextSlice, TransactionSpec};
 /// works without the menu element being focused.
 //
 // Dioxus 0.7 flags `key:` on non-first nodes in a block as
-// deprecated; the palette-row rsx! emits an optional header
+// deprecated; the menu-row rsx! emits an optional header
 // followed by the row div, which trips the lint. Suppressed
 // at the component level; refactoring to a single keyed
 // outer element would lose the leading group divider.
@@ -62,7 +62,7 @@ pub fn CommandPalette(
     // instead of docking at the bottom of the editor frame.
     use_effect(|| {
         let script = r"(()=>{
-            const menu = document.querySelector('.palette-menu');
+            const menu = document.querySelector('.ed-menu');
             if (!menu) return;
             const sel = window.getSelection && window.getSelection();
             if (!sel || sel.rangeCount === 0) return;
@@ -89,8 +89,8 @@ pub fn CommandPalette(
     let hits = filter_commands(&current.query);
     if hits.is_empty() {
         return rsx! {
-            div { class: "palette-menu",
-                div { class: "palette-empty", "No commands match." }
+            div { class: "ed-menu",
+                div { class: "ed-menu-empty", "No commands match." }
             }
         };
     }
@@ -98,7 +98,7 @@ pub fn CommandPalette(
     let mut last_group: Option<&str> = None;
     let mut row_idx: usize = 0;
     rsx! {
-        div { class: "palette-menu",
+        div { class: "ed-menu",
             for entry in hits.iter().cloned() {
                 {
                     let show_header = last_group != Some(entry.group);
@@ -114,12 +114,12 @@ pub fn CommandPalette(
                     rsx! {
                         {
                             if show_header {
-                                rsx! { div { class: "palette-group", "{entry.group}" } }
+                                rsx! { div { class: "ed-menu-group", "{entry.group}" } }
                             } else { rsx! {} }
                         }
                         div {
                             key: "{idx_for_click}",
-                            class: if is_selected { "palette-row selected" } else { "palette-row" },
+                            class: if is_selected { "ed-menu-row selected" } else { "ed-menu-row" },
                             // Mousedown.preventDefault keeps the
                             // editor's caret from blurring as the
                             // click lands, so the next render keeps
@@ -137,11 +137,11 @@ pub fn CommandPalette(
                                 }
                                 palette_for_click.set(None);
                             },
-                            div { class: "palette-row-icon", "{entry.icon}" }
-                            div { class: "palette-row-body",
-                                div { class: "palette-row-label", "{entry.label}" }
+                            div { class: "ed-menu-icon", "{entry.icon}" }
+                            div { class: "ed-menu-body",
+                                div { class: "ed-menu-label", "{entry.label}" }
                                 if !entry.desc.is_empty() {
-                                    div { class: "palette-row-desc", "{entry.desc}" }
+                                    div { class: "ed-menu-desc", "{entry.desc}" }
                                 }
                             }
                         }

@@ -3,7 +3,7 @@
 //! Apps that just want "a working markdown editor" mount
 //! `EditorApp{}` and get: the [`Editor`] widget, markdown
 //! live-preview decorations, bracket-pair highlighting, vim
-//! modal editing, palette-command palette, and the bundled
+//! modal editing, command palette, and the bundled
 //! stylesheet. No props, no setup.
 //!
 //! For more control (custom decorations, vault-aware
@@ -31,7 +31,7 @@ pub const EDITOR_STYLE: Asset = asset!("/assets/editor.css");
 
 /// Zero-config markdown editor component. Wraps [`Editor`] with
 /// the standard markdown setup: live-preview decorations,
-/// bracket matching, vim modal editing, palette-command palette,
+/// bracket matching, vim modal editing, command palette,
 /// and the bundled stylesheet linked in `<head>`.
 ///
 /// Mount with:

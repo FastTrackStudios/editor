@@ -281,7 +281,7 @@ pub fn Editor(
     /// browser-side text input.
     #[props(default)]
     vim: Option<Signal<editor_vim::VimState>>,
-    /// Optional palette-command menu state. When `Some`, the
+    /// Optional command-palette state. When `Some`, the
     /// editor watches doc changes and refreshes the open state
     /// via `palette::detect_trigger`. Arrow keys, Enter, and Escape
     /// route into the menu when it's open. Owner is responsible
