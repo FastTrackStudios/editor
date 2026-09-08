@@ -488,11 +488,52 @@ fn strip_list_marker(line: &str) -> &str {
     line
 }
 
-/// The full catalog. Lives as a function (not const) so the
-/// `&'static str` text gets the right ownership semantics
-/// through the filter pipeline.
+/// The process-wide catalog override, if a host has registered one.
+///
+/// A registry rather than a prop, and for the same reason as
+/// `editor_state::fence_renderer`: `filter_commands` is called from the
+/// editor's KEYDOWN handler as well as from this component — it has to know
+/// the hit count to move the selection and to pick on Enter — and threading
+/// a catalog through both would put a command table in the signature of
+/// every layer between. The catalog is fixed at application start and never
+/// varies per document.
+fn catalog() -> &'static std::sync::RwLock<Option<Vec<CommandEntry>>> {
+    static CATALOG: std::sync::OnceLock<std::sync::RwLock<Option<Vec<CommandEntry>>>> =
+        std::sync::OnceLock::new();
+    CATALOG.get_or_init(|| std::sync::RwLock::new(None))
+}
+
+/// Replace the palette's catalog wholesale. Call once at application start.
+///
+/// The built-in catalog is markdown's — headings, lists, callouts, math,
+/// wikilinks — which is right when the buffer holds a note and wrong when it
+/// holds something else. An editor embedded in Keyflow is editing a CHART:
+/// there are no headings in a chart, and "Numbered list" is not a thing
+/// anyone reaches for while writing one. A host that knows what its buffer
+/// contains supplies the commands for it.
+///
+/// Passing an empty vec is meaningful — it says "this host has no commands",
+/// and the palette will say so rather than offering markdown's.
+pub fn register_catalog(commands: Vec<CommandEntry>) {
+    if let Ok(mut slot) = catalog().write() {
+        *slot = Some(commands);
+    }
+}
+
+/// The full catalog: whatever the host registered, else markdown's.
 #[must_use]
 pub fn all_commands() -> Vec<CommandEntry> {
+    if let Ok(slot) = catalog().read()
+        && let Some(custom) = slot.as_ref()
+    {
+        return custom.clone();
+    }
+    markdown_commands()
+}
+
+/// The built-in catalog, for a buffer that holds markdown.
+#[must_use]
+pub fn markdown_commands() -> Vec<CommandEntry> {
     let mut out = Vec::new();
     push_headings(&mut out);
     push_lists(&mut out);
@@ -914,6 +955,31 @@ mod tests {
         // A trigger on a previous line shouldn't keep the menu open
         // across newlines.
         assert_eq!(detect_trigger("\\old\nnew here", 13), None);
+    }
+
+    #[test]
+    fn a_host_catalog_replaces_the_markdown_one() {
+        // Serialised against the other tests only by running last-ish; the
+        // registry is process-wide, so this restores it before returning.
+        assert!(
+            markdown_commands().iter().any(|c| c.label == "Heading 1"),
+            "the built-in catalog is markdown's"
+        );
+        register_catalog(vec![CommandEntry {
+            label: "Quarter note",
+            group: "Rhythm",
+            desc: "_4",
+            kind: CommandKind::InsertSnippet("_4", 0),
+            icon: "_4",
+        }]);
+        let hits = all_commands();
+        assert_eq!(hits.len(), 1, "the host catalog replaces, not extends");
+        assert_eq!(hits[0].label, "Quarter note");
+        // Put it back so catalog-agnostic tests are unaffected.
+        if let Ok(mut slot) = catalog().write() {
+            *slot = None;
+        }
+        assert!(all_commands().iter().any(|c| c.label == "Heading 1"));
     }
 
     #[test]
