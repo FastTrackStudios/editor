@@ -251,6 +251,21 @@ pub fn detect_trigger(doc: &str, caret: usize) -> Option<(usize, String)> {
                 }
             }
             let query = segment.after(i).to_string();
+            // The escape rule, from the other side. CommonMark escapes are
+            // `\` + ASCII PUNCTUATION and nothing else — a backslash before
+            // any other character is a literal backslash — and
+            // `markdown::escape_span` here implements exactly that. So the
+            // two uses of `\` partition cleanly and this is the line that
+            // divides them: punctuation after the trigger is an escape the
+            // author is writing (`\*`, `\_`, `\[`), a letter is a command
+            // they are looking for (`\quote`, `\h1`).
+            //
+            // A bare trigger with nothing after it yet still opens the menu —
+            // that is how anyone discovers what is in it — and the very next
+            // character decides which of the two this was.
+            if !query.chars().next().is_none_or(char::is_alphanumeric) {
+                return None;
+            }
             return Some((line_start.saturating_add(i).saturating_sub(1), query));
         }
         if char::from(c).is_whitespace() {
@@ -850,6 +865,29 @@ mod tests {
         assert_eq!(detect_trigger("V/V", 3), None);
         assert_eq!(detect_trigger("////", 4), None);
         assert_eq!(detect_trigger("https://", 8), None);
+    }
+
+    #[test]
+    fn a_markdown_escape_is_not_a_command() {
+        // CommonMark escapes are `\` + ASCII punctuation, and nothing else
+        // can be escaped — so punctuation after the trigger is always the
+        // author escaping a character, never a command they are hunting for.
+        for esc in ["\\*", "\\_", "\\[", "\\#", "\\`", "\\!", "\\.", "\\-"] {
+            assert_eq!(detect_trigger(esc, esc.len()), None, "{esc} is an escape");
+        }
+    }
+
+    #[test]
+    fn a_letter_after_the_trigger_is_a_command() {
+        assert_eq!(detect_trigger("\\q", 2), Some((0, "q".to_string())));
+        assert_eq!(detect_trigger("\\h1", 3), Some((0, "h1".to_string())));
+    }
+
+    #[test]
+    fn a_bare_trigger_opens_the_menu() {
+        // Nothing typed after it yet: the menu opens so the catalog is
+        // discoverable, and the next character decides what this was.
+        assert_eq!(detect_trigger("\\", 1), Some((0, String::new())));
     }
 
     #[test]

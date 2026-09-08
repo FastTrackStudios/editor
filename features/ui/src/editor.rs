@@ -2185,15 +2185,34 @@ pub fn Editor(
             r#mod: mods.ctrl() || mods.meta(),
         };
         let cur = state.read().clone();
-        // ── Slash menu key routing ──
+        // ── Command palette key routing ──
         //
         // When the menu is open, Arrow keys cycle selection,
         // Enter picks the highlighted command, Escape closes
         // without firing. Everything else falls through to vim
         // and the keymap below — including character keys, so
-        // typing more after `/` keeps the trigger active and the
+        // typing more after the trigger keeps it active and the
         // doc change re-runs `detect_trigger`.
+        //
+        // Mod-K opens it without reaching for the trigger key, which is
+        // what most hands already do. It literally TYPES the trigger
+        // rather than opening the menu behind the document's back: the
+        // whole palette reads its query out of the doc, so a menu with no
+        // trigger in the text would be closed again by the detect effect
+        // on the very next pass. Typing it means every other behaviour —
+        // filtering, Enter replacing `\query`, Escape leaving what you
+        // typed — is identical whichever way it was opened.
         if let Some(mut palette_sig) = palette_for_keys {
+            if palette_sig.peek().is_none() && press.r#mod && press.key == "K" {
+                let caret = cur.selection.primary().head;
+                let spec = TransactionSpec::new()
+                    .changes(Changes::insert(caret, crate::palette::TRIGGER.to_string()))
+                    .selection(Selection::caret(caret.saturating_add(1)))
+                    .annotate("origin", "palette-open");
+                crate::event::apply_tx(state, &cur, spec, sink_for_keys);
+                evt.prevent_default();
+                return;
+            }
             let snapshot = palette_sig.peek().clone();
             if let Some(current) = snapshot {
                 let hits = crate::palette::filter_commands(&current.query);
