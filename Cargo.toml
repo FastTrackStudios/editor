@@ -72,7 +72,9 @@ editor-syntax = { path = "features/syntax" }
 editor-typst = { path = "features/typst" }
 editor-view = { path = "features/ui" }
 editor-vim = { path = "features/vim" }
-mermaid-rs-renderer = { path = "features/mermaid/mermaid-rs-renderer" }
+# The vendored copy, with the wasm fixes (no clock read on wasm). Its CLI
+# and PNG stack stay off: the editor only needs the SVG pipeline.
+mermaid-rs-renderer = { path = "features/mermaid/mermaid-rs-renderer", default-features = false }
 
 # ── External ──────────────────────────────────────────────────────────
 dioxus-test = { git = "https://github.com/FastTrackStudios/FastTrackStudio", tag = "v0.1.0" }
