@@ -20,3 +20,8 @@ pub use editor::{DecorationSource, Editor, coarse_pointer};
 pub use event::{TransactionEvent, dispatch_spec};
 pub use hover::{HoverPopup, HoverTooltipView};
 pub use trigger::{Candidate, CompletionKind, CompletionSource, CompletionState};
+
+/// The editor's stylesheet, as text — for a host that injects styles
+/// itself (a Blitz window, which does not load `<link>`ed sheets). The
+/// umbrella crate serves the same file as an `asset!` for web and desktop.
+pub const EDITOR_CSS: &str = include_str!("../../../crates/editor/assets/editor.css");
