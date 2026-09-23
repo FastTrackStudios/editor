@@ -1198,97 +1198,95 @@ test.describe("editor", () => {
       .toContain("newkey:");
   });
 
-  // ── Slash command palette ──────────────────────────────────
+  // ── Command palette ───────────────────────────────────────
   //
-  // `?novim=1` is on the page so we're plain-insert-mode by
-  // default. Each test sets caret to a known position then
-  // types — the menu should open whenever `/` is at start of
-  // line / after whitespace, and stay closed elsewhere.
+  // The trigger is a BACKSLASH, not `/` (03b6c48): in a Keyflow chart
+  // `/` is ordinary text on nearly every line — `G/B`, `4/4`, `////` —
+  // and a palette on it fired against the user's intent. `?novim=1`
+  // keeps us in plain insert mode. The menu opens whenever `\` is
+  // followed by nothing yet or by a letter, and never on an escape
+  // (`\\`, or `\` before ASCII punctuation — CommonMark's rule).
+  // Note the JS escaping: "\\" below is ONE backslash on the page.
 
-  test("slash opens the menu at start of line", async ({ page }) => {
+  test("backslash opens the menu at start of line", async ({ page }) => {
     const len = Number((await readState(page)).len);
     await editor(page).focus();
     await setCaret(page, len); // end of doc
-    // Insert a newline first so we know `/` is at line start.
-    await page.keyboard.insertText("\n/");
-    await expect(page.locator(".slash-menu")).toBeVisible();
-    // Catalog renders at least the headings group.
-    await expect(page.locator(".slash-group", { hasText: "Heading" })).toBeVisible();
+    await page.keyboard.insertText("\n\\");
+    await expect(page.locator(".ed-menu")).toBeVisible();
+    await expect(page.locator(".ed-menu-group", { hasText: "Heading" })).toBeVisible();
   });
 
-  test("typing after slash filters the catalog", async ({ page }) => {
+  test("typing after backslash filters the catalog", async ({ page }) => {
     const len = Number((await readState(page)).len);
     await editor(page).focus();
     await setCaret(page, len);
-    await page.keyboard.insertText("\n/callout");
-    await expect(page.locator(".slash-menu")).toBeVisible();
-    // After the label rename, callouts are matched by their
-    // group header ("Callout"); the labels themselves are just
-    // the type name (Note / Todo / ...).
-    await expect(page.locator(".slash-group", { hasText: "Callout" })).toBeVisible();
-    await expect(page.locator(".slash-row-label", { hasText: "Code block" })).toHaveCount(0);
+    await page.keyboard.insertText("\n\\callout");
+    await expect(page.locator(".ed-menu")).toBeVisible();
+    await expect(page.locator(".ed-menu-group", { hasText: "Callout" })).toBeVisible();
+    await expect(page.locator(".ed-menu-label", { hasText: "Code block" })).toHaveCount(0);
   });
 
-  test("escape closes the slash menu", async ({ page }) => {
+  test("escape closes the palette", async ({ page }) => {
     const len = Number((await readState(page)).len);
     await editor(page).focus();
     await setCaret(page, len);
-    await page.keyboard.insertText("\n/");
-    await expect(page.locator(".slash-menu")).toBeVisible();
+    await page.keyboard.insertText("\n\\");
+    await expect(page.locator(".ed-menu")).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(page.locator(".slash-menu")).toHaveCount(0);
+    await expect(page.locator(".ed-menu")).toHaveCount(0);
   });
 
   test("enter picks the highlighted command", async ({ page }) => {
     const beforeLen = Number((await readState(page)).len);
     await editor(page).focus();
     await setCaret(page, beforeLen);
-    // Query has to be space-free — `detect_slash` closes the
-    // menu when a whitespace char appears in the segment after
-    // the trigger (matches Notion / Logseq). `/heading` is
-    // unambiguous: it matches all six Heading rows; the first
-    // (Heading 1) is selected by default.
-    await page.keyboard.insertText("\n/heading");
-    await expect(page.locator(".slash-menu")).toBeVisible();
+    // Query has to be space-free — the menu closes when whitespace
+    // appears after the trigger. `\heading` matches all six Heading
+    // rows; the first (Heading 1) is selected by default.
+    await page.keyboard.insertText("\n\\heading");
+    await expect(page.locator(".ed-menu")).toBeVisible();
     await page.keyboard.press("Enter");
-    await expect(page.locator(".slash-menu")).toHaveCount(0);
-    // After picking Heading 1, the line should end with `# `
-    // (slash + query removed, heading prefix applied to the
-    // now-empty line).
+    await expect(page.locator(".ed-menu")).toHaveCount(0);
+    // After picking Heading 1 the line ends with `# ` (trigger and
+    // query removed, heading prefix applied to the now-empty line).
     await expect
       .poll(async () => (await readState(page)).text)
       .toMatch(/# $/);
   });
 
-  test("slash inside a URL does NOT open the menu", async ({ page }) => {
+  test("a slash is text, not a command", async ({ page }) => {
+    // The reason the trigger moved: chart text is full of slashes.
     const len = Number((await readState(page)).len);
     await editor(page).focus();
     await setCaret(page, len);
-    // `://` URL pattern shouldn't trigger; the `/` after the
-    // scheme colon is suppressed by detect_slash.
-    await page.keyboard.insertText("\nhttps://");
-    await expect(page.locator(".slash-menu")).toHaveCount(0);
+    await page.keyboard.insertText("\nG/B 4/4 ////");
+    await expect(page.locator(".ed-menu")).toHaveCount(0);
   });
 
-  test("slash after ordinary text opens the menu", async ({ page }) => {
+  test("an escaped backslash does NOT open the menu", async ({ page }) => {
     const len = Number((await readState(page)).len);
     await editor(page).focus();
     await setCaret(page, len);
-    // Typing `/` at the end of prose should open the menu
-    // (Notion-style — the previous Logseq-strict rule was too
-    // restrictive in a markdown editor where users type
-    // continuously).
-    await page.keyboard.insertText("\nhello/");
-    await expect(page.locator(".slash-menu")).toBeVisible();
+    // `\\` is a literal backslash; `\*` escapes punctuation.
+    await page.keyboard.insertText("\n\\\\");
+    await expect(page.locator(".ed-menu")).toHaveCount(0);
+    await page.keyboard.insertText(" \\*");
+    await expect(page.locator(".ed-menu")).toHaveCount(0);
   });
 
-  test("slash after typing letters opens the menu (vim default-on)", async ({
+  test("backslash after ordinary text opens the menu", async ({ page }) => {
+    const len = Number((await readState(page)).len);
+    await editor(page).focus();
+    await setCaret(page, len);
+    await page.keyboard.insertText("\nhello\\");
+    await expect(page.locator(".ed-menu")).toBeVisible();
+  });
+
+  test("backslash after typing letters opens the menu (vim default-on)", async ({
     page,
   }) => {
-    // Type some letters first, then `/` — the exact flow the
-    // user reported broken. Letters end up as ordinary text on
-    // the line; `/` after them should still trigger the menu
-    // (Notion rule).
+    // Letters first, then the trigger — the flow once reported broken.
     await page.goto("/");
     await editor(page).waitFor();
     const len = Number((await readState(page)).len);
@@ -1296,48 +1294,40 @@ test.describe("editor", () => {
     await setCaret(page, len);
     await page.keyboard.press("i"); // → Insert
     await page.keyboard.press("Enter");
-    await page.keyboard.press("h");
-    await page.keyboard.press("e");
-    await page.keyboard.press("l");
-    await page.keyboard.press("l");
-    await page.keyboard.press("o");
-    await page.keyboard.press("Space");
-    await page.keyboard.press("Slash");
-    await expect(page.locator(".slash-menu")).toBeVisible();
+    for (const k of ["h", "e", "l", "l", "o", "Space"]) {
+      await page.keyboard.press(k);
+    }
+    await page.keyboard.press("Backslash");
+    await expect(page.locator(".ed-menu")).toBeVisible();
   });
 
-  test("slash via real keystrokes (vim default-on) opens the menu", async ({
+  test("backslash via real keystrokes (vim default-on) opens the menu", async ({
     page,
   }) => {
     // Reload without ?novim=1 so the default vim mode is on.
     await page.goto("/");
     await editor(page).waitFor();
     const len = Number((await readState(page)).len);
-    // Vim defaults to Normal. Move to end, enter insert, then
-    // start a new line and press slash — same flow a real user
-    // would do.
     await editor(page).focus();
     await setCaret(page, len);
-    await page.keyboard.press("i");  // vim → Insert
+    await page.keyboard.press("i"); // vim → Insert
     await page.keyboard.press("Enter");
-    await page.keyboard.press("Slash");
-    await expect(page.locator(".slash-menu")).toBeVisible();
+    await page.keyboard.press("Backslash");
+    await expect(page.locator(".ed-menu")).toBeVisible();
   });
 
-  test("slash via real keystrokes opens the menu", async ({ page }) => {
-    // The other slash tests use `keyboard.insertText` which
-    // synthesizes a single composite input event. The real
-    // failure mode showed up only when typing character-by-
-    // character via `keyboard.press`: each keystroke goes
-    // through keydown → contenteditable → MutationObserver →
-    // state.set → use_effect. If any link in that chain breaks,
+  test("backslash via real keystrokes opens the menu", async ({ page }) => {
+    // The other palette tests use `keyboard.insertText`, one composite
+    // input event. The real failure mode showed up only character by
+    // character via `keyboard.press`: keydown → contenteditable →
+    // MutationObserver → state.set → use_effect. If any link breaks,
     // the menu silently doesn't open.
     const len = Number((await readState(page)).len);
     await editor(page).focus();
     await setCaret(page, len);
     await page.keyboard.press("Enter");
-    await page.keyboard.press("Slash");
-    await expect(page.locator(".slash-menu")).toBeVisible();
+    await page.keyboard.press("Backslash");
+    await expect(page.locator(".ed-menu")).toBeVisible();
   });
 
   // ── Wikilink rendering ─────────────────────────────────────
