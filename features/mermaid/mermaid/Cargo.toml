@@ -8,10 +8,14 @@ authors.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-# Pure-Rust Mermaid parser + layout + SVG renderer. `default-
-# features = false` drops the optional CLI / PNG-via-resvg
-# stack; we only need the SVG pipeline, which is wasm-friendly.
-mermaid-rs-renderer = { version = "0.2", default-features = false }
+# Pure-Rust Mermaid parser + layout + SVG renderer — the VENDORED copy
+# (`features/mermaid/mermaid-rs-renderer`), through the workspace entry,
+# which also drops its CLI / PNG-via-resvg stack. This used to name the
+# crates.io release (`version = "0.2"`), so the vendored wasm fixes were
+# never linked: crates.io 0.2.2 reads `Instant::now()` during layout,
+# which panics on wasm32-unknown-unknown, and the playground's seeded
+# flowchart took the whole editor down on load.
+mermaid-rs-renderer = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
