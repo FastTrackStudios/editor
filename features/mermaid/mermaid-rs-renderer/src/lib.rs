@@ -88,8 +88,8 @@
 //! mermaid-rs-renderer = { version = "0.1", default-features = false }
 //! ```
 
-pub mod cli;
 #[cfg(feature = "cli")]
+pub mod cli;
 pub mod clock;
 pub mod config;
 pub mod ir;
