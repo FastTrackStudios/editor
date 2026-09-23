@@ -6,9 +6,7 @@ default:
     @just --list
 
 # ── Rust ─────────────────────────────────────────────────────────────
-
-check:
-    cargo check --workspace
+# (`check` — native + wasm — is defined once, further down.)
 
 # nextest: parallel per-test binaries. Does NOT run doctests.
 rust-test:
@@ -53,9 +51,12 @@ unit:
     cargo test --workspace
 
 # Cargo check on every target we care about.
+# The wasm check builds the playground the way `dx serve --platform web`
+# does: its default feature is `desktop`, whose tokio/getrandom stack does
+# not compile for wasm32.
 check:
     cargo check --workspace
-    cargo check -p playground --target wasm32-unknown-unknown
+    cargo check -p playground --target wasm32-unknown-unknown --no-default-features --features web
 
 # Start the desktop playground in dev mode.
 dev:

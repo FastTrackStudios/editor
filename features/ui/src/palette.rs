@@ -893,7 +893,10 @@ mod tests {
 
     #[test]
     fn detect_after_whitespace() {
-        assert_eq!(detect_trigger("hi \\code", 8), Some((3, "code".to_string())));
+        assert_eq!(
+            detect_trigger("hi \\code", 8),
+            Some((3, "code".to_string()))
+        );
     }
 
     #[test]
@@ -942,7 +945,10 @@ mod tests {
         // Typing the trigger at the end of prose opens the menu, the way
         // Notion and most modern editors behave.
         assert_eq!(detect_trigger("hello\\", 6), Some((5, String::new())));
-        assert_eq!(detect_trigger("hello\\cal", 9), Some((5, "cal".to_string())));
+        assert_eq!(
+            detect_trigger("hello\\cal", 9),
+            Some((5, "cal".to_string()))
+        );
     }
 
     #[test]
