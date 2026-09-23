@@ -211,11 +211,18 @@ fn handle_input(
         None
     };
     let mut doc_changes: Vec<Change> = Vec::new();
-    if let Some(inserted) = single_caret_insert {
-        let head = primary.head.min(cur.doc.len());
+    if let (Some(inserted), [c]) = (single_caret_insert, vis_vec.as_slice()) {
+        let at = insertion_point(
+            &old_visible,
+            new_visible,
+            c.from,
+            &inserted,
+            s_off,
+            primary.head,
+        );
         doc_changes.push(Change {
-            from: head,
-            to: head,
+            from: at,
+            to: at,
             inserted,
         });
     } else {
@@ -278,6 +285,72 @@ fn handle_input(
             .annotate("origin", "input"),
         sink,
     );
+}
+
+/// Where in the document a single typed insertion went.
+///
+/// A visible-text diff cannot always say: typing `l` into `hel|lo` and
+/// typing it one place later produce the same new text, so every
+/// position in the run of repeated characters is a valid answer. The
+/// browser knows which one it was, and says so: `js_caret` is the DOM
+/// caret right after the insertion, read against the tile positions the
+/// DOM still carries (the ones from before it), so the insertion began
+/// at `js_caret - inserted.len()`.
+///
+/// The fallback used to be the editor's own caret, taken unconditionally.
+/// That caret is not always current — a click that lands while a patch
+/// has the bridge muted never reaches state — and inserting at it put the
+/// typed text wherever state last believed the caret was, typically the
+/// start of the next line: the "rest of the word lands on the line below"
+/// bug. So the stored caret is trusted only when it is one of the valid
+/// positions, and the diff's own position is the last resort.
+fn insertion_point(
+    old: &VisibleText,
+    new_visible: &str,
+    diff_at: usize,
+    inserted: &str,
+    js_caret: usize,
+    state_head: usize,
+) -> usize {
+    let valid = valid_insertions(&old.text, new_visible, diff_at, inserted);
+    let to_doc = |v: usize| old.visible_to_doc(v);
+    let from_browser = js_caret.checked_sub(inserted.len());
+    if let Some(want) = from_browser {
+        if let Some(&v) = valid.iter().find(|&&v| to_doc(v) == want) {
+            return to_doc(v);
+        }
+    }
+    if let Some(&v) = valid.iter().find(|&&v| to_doc(v) == state_head) {
+        return to_doc(v);
+    }
+    to_doc(diff_at)
+}
+
+/// Every visible position at which inserting `inserted` into `old` gives
+/// `new`, given one such position `at` from the diff (the common-prefix
+/// diff finds the rightmost). The others lie to its left, inside a run of
+/// repeated text, so the walk stops at the first position that fails.
+fn valid_insertions(old: &str, new: &str, at: usize, inserted: &str) -> Vec<usize> {
+    let fits = |v: usize| {
+        old.is_char_boundary(v)
+            && new.get(..v) == old.get(..v)
+            && new.get(v..v.saturating_add(inserted.len())) == Some(inserted)
+            && new.get(v.saturating_add(inserted.len())..) == old.get(v..)
+    };
+    let mut out = Vec::new();
+    let mut v = at;
+    loop {
+        if v <= old.len() && fits(v) {
+            out.push(v);
+        } else if v != at {
+            break;
+        }
+        if v == 0 {
+            break;
+        }
+        v -= 1;
+    }
+    out
 }
 
 /// `deleteContentBackward` — backspace, routed through state instead of
@@ -711,5 +784,53 @@ fn values_equal(
         (List(x), List(y)) => x == y,
         (Empty, Empty) => true,
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn visible(doc: &str) -> VisibleText {
+        let (arena, root) = build_tiles(doc, &[]);
+        VisibleText::from_arena(&arena, root)
+    }
+
+    /// Typing into a run of repeated characters: every position in the
+    /// run is a valid reading of the diff.
+    #[test]
+    fn every_position_in_a_repeated_run_is_a_valid_insertion() {
+        // "hel|lo" + "l" → "helllo": inserting at 2, 3 or 4 all fit.
+        assert_eq!(valid_insertions("hello", "helllo", 4, "l"), [4, 3, 2]);
+        // No repetition: exactly one answer.
+        assert_eq!(valid_insertions("abc", "abXc", 2, "X"), [2]);
+    }
+
+    /// The reported bug. The stored caret was stale — at the start of
+    /// the NEXT line — and the typed text went there. The browser's own
+    /// caret says where it really went.
+    #[test]
+    fn a_stale_stored_caret_does_not_move_the_insertion() {
+        let old = "4/4\n\nnext";
+        let old_vis = visible(old);
+        // Typed a space at the end of line 1 (doc 3); the browser reports
+        // its caret after the space, at 4. State still thinks the caret
+        // is at 5, the empty line below.
+        let at = insertion_point(&old_vis, "4/4 \n\nnext", 3, " ", 4, 5);
+        assert_eq!(at, 3, "the space goes where it was typed");
+    }
+
+    /// In a repeated run the browser's caret disambiguates, and the old
+    /// behaviour (the stored caret) still holds when it is one of the
+    /// valid positions and the browser's reading is unusable.
+    #[test]
+    fn the_browser_caret_picks_the_position_in_a_run() {
+        let old_vis = visible("hello");
+        // Typed at 2 ("he|llo"): browser caret after it is 3.
+        assert_eq!(insertion_point(&old_vis, "helllo", 4, "l", 3, 0), 2);
+        // Browser caret unusable (0 < len): the stored caret, if valid.
+        assert_eq!(insertion_point(&old_vis, "helllo", 4, "l", 0, 3), 3);
+        // Neither usable: the diff's own position.
+        assert_eq!(insertion_point(&old_vis, "helllo", 4, "l", 0, 0), 4);
     }
 }

@@ -1442,6 +1442,37 @@ pub fn Editor(
                                 // unchanged prefix lines stay as-is. 0 (or
                                 // absent) means a full reconcile.
                                 const firstChanged = payload.firstChanged || 0;
+                                // Typing the observer has not delivered
+                                // yet. `disconnect` and `takeRecords`
+                                // below DISCARD such records, so a patch
+                                // landing between the browser's insert
+                                // and the observer's callback threw the
+                                // keystroke away: state never heard of
+                                // it, the character stayed in the DOM,
+                                // and the two disagreed from then on (the
+                                // doubled character and the caret on the
+                                // wrong line). When this patch changes
+                                // nothing but decorations and caret —
+                                // the common case: highlight passes,
+                                // collaborators' carets — it was rendered
+                                // from a state that simply lacks the
+                                // keystroke: deliver the keystroke and
+                                // drop the patch; the re-render that
+                                // follows the input supersedes it. When
+                                // it changes the TEXT (a collaborator's
+                                // edit) the DOM cannot be sent back as-is
+                                // — that would diff as undoing their edit
+                                // — so it is patched in as before.
+                                const pending = mo.takeRecords();
+                                if (pending.length && !pending.every(isWidgetMutation)) {{
+                                    const rendered = window['__cm_doc_{id}'];
+                                    if (typeof payload.doc !== 'string'
+                                        || rendered === undefined
+                                        || payload.doc === rendered) {{
+                                        sendInput();
+                                        return;
+                                    }}
+                                }}
                                 if (typeof payload.doc === 'string') {{
                                     window['__cm_doc_{id}'] = payload.doc;
                                 }}
