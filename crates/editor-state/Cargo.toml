@@ -9,8 +9,11 @@ rust-version.workspace = true
 
 [dependencies]
 editor-syntax = { workspace = true }
-editor-typst = { workspace = true }
-editor-mermaid = { workspace = true }
+# The ```typst / ```mermaid fence renderers — heavy (a Typst compiler, a
+# Mermaid layout engine), so each is a feature. Off, a fence of that kind
+# shows its source, which is what a failed render already does.
+editor-typst = { workspace = true, optional = true }
+editor-mermaid = { workspace = true, optional = true }
 ropey = { workspace = true }
 serde = { workspace = true, optional = true }
 thiserror = { workspace = true }
@@ -39,8 +42,10 @@ web-sys = { version = "0.3", features = ["Window", "Performance"] }
 pulldown-cmark = { workspace = true }
 
 [features]
-default = []
+default = ["typst", "mermaid"]
 serde = ["dep:serde"]
+typst = ["dep:editor-typst"]
+mermaid = ["dep:editor-mermaid"]
 
 [lints]
 workspace = true

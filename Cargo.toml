@@ -60,7 +60,11 @@ pulldown-cmark = { version = "0.10", default-features = false }
 # `editor` is the facade. `editor-state` is the document model and the
 # markdown pass; everything else hangs off it.
 editor = { path = "crates/editor" }
-editor-state = { path = "crates/editor-state" }
+# `default-features = false`: the Typst and Mermaid fence renderers are
+# opt-in for crates that depend on the core directly (an app that only
+# edits plain or keyflow text should not build a Typst compiler). The
+# `editor` umbrella turns both back on by default.
+editor-state = { path = "crates/editor-state", default-features = false }
 editor-crdt = { path = "features/crdt" }
 editor-lsp = { path = "features/lsp" }
 editor-mermaid = { path = "features/mermaid/mermaid" }

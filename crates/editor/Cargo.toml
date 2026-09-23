@@ -22,7 +22,11 @@ dioxus = { workspace = true }
 # default `web` path keeps the contenteditable + JS bridge for browser and
 # desktop-webview builds. See `editor-view`'s feature docs.
 [features]
-default = []
+# The umbrella is the full markdown editor, fences included; a crate that
+# only needs the core depends on `editor-view` / `editor-state` directly.
+default = ["typst", "mermaid"]
+typst = ["editor-state/typst"]
+mermaid = ["editor-state/mermaid"]
 native = ["editor-view/native"]
 web = ["editor-view/web"]
 

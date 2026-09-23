@@ -27,6 +27,7 @@
 //! (`#ff00fe`) for `currentColor`, so the rendered glyphs
 //! inherit the editor pane's CSS `color:` and respond to theme
 //! switches without a recompile.
+#![cfg_attr(not(feature = "typst"), allow(dead_code, unused_imports))]
 
 use std::cell::Cell;
 
@@ -114,6 +115,21 @@ fn view_box_size(svg: &str) -> Option<(f64, f64)> {
 }
 
 pub fn render_typst(kind: TypstKind, body: &str) -> Option<String> {
+    #[cfg(feature = "typst")]
+    {
+        compile(kind, body)
+    }
+    // Built without the compiler: the fence shows its source, as a
+    // failed render does.
+    #[cfg(not(feature = "typst"))]
+    {
+        let _ = (kind, body);
+        None
+    }
+}
+
+#[cfg(feature = "typst")]
+fn compile(kind: TypstKind, body: &str) -> Option<String> {
     if let Some(cached) = with_typst_cache(|c| c.get(kind, body)) {
         return Some(cached);
     }

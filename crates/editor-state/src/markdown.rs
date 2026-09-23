@@ -5191,6 +5191,8 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "typst")]
+
     #[test]
     fn inline_math_recognized() {
         // Caret away: source replaced + math widget emitted.
@@ -5203,6 +5205,8 @@ mod tests {
         });
         assert!(has_widget);
     }
+
+    #[cfg(feature = "typst")]
 
     #[test]
     fn block_math_recognized() {
@@ -5233,6 +5237,8 @@ mod tests {
         assert!(!has_replace);
     }
 
+    #[cfg(feature = "mermaid")]
+
     #[test]
     fn mermaid_fence_recognized() {
         // Caret past the closing fence so cursor_touches is
@@ -5247,6 +5253,8 @@ mod tests {
         });
         assert!(has_widget);
     }
+
+    #[cfg(feature = "typst")]
 
     #[test]
     fn typst_fence_recognized() {

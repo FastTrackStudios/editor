@@ -572,6 +572,8 @@ mod tests {
         assert!(!out.contains("http://x"), "{out}");
     }
 
+    #[cfg(feature = "typst")]
+
     #[test]
     fn a_one_shot_render_compiles_every_equation() {
         // The per-pass compile budget is a live-typing optimisation: a
@@ -582,6 +584,8 @@ mod tests {
         assert_eq!(out.matches("md-math-widget-inline").count(), 5, "{out}");
         assert!(!out.contains('$'), "unrendered math left as source:\n{out}");
     }
+
+    #[cfg(feature = "typst")]
 
     #[test]
     fn math_is_sized_from_its_own_ink() {
@@ -610,6 +614,8 @@ mod tests {
         let tall = em("$sum_(i=1)^n i = n(n+1)/2$");
         assert!(tall > simple * 2.0, "simple={simple}em tall={tall}em");
     }
+
+    #[cfg(feature = "mermaid")]
 
     #[test]
     fn a_rendered_widget_carries_no_stray_whitespace() {
