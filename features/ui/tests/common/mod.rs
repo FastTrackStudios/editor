@@ -15,7 +15,7 @@ pub use dioxus_test::keyboard_types::{Key, Modifiers};
 pub use dioxus_test::matchers::{contains_substring, eq, inner_html};
 
 /// The editor stylesheet, inlined so screenshots paint with real styles.
-pub const EDITOR_CSS: &str = include_str!("../../../editor/assets/editor.css");
+pub const EDITOR_CSS: &str = include_str!("../../../../crates/editor/assets/editor.css");
 
 /// Per-test configuration, delivered to [`Harness`] via root context.
 #[derive(Clone)]
