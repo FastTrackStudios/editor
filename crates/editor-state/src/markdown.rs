@@ -329,7 +329,7 @@ pub fn live_preview_with_lookups(
     // dominated by `emit_fence_tokens` (tree-sitter) on docs
     // with code fences; the rest is O(doc-length) byte walking.
     let t_blocks = now_ms_native();
-    let fenced_ranges = scan_blocks(&text, primary, &mut out);
+    let fenced_ranges = scan_blocks(&text, primary, vault, &mut out);
     let blocks_ms = now_ms_native() - t_blocks;
 
     let t_inline = now_ms_native();
@@ -987,7 +987,7 @@ fn resolve_block_short_id(doc: &str, short_id: &str) -> Option<String> {
 /// supposed to spare the reader.
 fn render_embed_preview(body: &str) -> String {
     body.lines()
-        .map(render_table_cell)
+        .map(|line| render_table_cell(line, None))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -1491,14 +1491,28 @@ fn decorate_link_span(
         } else {
             span.class
         };
+        // A scripture chip without its own display text reads as the
+        // reference — `Joshua 11:21` — not as the target it was written
+        // with (`bible::Josh.11.21`). Caret inside: the source, as for
+        // every link.
+        let unaliased = !text.slice(span.body.clone()).contains('|');
+        if let Some(sc) = scripture_hit
+            .as_ref()
+            .filter(|_| unaliased && !cursor_touches(primary, span.outer.clone()))
+        {
+            out.push(Decoration::replace(display.clone()));
+            out.push(Decoration::widget(
+                display.start,
+                scripture_chip_html(&h, sc, None),
+            ));
+            out.push(Decoration::atomic(span.outer.clone()));
+            return true;
+        }
         let mut attrs = vec![("data-href".into(), h)];
         if let Some(t) = link_title {
             attrs.push(("title".into(), t));
         }
-        if let Some(text) = scripture_hit.and_then(|sc| {
-            sc.text
-                .map(|t| format!("{} ({})\n{}", sc.display, sc.translation, t))
-        }) {
+        if let Some(text) = scripture_hit.as_ref().and_then(scripture_tooltip) {
             attrs.push(("title".into(), text));
         }
         out.push(Decoration::mark_with_attrs(display, cls, attrs));
@@ -1513,6 +1527,28 @@ fn decorate_link_span(
         out.push(Decoration::mark(span.body.clone(), span.class));
     }
     true
+}
+
+/// A scripture chip's hover text: the reference, its translation, and the
+/// verse text once the host has it.
+fn scripture_tooltip(sc: &VaultScriptureHit) -> Option<String> {
+    sc.text
+        .as_ref()
+        .map(|t| format!("{} ({})\n{}", sc.display, sc.translation, t))
+}
+
+/// A scripture chip as HTML — for a widget standing in for the link text,
+/// and for a table cell. `label` is the writer's display text; without
+/// one the chip reads as the reference (`Joshua 11:21`).
+fn scripture_chip_html(href: &str, sc: &VaultScriptureHit, label: Option<&str>) -> String {
+    let title = scripture_tooltip(sc)
+        .map(|t| format!(r#" title="{}""#, html_escape(&t)))
+        .unwrap_or_default();
+    format!(
+        r#"<span class="md-wikilink md-scripture-chip" data-href="{}"{title}>{}</span>"#,
+        html_escape(href),
+        html_escape(label.unwrap_or(&sc.display))
+    )
 }
 
 /// Span classes whose decoration is self-contained: `^[inline footnotes]`,
@@ -2402,10 +2438,10 @@ fn emit_table_widget(
     line_from: usize,
     line_to: usize,
     primary: Range,
-    eligible: bool,
+    vault: Option<&dyn VaultLookup>,
     out: &mut Vec<DecoratedRange>,
 ) -> Option<std::ops::Range<usize>> {
-    if line.trim().is_empty() || !eligible || !is_table_header(line) {
+    if line.trim().is_empty() || !is_table_header(line) {
         return None;
     }
     let rows = try_parse_table(text, line_from, line_to)?;
@@ -2416,7 +2452,7 @@ fn emit_table_widget(
         .get(1)
         .map(|(f, t)| column_alignments(text.slice(*f..*t)))
         .unwrap_or_default();
-    let html = render_table_html(&cells, &align);
+    let html = render_table_html(&cells, &align, vault);
     // When caret is anywhere in the table, leave the source visible
     // (Obsidian behavior — typing in tables works against the source).
     // Otherwise replace + widget.
@@ -2591,6 +2627,7 @@ fn emit_fenced_line(
 fn scan_blocks(
     text: &str,
     primary: Range,
+    vault: Option<&dyn VaultLookup>,
     out: &mut Vec<DecoratedRange>,
 ) -> Vec<std::ops::Range<usize>> {
     // `type: setlist` notes render their FIRST `# ` heading as the
@@ -2690,15 +2727,11 @@ fn scan_blocks(
         // table, jump the outer scan past its last row and emit
         // a single rendered `<table>` widget covering the whole
         // range. Quartz: `ofm.ts:123-126` via `remark-gfm`.
-        if let Some(table_range) = emit_table_widget(
-            text,
-            line,
-            line_from,
-            line_to,
-            primary,
-            fence.is_none() && callout_stack.is_empty(),
-            out,
-        ) {
+        if fence.is_none()
+            && callout_stack.is_empty()
+            && let Some(table_range) =
+                emit_table_widget(text, line, line_from, line_to, primary, vault, out)
+        {
             fenced_ranges.push(table_range);
         }
 
@@ -2950,15 +2983,47 @@ fn try_parse_table(
     Some(rows)
 }
 
+/// Split a table row into its cells.
+///
+/// A `|` is a cell boundary except when it is escaped (`\|`, GFM's way
+/// of writing a pipe inside a cell) or inside a `[[wikilink|display]]` —
+/// the form Obsidian writes a link with display text in a table. Either
+/// way the pipe stays in the cell; an escaped one loses its backslash
+/// when the cell is rendered ([`render_table_cell`]).
 fn split_pipe_cells(line: &str) -> Vec<&str> {
     let mut t = line.trim();
     if let Some(stripped) = t.strip_prefix('|') {
         t = stripped;
     }
-    if let Some(stripped) = t.strip_suffix('|') {
-        t = stripped;
+    if t.ends_with('|') && !t.ends_with("\\|") {
+        t = t.slice(0..t.len().saturating_sub(1));
     }
-    t.split('|').map(str::trim).collect()
+    let b = t.as_bytes();
+    let mut cells = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0usize;
+    let mut i = 0usize;
+    while i < b.len() {
+        match b.at(i) {
+            b'\\' if b.at(i.saturating_add(1)) == b'|' => i = i.saturating_add(1),
+            b'[' if b.at(i.saturating_add(1)) == b'[' => {
+                depth = depth.saturating_add(1);
+                i = i.saturating_add(1);
+            }
+            b']' if b.at(i.saturating_add(1)) == b']' && depth > 0 => {
+                depth = depth.saturating_sub(1);
+                i = i.saturating_add(1);
+            }
+            b'|' if depth == 0 => {
+                cells.push(t.slice(start..i).trim());
+                start = i.saturating_add(1);
+            }
+            _ => {}
+        }
+        i = i.saturating_add(1);
+    }
+    cells.push(t.slice(start..t.len()).trim());
+    cells
 }
 
 fn collect_table_cells(text: &str, rows: &[(usize, usize)]) -> Vec<Vec<String>> {
@@ -2968,7 +3033,7 @@ fn collect_table_cells(text: &str, rows: &[(usize, usize)]) -> Vec<Vec<String>> 
         .map(|(_, (f, t))| {
             split_pipe_cells(text.slice(*f..*t))
                 .into_iter()
-                .map(std::string::ToString::to_string)
+                .map(|cell| cell.replace("\\|", "|"))
                 .collect()
         })
         .collect()
@@ -2990,7 +3055,7 @@ fn collect_table_cells(text: &str, rows: &[(usize, usize)]) -> Vec<Vec<String>> 
 ///
 /// Emits the same `md-*` classes the decoration path uses, so a table
 /// cell and a paragraph style identically.
-fn render_table_cell(cell: &str) -> String {
+fn render_table_cell(cell: &str, vault: Option<&dyn VaultLookup>) -> String {
     let b = cell.as_bytes();
     let mut out = String::with_capacity(cell.len());
     let mut i = 0;
@@ -3008,18 +3073,36 @@ fn render_table_cell(cell: &str) -> String {
             continue;
         }
 
-        // [[wikilink]] and [[target|label]]
+        // [[wikilink]] and [[target|label]] — resolved the way a link in
+        // a paragraph is: a page, a scripture chip, or unresolved.
         if cell.after(i).starts_with("[[")
             && let Some(end) = cell.after(i.saturating_add(2)).find("]]")
         {
             let body = cell.slice(i.saturating_add(2)..i.saturating_add(2).saturating_add(end));
-            let (target, label) = body.split_once('|').unwrap_or((body, body));
-            let _ = write!(
-                out,
-                r#"<span class="md-wikilink" data-href="{}">{}</span>"#,
-                html_escape(target.trim()),
-                html_escape(label.trim())
-            );
+            let (target, alias) = match body.split_once('|') {
+                Some((t, a)) => (t.trim(), Some(a.trim())),
+                None => (body.trim(), None),
+            };
+            let page = target.split('#').next().unwrap_or(target).trim();
+            let scripture = vault
+                .filter(|v| v.lookup_page(page).is_none())
+                .and_then(|v| v.lookup_scripture(page));
+            if let Some(sc) = scripture {
+                out.push_str(&scripture_chip_html(target, &sc, alias));
+            } else {
+                let cls = match vault {
+                    Some(v) if v.lookup_page(page).is_none() => {
+                        "md-wikilink md-wikilink-unresolved"
+                    }
+                    _ => "md-wikilink",
+                };
+                let _ = write!(
+                    out,
+                    r#"<span class="{cls}" data-href="{}">{}</span>"#,
+                    html_escape(target),
+                    html_escape(alias.unwrap_or(target))
+                );
+            }
             i = i.saturating_add(end.saturating_add(4));
             continue;
         }
@@ -3113,7 +3196,11 @@ fn column_alignments(sep: &str) -> Vec<Option<&'static str>> {
         .collect()
 }
 
-fn render_table_html(cells: &[Vec<String>], align: &[Option<&'static str>]) -> String {
+fn render_table_html(
+    cells: &[Vec<String>],
+    align: &[Option<&'static str>],
+    vault: Option<&dyn VaultLookup>,
+) -> String {
     if cells.is_empty() {
         return String::new();
     }
@@ -3132,7 +3219,7 @@ fn render_table_html(cells: &[Vec<String>], align: &[Option<&'static str>]) -> S
         s.push_str("<thead><tr>");
         for (i, c) in header.iter().enumerate() {
             let _ = write!(s, "<th{}>", style(i));
-            s.push_str(&render_table_cell(c));
+            s.push_str(&render_table_cell(c, vault));
             s.push_str("</th>");
         }
         s.push_str("</tr></thead>");
@@ -3142,7 +3229,7 @@ fn render_table_html(cells: &[Vec<String>], align: &[Option<&'static str>]) -> S
         s.push_str("<tr>");
         for (i, c) in row.iter().enumerate() {
             let _ = write!(s, "<td{}>", style(i));
-            s.push_str(&render_table_cell(c));
+            s.push_str(&render_table_cell(c, vault));
             s.push_str("</td>");
         }
         s.push_str("</tr>");
@@ -4225,13 +4312,13 @@ mod tests {
         // so the inline pass never reaches a cell. Before this, the
         // keyflow guide's notation-systems table rendered a literal
         // `**Letter name**` and `` `C`, `F#`, `Bb` ``.
-        let html = render_table_cell("**Letter name**");
+        let html = render_table_cell("**Letter name**", None);
         assert!(
             html.contains(r#"<span class="md-bold">Letter name</span>"#),
             "{html}"
         );
 
-        let html = render_table_cell("`C`, `F#`, `Bb`");
+        let html = render_table_cell("`C`, `F#`, `Bb`", None);
         assert_eq!(
             html,
             r#"<code class="md-code">C</code>, <code class="md-code">F#</code>, <code class="md-code">Bb</code>"#
@@ -4240,12 +4327,12 @@ mod tests {
 
     #[test]
     fn table_cells_render_links_and_wikilinks() {
-        let html = render_table_cell("[[chords|Chords]]");
+        let html = render_table_cell("[[chords|Chords]]", None);
         assert!(html.contains(r#"class="md-wikilink""#), "{html}");
         assert!(html.contains(r#"data-href="chords""#), "{html}");
         assert!(html.contains(">Chords<"), "{html}");
 
-        let html = render_table_cell("[docs](https://example.com)");
+        let html = render_table_cell("[docs](https://example.com)", None);
         assert!(html.contains(r#"href="https://example.com""#), "{html}");
         assert!(html.contains(">docs<"), "{html}");
     }
@@ -4253,13 +4340,13 @@ mod tests {
     #[test]
     fn a_code_span_is_not_further_interpreted() {
         // A cell documenting the bold marker must not go bold.
-        let html = render_table_cell("`**`");
+        let html = render_table_cell("`**`", None);
         assert_eq!(html, r#"<code class="md-code">**</code>"#);
     }
 
     #[test]
     fn table_cells_escape_html() {
-        let html = render_table_cell("<script>alert(1)</script>");
+        let html = render_table_cell("<script>alert(1)</script>", None);
         assert!(!html.contains("<script"), "{html}");
         assert!(html.contains("&lt;script&gt;"), "{html}");
     }
@@ -4268,9 +4355,9 @@ mod tests {
     fn unterminated_markers_stay_literal() {
         // A lone marker is text, not the start of a run to the end of the
         // cell — and must not panic.
-        assert_eq!(render_table_cell("2 * 3"), "2 * 3");
-        assert_eq!(render_table_cell("`unclosed"), "`unclosed");
-        assert_eq!(render_table_cell("**unclosed"), "**unclosed");
+        assert_eq!(render_table_cell("2 * 3", None), "2 * 3");
+        assert_eq!(render_table_cell("`unclosed", None), "`unclosed");
+        assert_eq!(render_table_cell("**unclosed", None), "**unclosed");
     }
 
     #[test]
@@ -4278,9 +4365,9 @@ mod tests {
         // The scanner walks bytes; stepping by one on a multi-byte char
         // would panic on a non-boundary index.
         for cell in ["♭ and ♯", "café — nö", "🎹 **keys**", "→ `x`"] {
-            let _ = render_table_cell(cell);
+            let _ = render_table_cell(cell, None);
         }
-        assert!(render_table_cell("🎹 **keys**").contains("md-bold"));
+        assert!(render_table_cell("🎹 **keys**", None).contains("md-bold"));
     }
 
     #[test]
@@ -4290,7 +4377,7 @@ mod tests {
             vec!["System".into(), "Example".into()],
             vec!["**Letter name**".into(), "`C`, `F#`, `Bb`".into()],
         ];
-        let html = render_table_html(&cells, &[]);
+        let html = render_table_html(&cells, &[], None);
         assert!(!html.contains("**"), "raw bold markers survived: {html}");
         assert!(!html.contains('`'), "raw code markers survived: {html}");
     }
@@ -4729,17 +4816,76 @@ mod tests {
         }
     }
 
+    /// The HTML of the first widget containing `needle`.
+    fn widget_with(decs: &[super::DecoratedRange], needle: &str) -> Option<String> {
+        decs.iter().find_map(|d| match &d.kind {
+            crate::decoration::DecorationKind::Widget { html } if html.contains(needle) => {
+                Some(html.clone())
+            }
+            _ => None,
+        })
+    }
+
     #[test]
     fn inline_scripture_link_renders_chip() {
         let s = state("see [[John 3:16]] here", 0);
         let vault = scripture_vault("John 3:16", Some("For God so loved the world…"));
         let decs = super::live_preview_with(&s, Some(&vault));
-        let chip = decs.iter().any(|d| {
-            matches!(&d.kind,
+        let chip = widget_with(&decs, "md-scripture-chip").expect("a chip");
+        assert!(chip.contains(">John 3:16<"), "{chip}");
+        assert!(
+            chip.contains("For God so loved"),
+            "the verse is the tooltip: {chip}"
+        );
+    }
+
+    /// A wiki page writes `[[bible::John.3.16]]`; the reader sees the
+    /// reference, not the target it was written as.
+    #[test]
+    fn a_resource_scripture_link_reads_as_its_reference() {
+        let s = state("see [[bible::John.3.16]] here", 0);
+        let vault = scripture_vault("bible::John.3.16", None);
+        let decs = super::live_preview_with(&s, Some(&vault));
+        let chip = widget_with(&decs, "md-scripture-chip").expect("a chip");
+        assert!(chip.contains(">John 3:16<"), "{chip}");
+        assert!(chip.contains(r#"data-href="bible::John.3.16""#), "{chip}");
+    }
+
+    /// Display text the writer chose wins, and the caret inside the link
+    /// shows its source.
+    #[test]
+    fn an_aliased_or_edited_scripture_link_keeps_its_text() {
+        let vault = scripture_vault("bible::John.3.16", None);
+        let aliased = state("see [[bible::John.3.16|the verse]] here", 0);
+        let decs = super::live_preview_with(&aliased, Some(&vault));
+        assert!(widget_with(&decs, "md-scripture-chip").is_none());
+        assert!(decs.iter().any(|d| matches!(&d.kind,
             crate::decoration::DecorationKind::Mark { class, .. }
-                if class == "md-wikilink md-scripture-chip")
-        });
-        assert!(chip, "decs = {decs:?}");
+                if class == "md-wikilink md-scripture-chip")));
+        let editing = state("see [[bible::John.3.16]] here", 10);
+        let decs = super::live_preview_with(&editing, Some(&vault));
+        assert!(widget_with(&decs, "md-scripture-chip").is_none());
+    }
+
+    #[test]
+    fn table_cells_keep_escaped_pipes_and_link_display_text() {
+        assert_eq!(
+            super::split_pipe_cells(r"| a \| b | [[bible::John.3.16|John 3:16]] | c |"),
+            vec![r"a \| b", "[[bible::John.3.16|John 3:16]]", "c"]
+        );
+        assert_eq!(super::split_pipe_cells("| x | y |"), vec!["x", "y"]);
+    }
+
+    #[test]
+    fn table_cells_render_scripture_chips_and_resolve_links() {
+        let vault = scripture_vault("bible::John.3.16", Some("For God so loved…"));
+        let chip = super::render_table_cell("[[bible::John.3.16]]", Some(&vault));
+        assert!(chip.contains("md-scripture-chip"), "{chip}");
+        assert!(chip.contains(">John 3:16<"), "{chip}");
+        let aliased = super::render_table_cell("[[bible::John.3.16|v. 16]]", Some(&vault));
+        assert!(aliased.contains(">v. 16<"), "{aliased}");
+        let missing = super::render_table_cell("[[Nowhere]]", Some(&vault));
+        assert!(missing.contains("md-wikilink-unresolved"), "{missing}");
     }
 
     #[test]
@@ -5192,7 +5338,6 @@ mod tests {
     }
 
     #[cfg(feature = "typst")]
-
     #[test]
     fn inline_math_recognized() {
         // Caret away: source replaced + math widget emitted.
@@ -5207,7 +5352,6 @@ mod tests {
     }
 
     #[cfg(feature = "typst")]
-
     #[test]
     fn block_math_recognized() {
         // `mc^2` would fail to compile in Typst (`mc` reads as
@@ -5238,7 +5382,6 @@ mod tests {
     }
 
     #[cfg(feature = "mermaid")]
-
     #[test]
     fn mermaid_fence_recognized() {
         // Caret past the closing fence so cursor_touches is
@@ -5255,7 +5398,6 @@ mod tests {
     }
 
     #[cfg(feature = "typst")]
-
     #[test]
     fn typst_fence_recognized() {
         // Caret past the closing fence so cursor_touches is
