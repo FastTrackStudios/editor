@@ -332,6 +332,11 @@ pub fn Editor(
     /// e.g. `Page`, `Page#Heading`, `Page|alias`). External `http(s)`
     /// links are additionally opened in a new tab by the view itself;
     /// wikilinks only fire this — the host owns vault navigation.
+    ///
+    /// A plain click follows the link in an editable editor too: the
+    /// press does not put the caret inside it. To edit a link,
+    /// Alt/Option+click it (the caret goes where you clicked, and no
+    /// callback fires) or walk into it with the arrow keys.
     #[props(default)]
     on_link_click: Option<Callback<String>>,
 ) -> Element {
@@ -1909,6 +1914,21 @@ pub fn Editor(
                                         evt.preventDefault();
                                         return;
                                     }}
+                                    // A link is followed, not entered.
+                                    // Left alone, the press parks the
+                                    // caret inside the link, the live
+                                    // preview reveals its source, and
+                                    // the rendered span is gone before
+                                    // the click lands — so a click
+                                    // edited the link instead of
+                                    // following it. Alt/Option+click
+                                    // still puts the caret there, and
+                                    // the arrow keys walk into it.
+                                    if (n.nodeType === 1 && n.dataset
+                                        && n.dataset.href && !evt.altKey) {{
+                                        evt.preventDefault();
+                                        return;
+                                    }}
                                     if (n.nodeType === 1 && n.tagName === 'LABEL'
                                         && n.closest && n.closest('.md-tabs-widget')) {{
                                         // Tab-strip label: don't let the
@@ -1990,6 +2010,10 @@ pub fn Editor(
                                     }}
                                     if (n.nodeType === 1 && n.dataset
                                         && n.dataset.href) {{
+                                        // Alt/Option+click edits the
+                                        // link: the caret stays where
+                                        // the press put it.
+                                        if (evt.altKey) return;
                                         const href = n.dataset.href;
                                         // Clear caret state so the
                                         // link span goes back to
