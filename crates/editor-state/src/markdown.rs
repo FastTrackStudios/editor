@@ -1176,6 +1176,7 @@ fn decorate_inline_spans(
     out: &mut Vec<DecoratedRange>,
 ) {
     let defs = link_definitions(text);
+    let first_inline = out.len();
     // A span can claim more than itself: an annotated verse card takes
     // the rest of its line (the note, with its own links and emphasis).
     // Spans inside a claimed stretch are already drawn by that widget,
@@ -1234,6 +1235,81 @@ fn decorate_inline_spans(
                 out.push(Decoration::replace(span.body.end..span.outer.end));
             }
         }
+    }
+    shorten_repeated_sources(text, out.get_mut(first_inline..).unwrap_or_default());
+}
+
+/// The opening of a source badge's HTML — see [`source_chip_html`].
+const SOURCE_CHIP_OPEN: &str = r#"<span class="md-wikilink md-source-chip""#;
+
+/// A citation of the same source as the one just before it reads short:
+/// the icon, the first word of the name, the time. The full name comes
+/// back as soon as another source is cited in between (A, B, A — all
+/// full) or a heading starts a new section. The tooltip keeps the full
+/// title either way.
+fn shorten_repeated_sources(text: &str, decorations: &mut [DecoratedRange]) {
+    let mut last: Option<(String, usize)> = None;
+    for d in decorations.iter_mut() {
+        let crate::decoration::DecorationKind::Widget { html } = &mut d.kind else {
+            continue;
+        };
+        if !html.starts_with(SOURCE_CHIP_OPEN) {
+            continue;
+        }
+        let Some(page) = html
+            .split_once(r#"data-href=""#)
+            .and_then(|(_, rest)| rest.split(['"', '#']).next())
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        let again = last.as_ref().is_some_and(|(prev, at)| {
+            *prev == page && !text.slice(*at..d.from).contains("\n#")
+        });
+        if again {
+            *html = shortened_source_chip(html);
+        }
+        last = Some((page, d.from));
+    }
+}
+
+/// `…<span class="md-source-name">The Other Gods</span>…` →
+/// `…md-source-chip--again…<span class="md-source-name">Other…</span>…`.
+fn shortened_source_chip(html: &str) -> String {
+    const NAME: &str = r#"<span class="md-source-name">"#;
+    let Some((head, rest)) = html.split_once(NAME) else {
+        return html.to_owned();
+    };
+    let Some((name, tail)) = rest.split_once("</span>") else {
+        return html.to_owned();
+    };
+    let head = head.replacen("md-source-chip\"", "md-source-chip md-source-chip--again\"", 1);
+    format!("{head}{NAME}{}</span>{tail}", short_name(name))
+}
+
+/// The first word that says something — past a leading article — cut to
+/// eight characters: `The Other Gods` → `Other…`, `Ancient Conquest
+/// Accounts` → `Ancient…`, `Genesis` → `Genesis`.
+fn short_name(name: &str) -> String {
+    let words: Vec<&str> = name.split_whitespace().collect();
+    let skip = usize::from(
+        words.len() > 1
+            && matches!(words.first().map(|w| w.to_lowercase()).as_deref(), Some("the" | "a" | "an")),
+    );
+    let Some(word) = words.get(skip) else {
+        return name.to_owned();
+    };
+    let more = words.len() > skip.saturating_add(1);
+    // An escaped entity (`&amp;`) is never cut through.
+    let cut: String = if word.chars().count() > 10 && !word.contains('&') {
+        word.chars().take(8).collect()
+    } else {
+        (*word).to_owned()
+    };
+    if more || cut.len() < word.len() {
+        format!("{cut}…")
+    } else {
+        cut
     }
 }
 
@@ -5183,6 +5259,47 @@ mod tests {
         let s = state("see [[other-gods-ac25#^t46|0:46]]", 8);
         let decs = super::live_preview_with(&s, Some(&vault));
         assert!(widget_with(&decs, "md-source-chip").is_none());
+    }
+
+    /// A, A → the second is short; A, B, A → all full; a heading starts
+    /// over.
+    #[test]
+    fn a_source_cited_twice_in_a_row_shortens_the_second_badge() {
+        let mut vault = source_vault();
+        vault.sources.insert(
+            "b-src".to_string(),
+            super::VaultSourceHit {
+                kind: "book".into(),
+                short: "Ancient Conquest Accounts".into(),
+                title: "Ancient Conquest Accounts".into(),
+                author: String::new(),
+            },
+        );
+        let names = |doc: &str| -> Vec<String> {
+            let s = state(doc, doc.len());
+            super::live_preview_with(&s, Some(&vault))
+                .iter()
+                .filter_map(|d| match &d.kind {
+                    crate::decoration::DecorationKind::Widget { html }
+                        if html.contains("md-source-name") =>
+                    {
+                        let n = html.split(r#"md-source-name">"#).nth(1)?;
+                        Some(n.split('<').next()?.to_owned())
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        let a = "[[other-gods-ac25#^t46|0:46]]";
+        let b = "[[b-src|p. 42]]";
+        assert_eq!(names(&format!("x {a} y {a} z\n")), ["The Other Gods", "Other…"]);
+        assert_eq!(
+            names(&format!("x {a} y {b} z {a}\n")),
+            ["The Other Gods", "Ancient Conquest Accounts", "The Other Gods"]
+        );
+        assert_eq!(names(&format!("x {a}\n\n## Next\n\ny {a}\n")), ["The Other Gods", "The Other Gods"]);
+        assert_eq!(super::short_name("Genesis"), "Genesis");
+        assert_eq!(super::short_name("Unforgettable Encounters"), "Unforget…");
     }
 
     #[test]
