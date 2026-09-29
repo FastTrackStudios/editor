@@ -295,6 +295,69 @@ fn parse_map(body: &str) -> MapSpec {
 }
 
 /// The places and routes, drawn to scale.
+/// A label's box on the map, for keeping labels off each other.
+#[derive(Clone, Copy)]
+struct Label {
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
+}
+
+impl Label {
+    const fn overlaps(&self, o: &Self) -> bool {
+        self.x0 < o.x1 && o.x0 < self.x1 && self.y0 < o.y1 && o.y0 < self.y1
+    }
+}
+
+/// Where a place's name goes: right of its dot, else left, above, below
+/// or a diagonal — the first spot that is clear of every label and dot
+/// placed so far (then taken). Crowded clusters — the Aegean on Paul's
+/// route — stay legible.
+fn place_label(
+    name: &str,
+    px: f64,
+    py: f64,
+    width: f64,
+    taken: &mut Vec<Label>,
+) -> (f64, f64, &'static str) {
+    let chars = f64::from(u32::try_from(name.chars().count()).unwrap_or(u32::MAX));
+    let w = chars * 6.4;
+    let h = 12.0;
+    // (text x, baseline y, anchor) relative to the dot.
+    let spots = [
+        (8.0, 4.0, "start"),
+        (-8.0, 4.0, "end"),
+        (0.0, -9.0, "middle"),
+        (0.0, 17.0, "middle"),
+        (7.0, -7.0, "start"),
+        (-7.0, -7.0, "end"),
+        (7.0, 15.0, "start"),
+        (-7.0, 15.0, "end"),
+    ];
+    let boxed = |(dx, dy, anchor): (f64, f64, &str)| {
+        let x = px + dx;
+        let x0 = match anchor {
+            "end" => x - w,
+            "middle" => x - w / 2.0,
+            _ => x,
+        };
+        Label { x0, y0: py + dy - h + 2.0, x1: x0 + w, y1: py + dy + 2.0 }
+    };
+    let fits = |b: &Label| b.x0 >= 0.0 && b.x1 <= width;
+    let chosen = spots
+        .iter()
+        .copied()
+        .find(|&spot| {
+            let b = boxed(spot);
+            fits(&b) && !taken.iter().any(|t| t.overlaps(&b))
+        })
+        .or_else(|| spots.iter().copied().find(|&spot| fits(&boxed(spot))))
+        .unwrap_or(spots[0]);
+    taken.push(boxed(chosen));
+    (px + chosen.0, py + chosen.1, chosen.2)
+}
+
 /// The frame a map is drawn in: degrees in, SVG units out.
 struct Frame {
     lat_scale: f64,
@@ -388,10 +451,16 @@ fn map_svg(places: &[Place], routes: &[Vec<String>], title: Option<&str>) -> Str
             r#"<path class="md-map-route" d="{d}" marker-end="url(#md-map-arrow)"/>"#
         );
     }
+    let mut taken: Vec<Label> = places
+        .iter()
+        .map(|p| {
+            let (px, py) = f.at(p);
+            Label { x0: px - 5.0, y0: py - 5.0, x1: px + 5.0, y1: py + 5.0 }
+        })
+        .collect();
     for p in places {
         let (px, py) = f.at(p);
-        let anchor = if px > width * 0.75 { "end" } else { "start" };
-        let dx = if anchor == "end" { -8.0 } else { 8.0 };
+        let (tx, ty, anchor) = place_label(&p.name, px, py, width, &mut taken);
         let tip = if p.note.is_empty() {
             String::new()
         } else {
@@ -401,8 +470,6 @@ fn map_svg(places: &[Place], routes: &[Vec<String>], title: Option<&str>) -> Str
             svg,
             r#"<g class="md-map-place">{tip}<circle cx="{px:.1}" cy="{py:.1}" r="4.5"/><text x="{tx:.1}" y="{ty:.1}" text-anchor="{anchor}">{}</text></g>"#,
             esc(&p.name),
-            tx = px + dx,
-            ty = py + 4.0,
         );
     }
     svg.push_str("</svg>");
