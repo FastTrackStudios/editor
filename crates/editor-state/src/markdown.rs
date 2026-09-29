@@ -76,6 +76,12 @@ pub trait VaultLookup {
     fn lookup_source(&self, _name: &str) -> Option<VaultSourceHit> {
         None
     }
+    /// The passage `target` in the host's other translations, `(id,
+    /// text)` — asked only for a verse card, which switches between them.
+    /// Empty (default) = the card shows one translation.
+    fn lookup_translations(&self, _target: &str) -> Vec<(String, String)> {
+        Vec::new()
+    }
     /// The page `name` is a word (a Hebrew or Greek term) → the link
     /// renders as a word badge. `None` (default) = plain link.
     fn lookup_word(&self, _name: &str) -> Option<VaultWordHit> {
@@ -177,6 +183,10 @@ pub struct VaultScriptureHit {
     pub text: Option<String>,
     /// Translation id the text came from (`WEB`, `ESV`).
     pub translation: String,
+    /// The same passage in the org's other installed translations,
+    /// `(id, text)` — the verse card switches between them and shows
+    /// them side by side. Empty when there are none (or not yet).
+    pub alternates: Vec<(String, String)>,
 }
 
 /// Song metadata for a wikilink that targets a `type: song` note —
@@ -874,6 +884,7 @@ fn scripture_card_html(
     sc: &VaultScriptureHit,
     note: Option<(&str, usize)>,
     vault: Option<&dyn VaultLookup>,
+    at: usize,
 ) -> String {
     let safe = html_escape(target);
     let display = reference_parts(&sc.display).map_or_else(
@@ -894,11 +905,11 @@ fn scripture_card_html(
             d
         },
     );
-    let tx = html_escape(&sc.translation);
     let body = sc
         .text
         .as_ref()
         .map_or_else(|| "Loading…".to_string(), |t| html_escape(t));
+    let (radios, texts, switch) = translation_switch(sc, &body, at);
     // A click on the note (not on a link in it) puts the caret there to
     // edit it, rather than opening the verse.
     let note = note
@@ -912,7 +923,52 @@ fn scripture_card_html(
         })
         .unwrap_or_default();
     format!(
-        r#"<span class="md-scripture-card" data-href="scripture-open:{safe}"><span class="md-scripture-card-text">{body}</span><span class="md-scripture-card-ref"><span class="md-scripture-card-display">{display}</span><span class="md-scripture-card-tx">{tx}</span><span class="md-scripture-card-open">Study ›</span></span>{note}</span>"#
+        r#"<span class="md-scripture-card" data-href="scripture-open:{safe}">{radios}{texts}<span class="md-scripture-card-ref"><span class="md-scripture-card-display">{display}</span>{switch}<span class="md-scripture-card-open">Study ›</span></span>{note}</span>"#
+    )
+}
+
+/// A verse card's translations: hidden radios, the text panels and the
+/// switcher labels (pure CSS — the checked radio shows its panel). One
+/// panel per translation plus "Compare", which lists them all. Without
+/// alternates, the plain text and the translation's name.
+fn translation_switch(sc: &VaultScriptureHit, body: &str, at: usize) -> (String, String, String) {
+    let tx = html_escape(&sc.translation);
+    if sc.alternates.is_empty() {
+        return (
+            String::new(),
+            format!(r#"<span class="md-scripture-card-text">{body}</span>"#),
+            format!(r#"<span class="md-scripture-card-tx">{tx}</span>"#),
+        );
+    }
+    let group = format!("sc-{at}");
+    let all: Vec<(String, String)> = std::iter::once((tx, body.to_owned()))
+        .chain(sc.alternates.iter().map(|(t, x)| (html_escape(t), html_escape(x))))
+        .collect();
+    let mut radios = String::new();
+    let mut panels = String::new();
+    let mut labels = String::new();
+    let mut compare = String::new();
+    for (i, (id, text)) in all.iter().enumerate() {
+        let checked = if i == 0 { " checked" } else { "" };
+        let _ = write!(
+            radios,
+            r#"<input type="radio" class="md-sc-radio" name="{group}" id="{group}-{i}"{checked}>"#
+        );
+        let _ = write!(panels, r#"<span class="md-scripture-card-text md-sc-panel">{text}</span>"#);
+        let _ = write!(labels, r#"<label for="{group}-{i}">{id}</label>"#);
+        let _ = write!(
+            compare,
+            r#"<span class="md-sc-row"><span class="md-sc-row-tx">{id}</span><span class="md-sc-row-text">{text}</span></span>"#
+        );
+    }
+    let n = all.len();
+    let _ = write!(radios, r#"<input type="radio" class="md-sc-radio" name="{group}" id="{group}-{n}">"#);
+    let _ = write!(panels, r#"<span class="md-sc-panel md-sc-compare">{compare}</span>"#);
+    let _ = write!(labels, r#"<label for="{group}-{n}">Compare</label>"#);
+    (
+        radios,
+        format!(r#"<span class="md-sc-texts">{panels}</span>"#),
+        format!(r#"<span class="md-sc-switch">{labels}</span>"#),
     )
 }
 
@@ -1141,7 +1197,7 @@ thread_local! {
 /// the vault. That pass resets this thread's per-pass state (the block
 /// index), so the outer pass's copy is kept and put back. Two levels
 /// deep, an embed shows its lines plainly instead of rendering again.
-fn render_embedded_markdown(md: &str, vault: Option<&dyn VaultLookup>) -> String {
+pub(crate) fn render_embedded_markdown(md: &str, vault: Option<&dyn VaultLookup>) -> String {
     let depth = EMBED_DEPTH.with(std::cell::Cell::get);
     if depth >= 2 {
         return render_embed_preview(md);
@@ -1647,13 +1703,16 @@ fn scripture_card(
     if v.lookup_page(page).is_some() {
         return None;
     }
-    let sc = v.lookup_scripture(page)?;
+    let mut sc = v.lookup_scripture(page)?;
+    if sc.alternates.is_empty() {
+        sc.alternates = v.lookup_translations(page);
+    }
     let whole = span.outer.start..line_end.max(span.outer.end);
     Some([
         Decoration::replace(whole.clone()),
         Decoration::widget(
             span.outer.start,
-            scripture_card_html(page, &sc, note, vault),
+            scripture_card_html(page, &sc, note, vault, span.outer.start),
         ),
         Decoration::atomic(whole),
     ])
@@ -2730,7 +2789,8 @@ fn emit_rendered_fence(
     content_start: usize,
     // (marker char, run length) — the ``` or ~~~ that opened this fence.
     marker: (u8, usize),
-    primary: Range,
+    // The caret, and the vault a widget's own links resolve against.
+    (primary, vault): (Range, Option<&dyn VaultLookup>),
     out: &mut Vec<DecoratedRange>,
 ) -> bool {
     let (mc, mlen) = marker;
@@ -2843,7 +2903,7 @@ fn emit_rendered_fence(
                 // static injected HTML string). The scope
                 // hash folds in `content_start` so two
                 // blocks never share a radio group.
-                if let Some(inner) = render_tabs(body, content_start) {
+                if let Some(inner) = render_tabs(body, content_start, vault) {
                     let html = format!(
                         r#"<div class="md-tabs-widget" data-focus-pos="{content_start}">{inner}</div>"#,
                     );
@@ -2972,7 +3032,7 @@ fn open_fence_at_line(
             line_from,
             content_start,
             (mc, mlen),
-            primary,
+            (primary, vault),
             out,
         ) {
             return true;
@@ -5434,6 +5494,7 @@ mod tests {
                 osis: "John.3.16".into(),
                 text: text.map(str::to_string),
                 translation: "WEB".into(),
+                alternates: Vec::new(),
             },
         );
         FakeVault {
@@ -5674,6 +5735,34 @@ mod tests {
         assert!(btn.contains(r#"data-fold-pos="0""#), "{btn}");
         s.folds = vec![0..1];
         assert!(!folded(&s));
+    }
+
+    /// A verse card with the passage in other translations switches
+    /// between them, and compares them.
+    #[test]
+    fn a_verse_card_switches_translations() {
+        let mut vault = scripture_vault("bible::John.3.16", Some("For God so loved the world"));
+        if let Some(hit) = vault.scripture.get_mut("bible::John.3.16") {
+            hit.alternates = vec![("KJV".into(), "For God so loved the world, that".into())];
+        }
+        let doc = "[[bible::John.3.16|John 3:16]]\n";
+        let card = widget_with(&super::live_preview_with(&state(doc, doc.len()), Some(&vault)), "md-scripture-card")
+            .expect("a card");
+        assert_eq!(card.matches(r#"class="md-sc-radio""#).count(), 3, "{card}");
+        assert!(card.contains(r#"<label for="sc-0-0">WEB</label><label for="sc-0-1">KJV</label><label for="sc-0-2">Compare</label>"#), "{card}");
+        assert!(card.contains(r#"<span class="md-sc-row-tx">KJV</span><span class="md-sc-row-text">For God so loved the world, that</span>"#), "{card}");
+    }
+
+    /// A link inside a tab resolves like one outside it.
+    #[test]
+    fn links_inside_tabs_resolve() {
+        let mut vault = FakeVault::default();
+        vault.pages.insert("Other".into(), super::VaultPageHit { preview: "x".into() });
+        let doc = "```tabs\n=== One\nsee [[Other]] and [[Nowhere]]\n=== Two\ntext\n```\n";
+        let decs = super::live_preview_with(&state(doc, doc.len()), Some(&vault));
+        let tabs = widget_with(&decs, "md-tabs-widget").expect("tabs");
+        assert!(tabs.contains(r#"class="md-wikilink" data-href="Other""#), "{tabs}");
+        assert!(tabs.contains("md-wikilink-unresolved"), "Nowhere stays unresolved: {tabs}");
     }
 
     #[test]

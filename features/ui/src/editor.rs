@@ -1940,7 +1940,7 @@ pub fn Editor(
                                         return;
                                     }}
                                     if (n.nodeType === 1 && n.tagName === 'LABEL'
-                                        && n.closest && n.closest('.md-tabs-widget')) {{
+                                        && n.closest && n.closest('.md-tabs-widget, .md-scripture-card')) {{
                                         // Tab-strip label: don't let the
                                         // browser park the caret in the
                                         // widget (which would revert it
@@ -1988,7 +1988,7 @@ pub fn Editor(
                                         return;
                                     }}
                                     if (n.nodeType === 1 && n.tagName === 'LABEL'
-                                        && n.closest && n.closest('.md-tabs-widget')) {{
+                                        && n.closest && n.closest('.md-tabs-widget, .md-scripture-card')) {{
                                         // Tabs widget: switch the CSS-only
                                         // tab ourselves — preventDefault
                                         // suppresses the label's native
@@ -2355,7 +2355,7 @@ pub fn Editor(
             {
                 let caret = cur.selection.primary().head;
                 let spec = TransactionSpec::new()
-                    .changes(Changes::insert(caret, crate::palette::TRIGGER.to_string()))
+                    .changes(Changes::insert(caret, crate::palette::trigger().to_string()))
                     .selection(Selection::caret(caret.saturating_add(1)))
                     .annotate("origin", "palette-open");
                 crate::event::apply_tx(state, &cur, spec, sink_for_keys);
@@ -2769,7 +2769,11 @@ pub fn Editor(
         use_effect(move || {
             let s = state.read();
             let caret = s.selection.primary().head;
-            let detected = crate::palette::detect_trigger(&s.doc.to_string(), caret);
+            // A query that matches nothing is not a command being looked
+            // for — `/usr/bin` in prose — so the menu closes rather than
+            // saying "no match" under every path.
+            let detected = crate::palette::detect_trigger(&s.doc.to_string(), caret)
+                .filter(|(_, q)| q.is_empty() || !crate::palette::filter_commands(q).is_empty());
             let cur = palette_sig.peek().clone();
             match (detected, cur) {
                 (Some((start, q)), Some(prev)) if prev.trigger_start == start => {

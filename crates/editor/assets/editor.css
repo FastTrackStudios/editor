@@ -2754,3 +2754,64 @@
 @media (pointer: coarse) {
     .editor-root .md-callout-fold { min-width: 44px; min-height: 44px; }
 }
+
+/* ── Verse card translations ───────────────────────────────────────────
+   The card carries the passage in every installed translation; a row of
+   labels switches between them and "Compare" lists them together. Pure
+   CSS: the checked (hidden) radio shows its panel and lights its label. */
+.editor-root .md-sc-radio { display: none; }
+.editor-root .md-sc-texts > .md-sc-panel { display: none; }
+.editor-root .md-sc-switch {
+    display: inline-flex;
+    gap: 0.1rem;
+    padding: 0.08rem;
+    border-radius: 0.4rem;
+    background: color-mix(in srgb, var(--ed-scripture) 8%, transparent);
+}
+.editor-root .md-sc-switch > label {
+    padding: 0.05rem 0.4rem;
+    border-radius: 0.3rem;
+    font-size: 0.66rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ed-text-dim);
+    cursor: pointer;
+}
+.editor-root .md-sc-switch > label:hover { color: var(--ed-text); }
+.editor-root .md-sc-compare .md-sc-row + .md-sc-row { margin-top: 0.4rem; }
+.editor-root .md-sc-row {
+    display: grid;
+    grid-template-columns: 2.6rem 1fr;
+    gap: 0.5rem;
+    align-items: baseline;
+}
+.editor-root .md-sc-row-tx {
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--ed-scripture);
+}
+.editor-root .md-sc-row-text {
+    font-style: italic;
+    line-height: 1.5;
+}
+@media (pointer: coarse) {
+    .editor-root .md-sc-switch > label { padding: 0.35rem 0.6rem; font-size: 0.72rem; }
+}
+.editor-root .md-sc-radio:nth-of-type(1):checked ~ .md-sc-texts > .md-sc-panel:nth-child(1) { display: block; }
+.editor-root .md-sc-radio:nth-of-type(1):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(1) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
+.editor-root .md-sc-radio:nth-of-type(2):checked ~ .md-sc-texts > .md-sc-panel:nth-child(2) { display: block; }
+.editor-root .md-sc-radio:nth-of-type(2):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(2) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
+.editor-root .md-sc-radio:nth-of-type(3):checked ~ .md-sc-texts > .md-sc-panel:nth-child(3) { display: block; }
+.editor-root .md-sc-radio:nth-of-type(3):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(3) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
+.editor-root .md-sc-radio:nth-of-type(4):checked ~ .md-sc-texts > .md-sc-panel:nth-child(4) { display: block; }
+.editor-root .md-sc-radio:nth-of-type(4):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(4) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
+.editor-root .md-sc-radio:nth-of-type(5):checked ~ .md-sc-texts > .md-sc-panel:nth-child(5) { display: block; }
+.editor-root .md-sc-radio:nth-of-type(5):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(5) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
+.editor-root .md-sc-radio:nth-of-type(6):checked ~ .md-sc-texts > .md-sc-panel:nth-child(6) { display: block; }
+.editor-root .md-sc-radio:nth-of-type(6):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(6) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
+.editor-root .md-sc-radio:nth-of-type(7):checked ~ .md-sc-texts > .md-sc-panel:nth-child(7) { display: block; }
+.editor-root .md-sc-radio:nth-of-type(7):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(7) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
+.editor-root .md-sc-radio:nth-of-type(8):checked ~ .md-sc-texts > .md-sc-panel:nth-child(8) { display: block; }
+.editor-root .md-sc-radio:nth-of-type(8):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(8) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
