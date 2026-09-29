@@ -130,8 +130,7 @@ pub fn handle_bridge_msg(
             )
             .unwrap_or(0);
             let cur = state.read().clone();
-            if let Some(tx) =
-                editor_state::commands::toggle_fold(&cur, pos..pos.saturating_add(1))
+            if let Some(tx) = editor_state::commands::toggle_fold(&cur, pos..pos.saturating_add(1))
             {
                 apply_tx(state, &cur, tx.annotate("origin", "fold-toggle"), sink);
             }

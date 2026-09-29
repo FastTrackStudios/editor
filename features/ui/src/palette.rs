@@ -350,7 +350,12 @@ pub fn run_command(
             let at = slash_range.start;
             let selection = field.map_or_else(
                 || Selection::caret(at.saturating_add(text.len()).saturating_sub(caret_back)),
-                |f| Selection::single(editor_state::selection::Range::new(at + f.start, at + f.end)),
+                |f| {
+                    Selection::single(editor_state::selection::Range::new(
+                        at + f.start,
+                        at + f.end,
+                    ))
+                },
             );
             Some(
                 TransactionSpec::new()
@@ -834,9 +839,24 @@ fn push_study(out: &mut Vec<CommandEntry>) {
         });
     }
     for (label, desc, icon, snippet) in [
-        ("Source citation", "A timestamp into a source", "^t", "[[${source}#^t0|0:00]]"),
-        ("Scripture", "A reference badge", "[[b", "[[bible::${Book.C.V}|Book C:V]]"),
-        ("Word", "A Hebrew or Greek word's page", "אα", "[[${Word page}|transliteration]]"),
+        (
+            "Source citation",
+            "A timestamp into a source",
+            "^t",
+            "[[${source}#^t0|0:00]]",
+        ),
+        (
+            "Scripture",
+            "A reference badge",
+            "[[b",
+            "[[bible::${Book.C.V}|Book C:V]]",
+        ),
+        (
+            "Word",
+            "A Hebrew or Greek word's page",
+            "אα",
+            "[[${Word page}|transliteration]]",
+        ),
     ] {
         out.push(CommandEntry {
             label,
@@ -1019,10 +1039,19 @@ fn insert_block_snippet(
     let tail = stripped.after(anchor);
     let final_doc = format!("{head}{snippet}{tail}");
     let selection = field.map_or_else(
-        || Selection::caret(anchor.saturating_add(snippet.len()).saturating_sub(caret_back)),
+        || {
+            Selection::caret(
+                anchor
+                    .saturating_add(snippet.len())
+                    .saturating_sub(caret_back),
+            )
+        },
         |f| {
             let base = anchor + lead;
-            Selection::single(editor_state::selection::Range::new(base + f.start, base + f.end))
+            Selection::single(editor_state::selection::Range::new(
+                base + f.start,
+                base + f.end,
+            ))
         },
     );
     TransactionSpec::new()

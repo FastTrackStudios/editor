@@ -2355,7 +2355,10 @@ pub fn Editor(
             {
                 let caret = cur.selection.primary().head;
                 let spec = TransactionSpec::new()
-                    .changes(Changes::insert(caret, crate::palette::trigger().to_string()))
+                    .changes(Changes::insert(
+                        caret,
+                        crate::palette::trigger().to_string(),
+                    ))
                     .selection(Selection::caret(caret.saturating_add(1)))
                     .annotate("origin", "palette-open");
                 crate::event::apply_tx(state, &cur, spec, sink_for_keys);

@@ -124,7 +124,11 @@ fn readings(body: &str, vault: Option<&dyn VaultLookup>) -> Option<String> {
             inline(&question.join(" "), vault)
         );
     }
-    let _ = write!(out, r#"<div class="md-readings-grid" style="--n:{}">"#, all.len().min(3));
+    let _ = write!(
+        out,
+        r#"<div class="md-readings-grid" style="--n:{}">"#,
+        all.len().min(3)
+    );
     for r in &all {
         let _ = write!(
             out,
@@ -342,7 +346,12 @@ fn place_label(
             "middle" => x - w / 2.0,
             _ => x,
         };
-        Label { x0, y0: py + dy - h + 2.0, x1: x0 + w, y1: py + dy + 2.0 }
+        Label {
+            x0,
+            y0: py + dy - h + 2.0,
+            x1: x0 + w,
+            y1: py + dy + 2.0,
+        }
     };
     let fits = |b: &Label| b.x0 >= 0.0 && b.x1 <= width;
     let chosen = spots
@@ -371,12 +380,12 @@ struct Frame {
 
 impl Frame {
     fn fit(places: &[Place]) -> Self {
-        let (min_lat, max_lat) = places
-            .iter()
-            .fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p.lat), b.max(p.lat)));
-        let (min_lon, max_lon) = places
-            .iter()
-            .fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p.lon), b.max(p.lon)));
+        let (min_lat, max_lat) = places.iter().fold((f64::MAX, f64::MIN), |(a, b), p| {
+            (a.min(p.lat), b.max(p.lat))
+        });
+        let (min_lon, max_lon) = places.iter().fold((f64::MAX, f64::MIN), |(a, b), p| {
+            (a.min(p.lon), b.max(p.lon))
+        });
         let lat_scale = f64::midpoint(min_lat, max_lat).to_radians().cos().max(0.2);
         let pad = 1.5_f64;
         let (x0, x1) = ((min_lon - pad) * lat_scale, (max_lon + pad) * lat_scale);
@@ -424,13 +433,19 @@ fn map_svg(places: &[Place], routes: &[Vec<String>], title: Option<&str>) -> Str
     for deg in (-180_i32..=180).step_by(5) {
         let x = f.x(f64::from(deg));
         if (0.0..=width).contains(&x) {
-            let _ = write!(svg, r#"<line class="md-map-grid" x1="{x:.1}" y1="0" x2="{x:.1}" y2="{height:.0}"/>"#);
+            let _ = write!(
+                svg,
+                r#"<line class="md-map-grid" x1="{x:.1}" y1="0" x2="{x:.1}" y2="{height:.0}"/>"#
+            );
         }
     }
     for deg in (-90_i32..=90).step_by(5) {
         let y = f.y(f64::from(deg));
         if (0.0..=height).contains(&y) {
-            let _ = write!(svg, r#"<line class="md-map-grid" x1="0" y1="{y:.1}" x2="{width:.0}" y2="{y:.1}"/>"#);
+            let _ = write!(
+                svg,
+                r#"<line class="md-map-grid" x1="0" y1="{y:.1}" x2="{width:.0}" y2="{y:.1}"/>"#
+            );
         }
     }
     for route in routes {
@@ -455,7 +470,12 @@ fn map_svg(places: &[Place], routes: &[Vec<String>], title: Option<&str>) -> Str
         .iter()
         .map(|p| {
             let (px, py) = f.at(p);
-            Label { x0: px - 5.0, y0: py - 5.0, x1: px + 5.0, y1: py + 5.0 }
+            Label {
+                x0: px - 5.0,
+                y0: py - 5.0,
+                x1: px + 5.0,
+                y1: py + 5.0,
+            }
         })
         .collect();
     for p in places {
@@ -483,9 +503,15 @@ mod tests {
         let body = "Who are the gods?\n## Human judges\nIsrael's rulers.\n+ Fits the charge\n- Die like men\nheld: Calvin\n## Divine beings\nThe council.\nverdict: Divine beings.\n";
         let html = super::render("readings", body, 10, None).expect("readings");
         assert!(html.contains(r#"data-focus-pos="10""#), "{html}");
-        assert!(html.contains(r#"<div class="md-readings-q">Who are the gods?</div>"#), "{html}");
+        assert!(
+            html.contains(r#"<div class="md-readings-q">Who are the gods?</div>"#),
+            "{html}"
+        );
         assert_eq!(html.matches(r#"class="md-reading""#).count(), 2, "{html}");
-        assert!(html.contains("md-reading-pro") && html.contains("md-reading-con"), "{html}");
+        assert!(
+            html.contains("md-reading-pro") && html.contains("md-reading-con"),
+            "{html}"
+        );
         assert!(html.contains("<span>Held by</span> Calvin"), "{html}");
         assert!(html.contains("Where this lands"), "{html}");
         assert!(super::render("readings", "no sections here", 0, None).is_none());
@@ -493,8 +519,13 @@ mod tests {
 
     #[test]
     fn a_timeline_is_dated_rows() {
-        let html = super::render("timeline", "1928 | A tomb\n1929 | The dig\ncontinues here\n", 0, None)
-            .expect("timeline");
+        let html = super::render(
+            "timeline",
+            "1928 | A tomb\n1929 | The dig\ncontinues here\n",
+            0,
+            None,
+        )
+        .expect("timeline");
         assert_eq!(html.matches("<li>").count(), 2, "{html}");
         assert!(html.contains("The dig continues here"), "{html}");
     }

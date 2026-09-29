@@ -942,7 +942,11 @@ fn translation_switch(sc: &VaultScriptureHit, body: &str, at: usize) -> (String,
     }
     let group = format!("sc-{at}");
     let all: Vec<(String, String)> = std::iter::once((tx, body.to_owned()))
-        .chain(sc.alternates.iter().map(|(t, x)| (html_escape(t), html_escape(x))))
+        .chain(
+            sc.alternates
+                .iter()
+                .map(|(t, x)| (html_escape(t), html_escape(x))),
+        )
         .collect();
     let mut radios = String::new();
     let mut panels = String::new();
@@ -954,7 +958,10 @@ fn translation_switch(sc: &VaultScriptureHit, body: &str, at: usize) -> (String,
             radios,
             r#"<input type="radio" class="md-sc-radio" name="{group}" id="{group}-{i}"{checked}>"#
         );
-        let _ = write!(panels, r#"<span class="md-scripture-card-text md-sc-panel">{text}</span>"#);
+        let _ = write!(
+            panels,
+            r#"<span class="md-scripture-card-text md-sc-panel">{text}</span>"#
+        );
         let _ = write!(labels, r#"<label for="{group}-{i}">{id}</label>"#);
         let _ = write!(
             compare,
@@ -962,8 +969,14 @@ fn translation_switch(sc: &VaultScriptureHit, body: &str, at: usize) -> (String,
         );
     }
     let n = all.len();
-    let _ = write!(radios, r#"<input type="radio" class="md-sc-radio" name="{group}" id="{group}-{n}">"#);
-    let _ = write!(panels, r#"<span class="md-sc-panel md-sc-compare">{compare}</span>"#);
+    let _ = write!(
+        radios,
+        r#"<input type="radio" class="md-sc-radio" name="{group}" id="{group}-{n}">"#
+    );
+    let _ = write!(
+        panels,
+        r#"<span class="md-sc-panel md-sc-compare">{compare}</span>"#
+    );
     let _ = write!(labels, r#"<label for="{group}-{n}">Compare</label>"#);
     (
         radios,
@@ -1385,9 +1398,9 @@ fn shorten_repeated_sources(text: &str, decorations: &mut [DecoratedRange]) {
         else {
             continue;
         };
-        let again = last.as_ref().is_some_and(|(prev, at)| {
-            *prev == page && !text.slice(*at..d.from).contains("\n#")
-        });
+        let again = last
+            .as_ref()
+            .is_some_and(|(prev, at)| *prev == page && !text.slice(*at..d.from).contains("\n#"));
         if again {
             *html = shortened_source_chip(html);
         }
@@ -1405,7 +1418,11 @@ fn shortened_source_chip(html: &str) -> String {
     let Some((name, tail)) = rest.split_once("</span>") else {
         return html.to_owned();
     };
-    let head = head.replacen("md-source-chip\"", "md-source-chip md-source-chip--again\"", 1);
+    let head = head.replacen(
+        "md-source-chip\"",
+        "md-source-chip md-source-chip--again\"",
+        1,
+    );
     format!("{head}{NAME}{}</span>{tail}", short_name(name))
 }
 
@@ -1416,7 +1433,10 @@ fn short_name(name: &str) -> String {
     let words: Vec<&str> = name.split_whitespace().collect();
     let skip = usize::from(
         words.len() > 1
-            && matches!(words.first().map(|w| w.to_lowercase()).as_deref(), Some("the" | "a" | "an")),
+            && matches!(
+                words.first().map(|w| w.to_lowercase()).as_deref(),
+                Some("the" | "a" | "an")
+            ),
     );
     let Some(word) = words.get(skip) else {
         return name.to_owned();
@@ -1847,18 +1867,30 @@ fn decorate_link_span(
             .as_ref()
             .filter(|_| !cursor_touches(primary, span.outer.clone()))
         {
-            out.extend(badge(span, &display, scripture_chip_html(&h, sc, alias.as_deref())));
+            out.extend(badge(
+                span,
+                &display,
+                scripture_chip_html(&h, sc, alias.as_deref()),
+            ));
             return true;
         }
         let preview = page_preview(span.class, cls, &h, vault);
         let mut attrs = vec![("data-href".into(), h)];
         attrs.extend(link_title.map(|t| ("title".into(), t)));
-        attrs.extend(scripture_hit.as_ref().and_then(scripture_tooltip).map(|t| ("title".into(), t)));
+        attrs.extend(
+            scripture_hit
+                .as_ref()
+                .and_then(scripture_tooltip)
+                .map(|t| ("title".into(), t)),
+        );
         // A page link previews its page — the summary, or the opening
         // lines — in the hover card, so a reader can see what it is
         // without leaving.
         if let Some((page, text)) = preview {
-            attrs.extend([("data-preview-head".into(), page), ("data-preview".into(), text)]);
+            attrs.extend([
+                ("data-preview-head".into(), page),
+                ("data-preview".into(), text),
+            ]);
         }
         out.push(Decoration::mark_with_attrs(display, cls, attrs));
         if !cursor_touches(primary, span.outer.clone()) {
@@ -1894,7 +1926,12 @@ fn page_preview(
     if span_class != "md-wikilink" || cls != "md-wikilink" {
         return None;
     }
-    let page = href.split(['#', '|']).next().unwrap_or(href).trim().to_owned();
+    let page = href
+        .split(['#', '|'])
+        .next()
+        .unwrap_or(href)
+        .trim()
+        .to_owned();
     let hit = vault?.lookup_page(&page)?;
     (!hit.preview.trim().is_empty()).then_some((page, hit.preview))
 }
@@ -1977,7 +2014,12 @@ fn decorate_source_citation(
     out.push(Decoration::replace(display.clone()));
     out.push(Decoration::widget(
         display.start,
-        source_chip_html(target, &src, alias.as_deref(), cited_passage(target, vault).as_deref()),
+        source_chip_html(
+            target,
+            &src,
+            alias.as_deref(),
+            cited_passage(target, vault).as_deref(),
+        ),
     ));
     out.push(Decoration::atomic(span.outer.clone()));
     true
@@ -2066,7 +2108,11 @@ fn word_chip_html(href: &str, w: &VaultWordHit, label: Option<&str>) -> String {
             html_escape(&w.lemma)
         );
     }
-    let _ = write!(out, r#"<span class="md-word-translit">{}</span></span>"#, html_escape(label));
+    let _ = write!(
+        out,
+        r#"<span class="md-word-translit">{}</span></span>"#,
+        html_escape(label)
+    );
     out
 }
 
@@ -2081,7 +2127,13 @@ fn source_chip_html(
     passage: Option<&str>,
 ) -> String {
     let locator = label.map(str::to_owned).or_else(|| {
-        let secs: u64 = href.split_once("#^t")?.1.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()?;
+        let secs: u64 = href
+            .split_once("#^t")?
+            .1
+            .split(|c: char| !c.is_ascii_digit())
+            .next()?
+            .parse()
+            .ok()?;
         Some(clock(secs))
     });
     let tip = if src.author.is_empty() {
@@ -2108,7 +2160,11 @@ fn source_chip_html(
         html_escape(&src.short),
     );
     if let Some(at) = locator.filter(|l| !l.trim().is_empty()) {
-        let _ = write!(out, r#"<span class="md-source-loc">{}</span>"#, html_escape(at.trim()));
+        let _ = write!(
+            out,
+            r#"<span class="md-source-loc">{}</span>"#,
+            html_escape(at.trim())
+        );
     }
     out.push_str("</span>");
     out
@@ -3014,7 +3070,10 @@ fn open_fence_at_line(
         // editing).
         if crate::study_blocks::is_study_fence(info) {
             let body_end = find_fence_close(text, content_start, mc, mlen);
-            let close_end = text.after(body_end).find('\n').map_or(text.len(), |i| body_end.saturating_add(i));
+            let close_end = text
+                .after(body_end)
+                .find('\n')
+                .map_or(text.len(), |i| body_end.saturating_add(i));
             let whole = line_from..close_end;
             let body = text.slice(content_start..body_end);
             if !cursor_touches(primary, whole.clone())
@@ -3389,7 +3448,15 @@ fn scan_blocks(
 
         // ── Starting a fence ───────────────────────────────
         let trimmed = line.trim_start();
-        if open_fence_at_line(text, trimmed, line_from..line_to, primary, &mut fence, vault, out) {
+        if open_fence_at_line(
+            text,
+            trimmed,
+            line_from..line_to,
+            primary,
+            &mut fence,
+            vault,
+            out,
+        ) {
             continue;
         }
 
@@ -5519,9 +5586,18 @@ mod tests {
         let vault = scripture_vault("John 3:16", Some("For God so loved the world…"));
         let decs = super::live_preview_with(&s, Some(&vault));
         let chip = widget_with(&decs, "md-scripture-chip").expect("a chip");
-        assert!(chip.contains(r#"<span class="md-scripture-book">John</span>"#), "{chip}");
-        assert!(chip.contains(r#"<span class="md-scripture-ch">3</span>"#), "{chip}");
-        assert!(chip.contains(r#"<span class="md-scripture-vs">16</span>"#), "{chip}");
+        assert!(
+            chip.contains(r#"<span class="md-scripture-book">John</span>"#),
+            "{chip}"
+        );
+        assert!(
+            chip.contains(r#"<span class="md-scripture-ch">3</span>"#),
+            "{chip}"
+        );
+        assert!(
+            chip.contains(r#"<span class="md-scripture-vs">16</span>"#),
+            "{chip}"
+        );
         assert!(
             chip.contains("For God so loved"),
             "the verse is the tooltip: {chip}"
@@ -5554,7 +5630,10 @@ mod tests {
         let named = state("see [[bible::John.3.16|John 3:16]] here", 0);
         let decs = super::live_preview_with(&named, Some(&vault));
         let chip = widget_with(&decs, "md-scripture-chip").expect("a chip");
-        assert!(chip.contains(r#"<span class="md-scripture-vs">16</span>"#), "{chip}");
+        assert!(
+            chip.contains(r#"<span class="md-scripture-vs">16</span>"#),
+            "{chip}"
+        );
         let editing = state("see [[bible::John.3.16]] here", 10);
         let decs = super::live_preview_with(&editing, Some(&vault));
         assert!(widget_with(&decs, "md-scripture-chip").is_none());
@@ -5587,9 +5666,18 @@ mod tests {
         let chip = widget_with(&decs, "md-source-chip").expect("a badge");
         assert!(chip.contains(r#"data-kind="youtube""#), "{chip}");
         assert!(chip.contains(">The Other Gods<"), "{chip}");
-        assert!(chip.contains(r#"<span class="md-source-loc">20:26</span>"#), "{chip}");
-        assert!(chip.contains("— Nils Glenn"), "the tooltip names the author: {chip}");
-        assert!(chip.contains(r#"data-href="other-gods-ac25#^t1226""#), "{chip}");
+        assert!(
+            chip.contains(r#"<span class="md-source-loc">20:26</span>"#),
+            "{chip}"
+        );
+        assert!(
+            chip.contains("— Nils Glenn"),
+            "the tooltip names the author: {chip}"
+        );
+        assert!(
+            chip.contains(r#"data-href="other-gods-ac25#^t1226""#),
+            "{chip}"
+        );
 
         // No display text: the anchor becomes the clock time.
         let s = state("see [[other-gods-ac25#^t3725]]", 0);
@@ -5599,7 +5687,10 @@ mod tests {
 
         // In a table cell too.
         let cell = super::render_table_cell("[[other-gods-ac25#^t46|0:46]]", Some(&vault));
-        assert!(cell.contains("md-source-chip") && cell.contains(">0:46<"), "{cell}");
+        assert!(
+            cell.contains("md-source-chip") && cell.contains(">0:46<"),
+            "{cell}"
+        );
 
         // Caret inside: the source text.
         let s = state("see [[other-gods-ac25#^t46|0:46]]", 8);
@@ -5639,12 +5730,22 @@ mod tests {
         };
         let a = "[[other-gods-ac25#^t46|0:46]]";
         let b = "[[b-src|p. 42]]";
-        assert_eq!(names(&format!("x {a} y {a} z\n")), ["The Other Gods", "Other…"]);
+        assert_eq!(
+            names(&format!("x {a} y {a} z\n")),
+            ["The Other Gods", "Other…"]
+        );
         assert_eq!(
             names(&format!("x {a} y {b} z {a}\n")),
-            ["The Other Gods", "Ancient Conquest Accounts", "The Other Gods"]
+            [
+                "The Other Gods",
+                "Ancient Conquest Accounts",
+                "The Other Gods"
+            ]
         );
-        assert_eq!(names(&format!("x {a}\n\n## Next\n\ny {a}\n")), ["The Other Gods", "The Other Gods"]);
+        assert_eq!(
+            names(&format!("x {a}\n\n## Next\n\ny {a}\n")),
+            ["The Other Gods", "The Other Gods"]
+        );
         assert_eq!(super::short_name("Genesis"), "Genesis");
         assert_eq!(super::short_name("Unforgettable Encounters"), "Unforget…");
     }
@@ -5654,7 +5755,10 @@ mod tests {
         let doc = "---\ntitle: T\nsummary: The page in *one* line.\n---\n\n# T\n\nBody\n";
         let decs = super::live_preview(&state(doc, doc.len()));
         let lede = widget_with(&decs, "md-lede").expect("a lede");
-        assert!(lede.contains(r#"in <span class="md-italic">one</span> line."#), "{lede}");
+        assert!(
+            lede.contains(r#"in <span class="md-italic">one</span> line."#),
+            "{lede}"
+        );
         // Caret on the title: no lede in the way.
         let at = doc.find("# T").unwrap() + 2;
         assert!(widget_with(&super::live_preview(&state(doc, at)), "md-lede").is_none());
@@ -5670,7 +5774,9 @@ mod tests {
         let mut vault = source_vault();
         vault.pages.insert(
             "Elohim".into(),
-            super::VaultPageHit { preview: "Not a name but a category.".into() },
+            super::VaultPageHit {
+                preview: "Not a name but a category.".into(),
+            },
         );
         vault.blocks.insert(
             "other-gods-ac25#^t1226".into(),
@@ -5695,11 +5801,23 @@ mod tests {
             crate::decoration::DecorationKind::Mark { attrs, .. }
                 if attrs.iter().any(|(k, v)| k == "data-preview" && v == "Not a name but a category."))));
         let cite = widget_with(&decs, "md-source-chip").expect("a badge");
-        assert!(cite.contains(r#"data-preview="Mount Sinai matters so much""#), "{cite}");
+        assert!(
+            cite.contains(r#"data-preview="Mount Sinai matters so much""#),
+            "{cite}"
+        );
         let word = widget_with(&decs, "md-word-chip").expect("a word");
-        assert!(word.contains(r#"<span class="md-word-lemma" lang="he" dir="rtl">חֵרֶם</span>"#), "{word}");
-        assert!(word.contains(r#"<span class="md-word-translit">ḥērem</span>"#), "{word}");
-        assert!(word.contains(r#"data-preview-head="חֵרֶם · ḥērem · H2764""#), "{word}");
+        assert!(
+            word.contains(r#"<span class="md-word-lemma" lang="he" dir="rtl">חֵרֶם</span>"#),
+            "{word}"
+        );
+        assert!(
+            word.contains(r#"<span class="md-word-translit">ḥērem</span>"#),
+            "{word}"
+        );
+        assert!(
+            word.contains(r#"data-preview-head="חֵרֶם · ḥērem · H2764""#),
+            "{word}"
+        );
     }
 
     /// `![[Page#Heading]]` renders the section in full — here a list and a
@@ -5707,7 +5825,12 @@ mod tests {
     #[test]
     fn a_section_embed_renders_the_section() {
         let mut vault = FakeVault::default();
-        vault.pages.insert("Other".into(), super::VaultPageHit { preview: "x".into() });
+        vault.pages.insert(
+            "Other".into(),
+            super::VaultPageHit {
+                preview: "x".into(),
+            },
+        );
         vault.sections.insert(
             ("Three".into(), "Tiers".into()),
             "- **Yahweh** over all\n- the sons of God, see [[Other]]\n".into(),
@@ -5717,7 +5840,10 @@ mod tests {
         let card = widget_with(&decs, "md-embed-section").expect("an embed");
         assert!(card.contains(r#"data-href="Three#Tiers""#), "{card}");
         assert!(card.contains("md-bold"), "{card}");
-        assert!(card.contains(r#"data-href="Other""#) && !card.contains("md-wikilink-unresolved"), "{card}");
+        assert!(
+            card.contains(r#"data-href="Other""#) && !card.contains("md-wikilink-unresolved"),
+            "{card}"
+        );
     }
 
     /// A collapsible callout starts as written (`-` folded) and a fold
@@ -5726,8 +5852,10 @@ mod tests {
     fn a_folded_callout_opens_when_toggled() {
         let doc = "> [!note]- How firm is this?\n> Not very.\n";
         let folded = |s: &crate::EditorState| {
-            super::live_preview(s).iter().any(|d| matches!(&d.kind,
-                crate::decoration::DecorationKind::Line { class } if class == "md-callout-folded"))
+            super::live_preview(s).iter().any(|d| {
+                matches!(&d.kind,
+                crate::decoration::DecorationKind::Line { class } if class == "md-callout-folded")
+            })
         };
         let mut s = state(doc, doc.len());
         assert!(folded(&s));
@@ -5746,8 +5874,11 @@ mod tests {
             hit.alternates = vec![("KJV".into(), "For God so loved the world, that".into())];
         }
         let doc = "[[bible::John.3.16|John 3:16]]\n";
-        let card = widget_with(&super::live_preview_with(&state(doc, doc.len()), Some(&vault)), "md-scripture-card")
-            .expect("a card");
+        let card = widget_with(
+            &super::live_preview_with(&state(doc, doc.len()), Some(&vault)),
+            "md-scripture-card",
+        )
+        .expect("a card");
         assert_eq!(card.matches(r#"class="md-sc-radio""#).count(), 3, "{card}");
         assert!(card.contains(r#"<label for="sc-0-0">WEB</label><label for="sc-0-1">KJV</label><label for="sc-0-2">Compare</label>"#), "{card}");
         assert!(card.contains(r#"<span class="md-sc-row-tx">KJV</span><span class="md-sc-row-text">For God so loved the world, that</span>"#), "{card}");
@@ -5757,22 +5888,39 @@ mod tests {
     #[test]
     fn links_inside_tabs_resolve() {
         let mut vault = FakeVault::default();
-        vault.pages.insert("Other".into(), super::VaultPageHit { preview: "x".into() });
+        vault.pages.insert(
+            "Other".into(),
+            super::VaultPageHit {
+                preview: "x".into(),
+            },
+        );
         let doc = "```tabs\n=== One\nsee [[Other]] and [[Nowhere]]\n=== Two\ntext\n```\n";
         let decs = super::live_preview_with(&state(doc, doc.len()), Some(&vault));
         let tabs = widget_with(&decs, "md-tabs-widget").expect("tabs");
-        assert!(tabs.contains(r#"class="md-wikilink" data-href="Other""#), "{tabs}");
-        assert!(tabs.contains("md-wikilink-unresolved"), "Nowhere stays unresolved: {tabs}");
+        assert!(
+            tabs.contains(r#"class="md-wikilink" data-href="Other""#),
+            "{tabs}"
+        );
+        assert!(
+            tabs.contains("md-wikilink-unresolved"),
+            "Nowhere stays unresolved: {tabs}"
+        );
     }
 
     #[test]
     fn a_reference_splits_into_book_chapter_and_verses() {
         use super::reference_parts as p;
         assert_eq!(p("John 3:16"), Some(("John", "3", Some("16"))));
-        assert_eq!(p("1 Corinthians 15:24–25"), Some(("1 Corinthians", "15", Some("24–25"))));
+        assert_eq!(
+            p("1 Corinthians 15:24–25"),
+            Some(("1 Corinthians", "15", Some("24–25")))
+        );
         assert_eq!(p("Job 1:6–2:7"), Some(("Job", "1", Some("6–2:7"))));
         assert_eq!(p("Revelation 4–5"), Some(("Revelation", "4–5", None)));
-        assert_eq!(p("Song of Solomon 2:1"), Some(("Song of Solomon", "2", Some("1"))));
+        assert_eq!(
+            p("Song of Solomon 2:1"),
+            Some(("Song of Solomon", "2", Some("1")))
+        );
         assert_eq!(p("the verse"), None);
         assert_eq!(p("1 2"), None);
     }
@@ -5791,7 +5939,10 @@ mod tests {
         let vault = scripture_vault("bible::John.3.16", Some("For God so loved…"));
         let chip = super::render_table_cell("[[bible::John.3.16]]", Some(&vault));
         assert!(chip.contains("md-scripture-chip"), "{chip}");
-        assert!(chip.contains(r#"<span class="md-scripture-ch">3</span>"#), "{chip}");
+        assert!(
+            chip.contains(r#"<span class="md-scripture-ch">3</span>"#),
+            "{chip}"
+        );
         let aliased = super::render_table_cell("[[bible::John.3.16|the verse]]", Some(&vault));
         assert!(aliased.contains(">the verse<"), "{aliased}");
         let missing = super::render_table_cell("[[Nowhere]]", Some(&vault));
@@ -5810,7 +5961,10 @@ mod tests {
         let card = widget_with(&decs, "md-scripture-card").expect("a card");
         assert!(card.contains("For God so loved"), "{card}");
         assert!(card.contains(r#"data-focus-pos="41">the <span class="md-italic">whole</span> gospel in one verse</span>"#), "{card}");
-        assert!(card.contains(r#"<span class="md-scripture-ch">3</span>"#), "{card}");
+        assert!(
+            card.contains(r#"<span class="md-scripture-ch">3</span>"#),
+            "{card}"
+        );
         // The card draws the whole line; nothing else is decorated
         // inside it (the italic, the brackets), or the source leaks
         // out around the widget.
