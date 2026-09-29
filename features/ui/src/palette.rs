@@ -222,15 +222,43 @@ pub struct PaletteState {
 /// Operates on the slice from the start of the current line up to the
 /// caret, so a trigger deep in the doc doesn't hold the menu open across
 /// line breaks.
-/// The character that opens the palette.
+/// The character that opens the palette by default.
 ///
 /// Backslash rather than slash: see the module docs. `/` is ordinary,
 /// frequent text in a Keyflow chart, and a palette bound to it fired
-/// constantly against the user's intent.
+/// constantly against the user's intent. A host whose buffers are prose
+/// — Task's notes and wikis — sets `/` with [`set_trigger`].
 pub const TRIGGER: char = '\\';
+
+static ACTIVE_TRIGGER: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(TRIGGER as u32);
+
+/// Choose the character that opens the palette, for this process.
+///
+/// `\\` (the default) opens anywhere; any other character — `/` in
+/// practice — opens only at the start of a line or after whitespace, so
+/// `https://`, `and/or` and `4/4` never do.
+pub fn set_trigger(c: char) {
+    ACTIVE_TRIGGER.store(c as u32, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The character that opens the palette now.
+#[must_use]
+pub fn trigger() -> char {
+    char::from_u32(ACTIVE_TRIGGER.load(std::sync::atomic::Ordering::Relaxed)).unwrap_or(TRIGGER)
+}
 
 #[must_use]
 pub fn detect_trigger(doc: &str, caret: usize) -> Option<(usize, String)> {
+    detect_trigger_with(doc, caret, trigger())
+}
+
+/// [`detect_trigger`] for an explicit trigger character.
+#[must_use]
+pub fn detect_trigger_with(doc: &str, caret: usize, trig: char) -> Option<(usize, String)> {
+    let Ok(trig) = u8::try_from(u32::from(trig)) else {
+        return None;
+    };
     let caret = caret.min(doc.len());
     let line_start = doc
         .before(caret)
@@ -241,12 +269,22 @@ pub fn detect_trigger(doc: &str, caret: usize) -> Option<(usize, String)> {
     let mut i = bytes.len();
     while i > 0 {
         let c = *bytes.get(i.saturating_sub(1))?;
-        if c == TRIGGER as u8 {
+        if c == trig {
             // A doubled trigger is an escaped backslash (`\\`), which is a
             // literal backslash in markdown and not a command.
             if i >= 2 {
                 let prev = *bytes.get(i.saturating_sub(2))?;
-                if prev == TRIGGER as u8 {
+                if prev == trig {
+                    return None;
+                }
+            }
+            // Any trigger but the backslash is ordinary text in the
+            // middle of a word (`and/or`, `https://`): it opens the menu
+            // only where a command could start — the start of the line or
+            // after whitespace.
+            if trig != TRIGGER as u8 && i >= 2 {
+                let prev = *bytes.get(i.saturating_sub(2))?;
+                if !char::from(prev).is_whitespace() {
                     return None;
                 }
             }
@@ -308,14 +346,21 @@ pub fn run_command(
     }
     match cmd {
         CommandKind::InsertSnippet(text, caret_back) => {
-            let new_caret = slash_range
-                .start
-                .saturating_add(text.len())
-                .saturating_sub(caret_back);
+            let (text, field) = expand_placeholders(text);
+            let at = slash_range.start;
+            let selection = field.map_or_else(
+                || Selection::caret(at.saturating_add(text.len()).saturating_sub(caret_back)),
+                |f| {
+                    Selection::single(editor_state::selection::Range::new(
+                        at + f.start,
+                        at + f.end,
+                    ))
+                },
+            );
             Some(
                 TransactionSpec::new()
                     .changes(Changes::replace(slash_range, text))
-                    .selection(Selection::caret(new_caret))
+                    .selection(selection)
                     .annotate("origin", "palette"),
             )
         }
@@ -539,6 +584,7 @@ pub fn markdown_commands() -> Vec<CommandEntry> {
     push_lists(&mut out);
     push_code_and_math(&mut out);
     push_callouts(&mut out);
+    push_study(&mut out);
     push_block_refs(&mut out);
     push_embeds_and_links(&mut out);
     out
@@ -729,6 +775,99 @@ fn push_code_and_math(out: &mut Vec<CommandEntry>) {
 ///
 /// One of the sections of [`all_commands`], split out so that function stays
 /// a readable table of contents rather than a 240-line body.
+/// The study blocks and badges — the structures a wiki page on a hard
+/// subject is made of (see `skills/wiki-style.md` in Task). Each inserts
+/// its boilerplate with the first `${field}` selected, so the next thing
+/// typed replaces it.
+fn push_study(out: &mut Vec<CommandEntry>) {
+    for (label, desc, icon, snippet) in [
+        (
+            "Readings",
+            "Positions side by side: for, against, held by",
+            "±",
+            "```readings\n${The question the positions answer?}\n## First position\nWhat it says.\n+ Its best evidence\n- Its real weakness\nheld: Who holds it\n## Second position\nWhat it says.\n+ Its best evidence\n- Its real weakness\nheld: Who holds it\nverdict: Where this page lands\n```\n",
+        ),
+        (
+            "Timeline",
+            "Dated rows: date | event",
+            "|—",
+            "```timeline\n${1928} | What happened\n1929 | What happened next\n```\n",
+        ),
+        (
+            "Map",
+            "Places to scale, with a route",
+            "@",
+            "```map\ntitle: ${Title}\nJerusalem | 31.78, 35.23 | a note\nRome | 41.90, 12.50\nroute: Jerusalem > Rome\n```\n",
+        ),
+        (
+            "Verse card",
+            "The verse itself, with your note",
+            "[[b",
+            "[[bible::${Book.C.V}|Book C:V]] — what this verse adds\n",
+        ),
+        (
+            "Folded section",
+            "How firm is this? / Contested — starts folded",
+            ">-",
+            "> [!question]- ${How firm is this?}\n> What is certain, what is not, and who disagrees.\n",
+        ),
+        (
+            "Tabs",
+            "Parallel versions (no links inside)",
+            "===",
+            "```tabs\n=== ${First}\nText\n=== Second\nText\n```\n",
+        ),
+        (
+            "Section embed",
+            "Show another page's section here",
+            "![[",
+            "![[${Page}#Heading]]\n",
+        ),
+        (
+            "Path step",
+            "A step on a study path",
+            "1.",
+            "1. [[${Page}]] — why it is here\n",
+        ),
+    ] {
+        out.push(CommandEntry {
+            label,
+            group: "Study",
+            desc,
+            kind: CommandKind::InsertBlockSnippet(snippet, 0),
+            icon,
+        });
+    }
+    for (label, desc, icon, snippet) in [
+        (
+            "Source citation",
+            "A timestamp into a source",
+            "^t",
+            "[[${source}#^t0|0:00]]",
+        ),
+        (
+            "Scripture",
+            "A reference badge",
+            "[[b",
+            "[[bible::${Book.C.V}|Book C:V]]",
+        ),
+        (
+            "Word",
+            "A Hebrew or Greek word's page",
+            "אα",
+            "[[${Word page}|transliteration]]",
+        ),
+    ] {
+        out.push(CommandEntry {
+            label,
+            group: "Study",
+            desc,
+            kind: CommandKind::InsertSnippet(snippet, 0),
+            icon,
+        });
+    }
+}
+
 fn push_callouts(out: &mut Vec<CommandEntry>) {
     // ── Callouts ────────────────────────────────────────────
     // All 13 canonical Obsidian types. Snippet always has a
@@ -839,6 +978,30 @@ fn push_embeds_and_links(out: &mut Vec<CommandEntry>) {
 /// Split out of [`run_command`]'s `match`: this arm carries the block-context
 /// handling (leading blank line, list-prefix stripping) that the inline
 /// snippet arm does not, and it dominated that function's length.
+/// A snippet's `${placeholder}` fields: the text with the markers taken
+/// out, and the first field's range in it — selected on insert, so
+/// typing replaces it, the way a code editor's snippets work. A snippet
+/// with no field returns `None` (the caret rule applies).
+fn expand_placeholders(text: &str) -> (String, Option<std::ops::Range<usize>>) {
+    let mut out = String::with_capacity(text.len());
+    let mut first = None;
+    let mut rest = text;
+    while let Some(i) = rest.find("${") {
+        let Some(len) = rest[i + 2..].find('}') else {
+            break;
+        };
+        out.push_str(&rest[..i]);
+        let body = &rest[i + 2..i + 2 + len];
+        if first.is_none() {
+            first = Some(out.len()..out.len() + body.len());
+        }
+        out.push_str(body);
+        rest = &rest[i + 3 + len..];
+    }
+    out.push_str(rest);
+    (out, first)
+}
+
 fn insert_block_snippet(
     doc: &str,
     slash_range: std::ops::Range<usize>,
@@ -854,11 +1017,13 @@ fn insert_block_snippet(
         .map_or(0, |n| n.saturating_add(1));
     let prefix_text = doc.slice(line_start..slash_range.start);
     let line_has_content = !prefix_text.trim().is_empty();
+    let (text, field) = expand_placeholders(text);
     let snippet = if line_has_content {
         format!("\n{text}")
     } else {
-        text.to_string()
+        text.clone()
     };
+    let lead = usize::from(line_has_content);
     // Build the final doc directly: strip the `/query`,
     // then insert the block snippet at the line-aware
     // anchor.
@@ -873,12 +1038,25 @@ fn insert_block_snippet(
     let head = stripped.before(anchor);
     let tail = stripped.after(anchor);
     let final_doc = format!("{head}{snippet}{tail}");
-    let new_caret = anchor
-        .saturating_add(snippet.len())
-        .saturating_sub(caret_back);
+    let selection = field.map_or_else(
+        || {
+            Selection::caret(
+                anchor
+                    .saturating_add(snippet.len())
+                    .saturating_sub(caret_back),
+            )
+        },
+        |f| {
+            let base = anchor + lead;
+            Selection::single(editor_state::selection::Range::new(
+                base + f.start,
+                base + f.end,
+            ))
+        },
+    );
     TransactionSpec::new()
         .changes(Changes::replace(0..doc.len(), final_doc))
-        .selection(Selection::caret(new_caret))
+        .selection(selection)
         .annotate("origin", "palette")
 }
 
@@ -919,6 +1097,37 @@ mod tests {
         for esc in ["\\*", "\\_", "\\[", "\\#", "\\`", "\\!", "\\.", "\\-"] {
             assert_eq!(detect_trigger(esc, esc.len()), None, "{esc} is an escape");
         }
+    }
+
+    /// A slash trigger opens only where a command could start.
+    #[test]
+    fn a_slash_trigger_opens_only_at_a_word_start() {
+        use super::detect_trigger_with as d;
+        assert_eq!(d("/read", 5, '/'), Some((0, "read".to_string())));
+        assert_eq!(d("see /time", 9, '/'), Some((4, "time".to_string())));
+        assert_eq!(d("and/or", 6, '/'), None);
+        assert_eq!(d("https://x", 9, '/'), None);
+        assert_eq!(d("4/4", 3, '/'), None);
+    }
+
+    /// `${field}` markers come out, and the first field is selected.
+    #[test]
+    fn a_snippet_selects_its_first_field() {
+        let (text, field) = super::expand_placeholders("```map\ntitle: ${Title}\n${x}\n```");
+        assert_eq!(text, "```map\ntitle: Title\nx\n```");
+        assert_eq!(field.map(|f| &text[f]), Some("Title"));
+        let doc = "intro\n/read";
+        let state = editor_state::EditorState::new(doc.to_string());
+        let spec = super::run_command(
+            &state,
+            6..11,
+            super::CommandKind::InsertBlockSnippet("```readings\n${Q?}\n```\n", 0),
+        )
+        .expect("a spec");
+        let next = state.update(spec);
+        assert_eq!(next.doc.to_string(), "intro\n```readings\nQ?\n```\n");
+        let sel = next.selection.primary();
+        assert_eq!(&next.doc.to_string()[sel.from()..sel.to()], "Q?");
     }
 
     #[test]

@@ -1984,59 +1984,212 @@
 }
 
 /* ── Scripture chip + verse card ([[John 3:16]]) ───────────────────── */
+/* A badge that lives inside the line: `display: inline` (an inline-flex
+   pill is its own box and pushed the lines around it apart), the edge a
+   box-shadow rather than a border, and vertical padding that paints
+   without adding height. A book in scripture's brown says what it is; the numbers are tabular so `11:21` and `82:1` sit alike. The verse
+   is the tooltip. */
+.editor-root .md-wikilink.md-scripture-chip,
 .editor-root .md-scripture-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.05rem 0.55rem;
-    border-radius: 999px;
-    border: 1px solid var(--ed-border);
-    background: color-mix(in srgb, var(--ed-tag) 12%, transparent);
+    display: inline;
+    white-space: nowrap;
+    padding: 0.12em 0.45em 0.12em 0.38em;
+    margin: 0 0.04em;
+    border-radius: 0.4em;
+    background: color-mix(in srgb, var(--ed-scripture) 9%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ed-scripture) 22%, transparent);
     color: var(--ed-text);
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: 0.84em;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.005em;
     text-decoration: none;
+    cursor: pointer;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    transition: background-color 120ms ease, box-shadow 120ms ease;
 }
 .editor-root .md-scripture-chip::before {
-    content: "📖";
-    font-size: 0.72em;
-    line-height: 1;
+    content: "";
+    display: inline-block;
+    width: 0.95em;
+    height: 0.95em;
+    margin-right: 0.32em;
+    vertical-align: -0.15em;
+    background-color: var(--ed-scripture);
+    -webkit-mask: var(--ed-scripture-icon) center / contain no-repeat;
+    mask: var(--ed-scripture-icon) center / contain no-repeat;
 }
+/* The reference in three voices, so `1 Corinthians 15:24–25` reads at a
+   glance: the book plain, the chapter heavy, the verses in the brown
+   ink after a light colon. */
+.editor-root .md-scripture-book {
+    font-weight: 500;
+}
+.editor-root .md-scripture-ch {
+    font-weight: 700;
+}
+.editor-root .md-scripture-sep {
+    margin: 0 0.06em;
+    opacity: 0.5;
+}
+.editor-root .md-scripture-vs {
+    font-weight: 500;
+    color: color-mix(in srgb, var(--ed-scripture) 75%, var(--ed-text));
+}
+.editor-root .md-scripture-chip:hover {
+    background: color-mix(in srgb, var(--ed-scripture) 20%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ed-scripture) 60%, transparent);
+}
+.editor-root {
+    /* Scripture's colour: leather-Bible brown. A host theme can set
+       `--scripture` to change it. */
+    --ed-scripture: var(--scripture, #b5804f);
+    /* Lucide's book-open, as a mask so it takes the scripture colour. */
+    --ed-scripture-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 7v14'/%3E%3Cpath d='M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z'/%3E%3C/svg%3E");
+}
+/* ── Source badge ([[talk#^t1226|20:26]]) ─────────────────────────────
+   A citation reads as what it cites and where in it: an icon for the
+   kind of source, its short name, then the locator after a hairline.
+   Inline, like the scripture badge, so it never spreads the line; the
+   full title and author are the tooltip. */
+.editor-root .md-wikilink.md-source-chip,
+.editor-root .md-source-chip {
+    display: inline;
+    white-space: nowrap;
+    padding: 0.12em 0.45em 0.12em 0.38em;
+    margin: 0 0.04em;
+    border-radius: 0.4em;
+    background: color-mix(in srgb, var(--ed-text) 5%, transparent);
+    box-shadow: inset 0 0 0 1px var(--ed-border);
+    color: var(--ed-text);
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: 0.78em;
+    font-weight: 500;
+    letter-spacing: 0.005em;
+    text-decoration: none;
+    cursor: pointer;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+.editor-root .md-source-chip::before {
+    content: "";
+    display: inline-block;
+    width: 1.05em;
+    height: 1.05em;
+    margin-right: 0.34em;
+    vertical-align: -0.2em;
+    background-color: var(--ed-source-ink, var(--ed-text-dim));
+    -webkit-mask: var(--ed-source-icon) center / contain no-repeat;
+    mask: var(--ed-source-icon) center / contain no-repeat;
+}
+.editor-root .md-source-chip { --ed-source-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4M16 13H8M16 17H8M10 9H8'/%3E%3C/svg%3E"); }
+.editor-root .md-source-chip[data-kind="paper"] { --ed-source-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4M16 13H8M16 17H8M10 9H8'/%3E%3C/svg%3E"); }
+.editor-root .md-source-chip[data-kind="video"] { --ed-source-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='18' x='3' y='3' rx='2'/%3E%3Cpath d='M7 3v18M3 7.5h4M3 12h18M3 16.5h4M17 3v18M17 7.5h4M17 16.5h4'/%3E%3C/svg%3E"); --ed-source-ink: #e5484d; }
+.editor-root .md-source-chip[data-kind="podcast"] { --ed-source-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 19v3'/%3E%3Cpath d='M19 10v2a7 7 0 0 1-14 0v-2'/%3E%3Crect x='9' y='2' width='6' height='13' rx='3'/%3E%3C/svg%3E"); --ed-source-ink: #a78bfa; }
+.editor-root .md-source-chip[data-kind="book"] { --ed-source-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20'/%3E%3C/svg%3E"); --ed-source-ink: #7c93f5; }
+.editor-root .md-source-chip[data-kind="article"] { --ed-source-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 18h-5M18 14h-8'/%3E%3Cpath d='M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2'/%3E%3Crect width='8' height='4' x='10' y='6' rx='1'/%3E%3C/svg%3E"); --ed-source-ink: #38a8e0; }
+.editor-root .md-source-chip[data-kind="web"] { --ed-source-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20'/%3E%3C/svg%3E"); --ed-source-ink: #2fb39a; }
+/* YouTube keeps its own mark — red, with the white play — so it is an
+   image rather than a mask in one colour. */
+.editor-root .md-source-chip[data-kind="youtube"]::before {
+    width: 1.2em;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' %3E%3Crect x='1.5' y='4.5' width='21' height='15' rx='4.5' fill='%23ff0033'/%3E%3Cpath d='M10 9v6l5.2-3z' fill='white'/%3E%3C/svg%3E") center / contain no-repeat;
+    -webkit-mask: none;
+    mask: none;
+}
+.editor-root .md-source-loc {
+    margin-left: 0.4em;
+    padding-left: 0.4em;
+    border-left: 1px solid var(--ed-border);
+    color: var(--ed-text-dim);
+    font-variant-numeric: tabular-nums;
+}
+.editor-root .md-source-chip:hover {
+    background: color-mix(in srgb, var(--ed-text) 10%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ed-text) 30%, transparent);
+}
+/* The verse card: a reference alone on its line, as the verse itself.
+   The text is the point, so it reads like a quotation — italic, the
+   page's own face — on the scripture brown's faint tint with a spine
+   down the left. Under it the reference (book, chapter, verses set
+   apart, as in the badge) and the translation; under that, when the
+   line carries one, the writer's note. */
 .editor-root .md-scripture-card {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
-    margin: 0.25rem 0;
-    padding: 0.65rem 0.9rem;
-    border-left: 3px solid var(--ed-tag);
-    border-radius: 0.4rem;
-    background: color-mix(in srgb, var(--ed-tag) 7%, transparent);
+    gap: 0.45rem;
+    margin: 0.3rem 0;
+    padding: 0.7rem 0.95rem 0.65rem;
+    border-left: 3px solid var(--ed-scripture);
+    border-radius: 0.2rem 0.5rem 0.5rem 0.2rem;
+    background: color-mix(in srgb, var(--ed-scripture) 7%, transparent);
     cursor: pointer;
+    transition: background-color 120ms ease;
+}
+.editor-root .md-scripture-card:hover {
+    background: color-mix(in srgb, var(--ed-scripture) 11%, transparent);
 }
 .editor-root .md-scripture-card-text {
     font-style: italic;
     line-height: 1.55;
 }
 .editor-root .md-scripture-card-ref {
-    display: inline-flex;
+    display: flex;
     align-items: baseline;
-    gap: 0.5rem;
+    gap: 0.55rem;
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
     font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
 }
 .editor-root .md-scripture-card-display {
-    font-weight: 600;
-    color: var(--ed-tag);
+    color: var(--ed-text);
+}
+.editor-root .md-scripture-card-display::before {
+    content: "";
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    margin-right: 0.35em;
+    vertical-align: -0.16em;
+    background-color: var(--ed-scripture);
+    -webkit-mask: var(--ed-scripture-icon) center / contain no-repeat;
+    mask: var(--ed-scripture-icon) center / contain no-repeat;
 }
 .editor-root .md-scripture-card-tx {
-    color: var(--ed-muted, var(--ed-text));
-    opacity: 0.7;
+    color: var(--ed-text-dim, var(--ed-text));
+    opacity: 0.75;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    font-size: 0.66rem;
 }
 .editor-root .md-scripture-card-open {
     margin-left: auto;
+    color: var(--ed-text-dim, var(--ed-text));
     opacity: 0.6;
 }
 .editor-root .md-scripture-card:hover .md-scripture-card-open { opacity: 1; }
+/* The note: the writer speaking, not the text — upright, in the UI
+   face, under a hairline. Its links and badges work as anywhere. */
+.editor-root .md-scripture-card-note {
+    display: block;
+    margin-top: 0.1rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid color-mix(in srgb, var(--ed-scripture) 22%, transparent);
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: 0.86em;
+    font-style: normal;
+    line-height: 1.5;
+    color: var(--ed-text);
+    cursor: auto;
+}
+/* Like the setlist card: the caret buffers and the line's trailing
+   break would each take a line of their own above and below the card. */
+.editor-root .cm-line:has(.md-scripture-card) > .cm-widgetBuffer,
+.editor-root .cm-line:has(.md-scripture-card) > br { display: none; }
+.editor-root .cm-line:has(.md-scripture-card) > .editor-widget { display: block; }
 .editor-root .cm-line:has(.md-scripture-card) { line-height: 0; }
 .editor-root .cm-line:has(.md-scripture-card) .md-scripture-card { line-height: 1.4; }
 
@@ -2283,4 +2436,394 @@
     display: inline-block;
     vertical-align: text-bottom;
     margin: 0;
+}
+
+/* ── Lede — a page's `summary:` under its title ────────────────────────
+   The page in one sentence, before the page: a quieter, lighter size of
+   the body face, set as its own block under the heading. */
+.editor-root .md-lede {
+    display: block;
+    margin: 0.35rem 0 0.15rem;
+    font-size: 0.56em;
+    font-weight: 400;
+    font-style: italic;
+    line-height: 1.45;
+    letter-spacing: 0;
+    color: var(--ed-text-dim);
+}
+
+/* ── Link card — hover preview for [data-preview] ─────────────────────
+   What a link points at, without leaving: a page's summary, a verse, the
+   passage a citation cites, a word's gloss. Head in the UI face, small
+   caps-ish; body at a reading size, clamped to a few lines. */
+.editor-link-card {
+    position: fixed;
+    z-index: 9999;
+    display: none;
+    max-width: min(26rem, calc(100vw - 16px));
+    padding: 0.6rem 0.75rem 0.65rem;
+    border-radius: 0.55rem;
+    border: 1px solid var(--ed-border);
+    background: var(--ed-bg-elev);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
+    color: var(--ed-text);
+    pointer-events: none;
+    font-family: var(--ed-font);
+}
+.editor-link-card-head {
+    margin-bottom: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--ed-text-dim);
+}
+.editor-link-card-body {
+    display: -webkit-box;
+    -webkit-line-clamp: 7;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 0.86rem;
+    line-height: 1.5;
+    white-space: pre-line;
+}
+
+/* ── Word badge ([[herem|ḥērem]] → a page with `lemma:`) ─────────────
+   The word in its own script beside its transliteration: the script a
+   little larger (Hebrew points need the room), the transliteration in
+   italic as the name the prose uses. */
+.editor-root .md-wikilink.md-word-chip,
+.editor-root .md-word-chip {
+    display: inline;
+    white-space: nowrap;
+    padding: 0.08em 0.4em;
+    margin: 0 0.04em;
+    border-radius: 0.4em;
+    background: color-mix(in srgb, var(--ed-wikilink) 8%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ed-wikilink) 22%, transparent);
+    color: var(--ed-text);
+    text-decoration: none;
+    cursor: pointer;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+}
+.editor-root .md-word-lemma {
+    margin-right: 0.35em;
+    font-family: "SBL Hebrew", "Ezra SIL", "Noto Serif Hebrew", "Noto Serif", "Times New Roman", serif;
+    font-size: 1.05em;
+    unicode-bidi: isolate;
+}
+.editor-root .md-word-lemma[lang="grc"] {
+    font-family: "SBL Greek", "Gentium Plus", "Noto Serif", "Times New Roman", serif;
+    font-size: 0.98em;
+}
+.editor-root .md-word-translit {
+    font-style: italic;
+}
+.editor-root .md-word-chip:hover {
+    background: color-mix(in srgb, var(--ed-wikilink) 16%, transparent);
+}
+
+/* ── Rendered section embeds (![[Page#Heading]]) ──────────────────────
+   The section in full, in the page's own type — the card says where it
+   lives (its head opens it), the body reads like the page around it. */
+.editor-root .md-embed-rendered {
+    white-space: normal;
+}
+.editor-root .md-embed-rendered .cm-line {
+    padding: 0;
+}
+.editor-root .md-embed-section .md-embed-head {
+    cursor: pointer;
+}
+.editor-root .md-embed-section .md-embed-frag {
+    font-family: inherit;
+}
+.editor-root .md-embed-section .md-embed-head:hover .md-embed-title {
+    text-decoration: underline;
+}
+
+/* ── Study blocks: ```readings, ```timeline, ```map ───────────────────
+   Shared: the UI face at a compact size, so a block of structure reads
+   as structure beside the prose. */
+.editor-root .md-study {
+    display: block;
+    margin: 0.5rem 0;
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: 0.86em;
+    line-height: 1.5;
+    white-space: normal;
+    cursor: default;
+}
+.editor-root .cm-line:has(> .editor-widget > .md-study) > .cm-widgetBuffer,
+.editor-root .cm-line:has(> .editor-widget > .md-study) > br { display: none; }
+.editor-root .cm-line:has(> .editor-widget > .md-study) > .editor-widget { display: block; }
+
+/* Readings: one card per position, side by side on a wide screen. */
+.editor-root .md-readings-q {
+    margin-bottom: 0.45rem;
+    font-weight: 600;
+    color: var(--ed-text);
+}
+.editor-root .md-readings-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr));
+    gap: 0.6rem;
+}
+@media (max-width: 640px) {
+    .editor-root .md-readings-grid { grid-template-columns: 1fr; }
+}
+.editor-root .md-reading {
+    padding: 0.6rem 0.75rem 0.7rem;
+    border: 1px solid var(--ed-border);
+    border-radius: 0.5rem;
+    background: color-mix(in srgb, var(--ed-text) 3%, transparent);
+}
+.editor-root .md-reading-name {
+    margin-bottom: 0.3rem;
+    font-weight: 650;
+    font-size: 1.02em;
+}
+.editor-root .md-reading-says {
+    margin-bottom: 0.4rem;
+    color: var(--ed-text);
+}
+.editor-root .md-reading-pro,
+.editor-root .md-reading-con {
+    margin: 0.2rem 0 0;
+    padding: 0;
+    list-style: none;
+}
+.editor-root .md-reading-pro li,
+.editor-root .md-reading-con li {
+    display: flex;
+    gap: 0.45rem;
+    margin: 0.15rem 0;
+}
+.editor-root .md-reading-mark {
+    flex: none;
+    width: 1.1em;
+    height: 1.1em;
+    margin-top: 0.15em;
+    border-radius: 999px;
+    font-size: 0.8em;
+    font-weight: 700;
+    line-height: 1.1em;
+    text-align: center;
+}
+.editor-root .md-reading-pro .md-reading-mark {
+    color: #2fb37a;
+    background: color-mix(in srgb, #2fb37a 16%, transparent);
+}
+.editor-root .md-reading-con .md-reading-mark {
+    color: #e5484d;
+    background: color-mix(in srgb, #e5484d 16%, transparent);
+}
+.editor-root .md-reading-held {
+    margin-top: 0.45rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid var(--ed-border);
+    color: var(--ed-text-dim);
+    font-size: 0.92em;
+}
+.editor-root .md-reading-held > span:first-child,
+.editor-root .md-readings-verdict > span:first-child {
+    margin-right: 0.35em;
+    font-size: 0.78em;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ed-text-dim);
+}
+.editor-root .md-readings-verdict {
+    margin-top: 0.55rem;
+    padding: 0.5rem 0.75rem;
+    border-left: 3px solid var(--ed-accent);
+    border-radius: 0.2rem 0.5rem 0.5rem 0.2rem;
+    background: color-mix(in srgb, var(--ed-accent) 8%, transparent);
+}
+
+/* Timeline: date, a dot on a rule, the event. */
+.editor-root .md-timeline {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.editor-root .md-timeline li {
+    display: grid;
+    grid-template-columns: minmax(4.5rem, max-content) 1rem 1fr;
+    column-gap: 0.55rem;
+    position: relative;
+    padding: 0.2rem 0;
+}
+.editor-root .md-timeline-date {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--ed-text-dim);
+    white-space: nowrap;
+}
+.editor-root .md-timeline-dot {
+    position: relative;
+}
+.editor-root .md-timeline-dot::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: -0.4rem;
+    width: 1px;
+    background: var(--ed-border);
+}
+.editor-root .md-timeline li:last-child .md-timeline-dot::before { bottom: 50%; }
+.editor-root .md-timeline-dot::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 0.45em;
+    width: 0.55rem;
+    height: 0.55rem;
+    margin-left: -0.275rem;
+    border-radius: 999px;
+    background: var(--ed-bg);
+    box-shadow: inset 0 0 0 2px var(--ed-accent);
+}
+
+/* Map: places and routes to scale. */
+.editor-root .md-study-map {
+    padding: 0.6rem 0.7rem 0.5rem;
+    border: 1px solid var(--ed-border);
+    border-radius: 0.5rem;
+    background: color-mix(in srgb, var(--ed-text) 2%, transparent);
+}
+.editor-root .md-map-title {
+    margin-bottom: 0.3rem;
+    font-weight: 650;
+}
+.editor-root .md-map-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 26rem;
+}
+.editor-root .md-map-grid {
+    stroke: var(--ed-border);
+    stroke-width: 0.6;
+    stroke-dasharray: 2 4;
+}
+.editor-root .md-map-route {
+    fill: none;
+    stroke: var(--ed-accent);
+    stroke-width: 2;
+    stroke-linejoin: round;
+    opacity: 0.85;
+}
+.editor-root .md-map-arrowhead { fill: var(--ed-accent); }
+.editor-root .md-map-place circle {
+    fill: var(--ed-bg);
+    stroke: var(--ed-text);
+    stroke-width: 1.6;
+}
+.editor-root .md-map-place text {
+    fill: var(--ed-text);
+    font-size: 12px;
+    paint-order: stroke;
+    stroke: var(--ed-bg);
+    stroke-width: 3px;
+    stroke-linejoin: round;
+}
+.editor-root .md-map-scale {
+    margin-top: 0.2rem;
+    font-size: 0.78em;
+    color: var(--ed-text-dim);
+    text-align: right;
+}
+.editor-root .md-map-notes {
+    margin: 0.4rem 0 0;
+    padding: 0;
+    list-style: none;
+    columns: 2 14rem;
+    column-gap: 1.2rem;
+}
+.editor-root .md-map-notes li { break-inside: avoid; margin: 0.1rem 0; }
+.editor-root .md-map-note-name { font-weight: 600; }
+
+/* Collapsible callout: the whole title bar is the toggle while the caret
+   is elsewhere (Alt+click edits the title), and a touch gets a real
+   target for the chevron. */
+.editor-root .cm-line.md-callout-collapsible:has(.md-callout-fold) { cursor: pointer; }
+@media (pointer: coarse) {
+    .editor-root .md-callout-fold { min-width: 44px; min-height: 44px; }
+}
+
+/* ── Verse card translations ───────────────────────────────────────────
+   The card carries the passage in every installed translation; a row of
+   labels switches between them and "Compare" lists them together. Pure
+   CSS: the checked (hidden) radio shows its panel and lights its label. */
+.editor-root .md-sc-radio { display: none; }
+.editor-root .md-sc-texts > .md-sc-panel { display: none; }
+.editor-root .md-sc-switch {
+    display: inline-flex;
+    gap: 0.1rem;
+    padding: 0.08rem;
+    border-radius: 0.4rem;
+    background: color-mix(in srgb, var(--ed-scripture) 8%, transparent);
+}
+.editor-root .md-sc-switch > label {
+    padding: 0.05rem 0.4rem;
+    border-radius: 0.3rem;
+    font-size: 0.66rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ed-text-dim);
+    cursor: pointer;
+}
+.editor-root .md-sc-switch > label:hover { color: var(--ed-text); }
+.editor-root .md-sc-compare .md-sc-row + .md-sc-row { margin-top: 0.4rem; }
+.editor-root .md-sc-row {
+    display: grid;
+    grid-template-columns: 2.6rem 1fr;
+    gap: 0.5rem;
+    align-items: baseline;
+}
+.editor-root .md-sc-row-tx {
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--ed-scripture);
+}
+.editor-root .md-sc-row-text {
+    font-style: italic;
+    line-height: 1.5;
+}
+@media (pointer: coarse) {
+    .editor-root .md-sc-switch > label { padding: 0.35rem 0.6rem; font-size: 0.72rem; }
+}
+.editor-root .md-sc-radio:nth-of-type(1):checked ~ .md-sc-texts > .md-sc-panel:nth-child(1) { display: block; }
+.editor-root .md-sc-radio:nth-of-type(1):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(1) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
+.editor-root .md-sc-radio:nth-of-type(2):checked ~ .md-sc-texts > .md-sc-panel:nth-child(2) { display: block; }
+.editor-root .md-sc-radio:nth-of-type(2):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(2) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
+.editor-root .md-sc-radio:nth-of-type(3):checked ~ .md-sc-texts > .md-sc-panel:nth-child(3) { display: block; }
+.editor-root .md-sc-radio:nth-of-type(3):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(3) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
+.editor-root .md-sc-radio:nth-of-type(4):checked ~ .md-sc-texts > .md-sc-panel:nth-child(4) { display: block; }
+.editor-root .md-sc-radio:nth-of-type(4):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(4) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
+.editor-root .md-sc-radio:nth-of-type(5):checked ~ .md-sc-texts > .md-sc-panel:nth-child(5) { display: block; }
+.editor-root .md-sc-radio:nth-of-type(5):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(5) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
+.editor-root .md-sc-radio:nth-of-type(6):checked ~ .md-sc-texts > .md-sc-panel:nth-child(6) { display: block; }
+.editor-root .md-sc-radio:nth-of-type(6):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(6) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
+.editor-root .md-sc-radio:nth-of-type(7):checked ~ .md-sc-texts > .md-sc-panel:nth-child(7) { display: block; }
+.editor-root .md-sc-radio:nth-of-type(7):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(7) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
+.editor-root .md-sc-radio:nth-of-type(8):checked ~ .md-sc-texts > .md-sc-panel:nth-child(8) { display: block; }
+.editor-root .md-sc-radio:nth-of-type(8):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(8) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
+
+/* Phones: the reference row wraps as a whole — a label never breaks
+   inside ("WE/B") — and a map keeps a legible size and scrolls sideways
+   rather than shrinking its names to a few pixels. */
+.editor-root .md-scripture-card-ref { flex-wrap: wrap; row-gap: 0.35rem; }
+.editor-root .md-scripture-card-display,
+.editor-root .md-sc-switch > label,
+.editor-root .md-scripture-card-open { white-space: nowrap; }
+@media (max-width: 640px) {
+    .editor-root .md-study-map { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .editor-root .md-map-svg { min-width: 34rem; max-height: none; }
 }

@@ -22,6 +22,7 @@ pub mod markdown;
 pub mod plugin;
 pub mod selection;
 pub mod state;
+pub mod study_blocks;
 pub mod text;
 pub mod transaction;
 

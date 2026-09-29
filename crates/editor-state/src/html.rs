@@ -573,7 +573,6 @@ mod tests {
     }
 
     #[cfg(feature = "typst")]
-
     #[test]
     fn a_one_shot_render_compiles_every_equation() {
         // The per-pass compile budget is a live-typing optimisation: a
@@ -586,7 +585,6 @@ mod tests {
     }
 
     #[cfg(feature = "typst")]
-
     #[test]
     fn math_is_sized_from_its_own_ink() {
         // A structurally tall equation must be taller on the page. It was
@@ -616,7 +614,6 @@ mod tests {
     }
 
     #[cfg(feature = "mermaid")]
-
     #[test]
     fn a_rendered_widget_carries_no_stray_whitespace() {
         // `.editor-root` is `white-space: pre-wrap`, so a newline around

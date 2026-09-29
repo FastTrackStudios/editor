@@ -120,6 +120,21 @@ pub fn handle_bridge_msg(
         }
         "copy-range" => handle_copy_range(state, v),
         "task-toggle" => handle_task_toggle(state, sink, v),
+        // A collapsible callout's chevron: flip it from how the source
+        // writes it (`-` / `+`). View state only — the doc is untouched.
+        "fold-toggle" => {
+            let pos = usize::try_from(
+                v.get("pos")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0),
+            )
+            .unwrap_or(0);
+            let cur = state.read().clone();
+            if let Some(tx) = editor_state::commands::toggle_fold(&cur, pos..pos.saturating_add(1))
+            {
+                apply_tx(state, &cur, tx.annotate("origin", "fold-toggle"), sink);
+            }
+        }
         k if is_property_msg(k) => {
             handle_property_msg(k, state, vim, widget_focus, sink, v);
         }

@@ -123,9 +123,17 @@ fn parse_tabs(body: &str) -> Vec<Tab> {
 /// per-pass budget is exhausted on a cache miss (caller then
 /// falls back to the raw source, exactly like the sibling
 /// renderers).
-pub fn render_tabs(body: &str, focus_pos: usize) -> Option<String> {
+pub fn render_tabs(
+    body: &str,
+    focus_pos: usize,
+    vault: Option<&dyn crate::markdown::VaultLookup>,
+) -> Option<String> {
     let unique = scope_id(body, focus_pos);
-    if let Some(cached) = with_cache(|c| c.get(&unique)) {
+    // With a vault, a panel's links and badges resolve — and what they
+    // resolve to changes as pages load, so that render is not cached.
+    if vault.is_none()
+        && let Some(cached) = with_cache(|c| c.get(&unique))
+    {
         return Some(cached);
     }
     let budget = RENDER_BUDGET.with(std::cell::Cell::get);
@@ -139,8 +147,10 @@ pub fn render_tabs(body: &str, focus_pos: usize) -> Option<String> {
         return None;
     }
 
-    let html = build_html(&tabs, &unique);
-    with_cache(|c| c.put(unique, html.clone()));
+    let html = build_html(&tabs, &unique, vault);
+    if vault.is_none() {
+        with_cache(|c| c.put(unique, html.clone()));
+    }
     Some(html)
 }
 
@@ -163,7 +173,7 @@ fn scope_id(body: &str, focus_pos: usize) -> String {
 /// selectors are all scoped by `.md-tabs-{u}` / `#tab-{u}-{i}`
 /// so any number of blocks coexist in one note without their
 /// radio groups or `:checked` rules colliding.
-fn build_html(tabs: &[Tab], u: &str) -> String {
+fn build_html(tabs: &[Tab], u: &str, vault: Option<&dyn crate::markdown::VaultLookup>) -> String {
     let n = tabs.len();
 
     // Per-index rules: the active label indicator and the
@@ -208,7 +218,7 @@ fn build_html(tabs: &[Tab], u: &str) -> String {
         let _ = write!(
             panels,
             "<div class=\"md-tabs-panel md-tabs-panel-{i}\">{content}</div>",
-            content = render_panel_markdown(&tab.body),
+            content = render_panel_markdown(&tab.body, vault),
         );
     }
 
@@ -246,13 +256,18 @@ const MAX_DEPTH: u8 = 3;
 /// The full pass is no less safe: it escapes text and emits only its own
 /// markup, which is the same guarantee every other line on the page
 /// relies on.
-fn render_panel_markdown(src: &str) -> String {
+fn render_panel_markdown(src: &str, vault: Option<&dyn crate::markdown::VaultLookup>) -> String {
     let depth = DEPTH.with(std::cell::Cell::get);
     if depth >= MAX_DEPTH {
         return fallback_panel_markdown(src);
     }
     DEPTH.with(|d| d.set(depth.saturating_add(1)));
-    let html = crate::html::render_markdown_html(src);
+    // With a vault: the guarded embed render (links resolve, and the
+    // outer pass's state survives the inner one).
+    let html = match vault {
+        Some(_) => crate::markdown::render_embedded_markdown(src, vault),
+        None => crate::html::render_markdown_html(src),
+    };
     DEPTH.with(|d| d.set(depth));
     html
 }
@@ -429,7 +444,7 @@ mod panel_tests {
         // Tabs exist to show one thing several ways, and the things
         // worth showing that way — a table, a callout, a chart — are
         // exactly what the old inline-only subset could not draw.
-        let html = render_panel_markdown("| a |\n|---|\n| 1 |\n\n> [!tip] T\n> body");
+        let html = render_panel_markdown("| a |\n|---|\n| 1 |\n\n> [!tip] T\n> body", None);
         assert!(html.contains("<table"), "{html}");
         assert!(html.contains("md-callout"), "{html}");
         assert!(
@@ -443,7 +458,7 @@ mod panel_tests {
         // A panel renders through the pass that renders panels, so the
         // depth guard is what stops a pathological document recursing.
         let deep = "```tabs\n=== A\n".repeat(usize::from(MAX_DEPTH) + 2);
-        let html = render_panel_markdown(&deep);
+        let html = render_panel_markdown(&deep, None);
         assert!(!html.is_empty());
     }
 }
@@ -455,7 +470,7 @@ mod tests {
     #[test]
     fn three_tabs_yields_three_of_each() {
         let body = "=== Session\nRun of show\n=== Chart\nKey/tempo\n=== Lyrics\nVerse 1";
-        let html = render_tabs(body, 42).expect("renders");
+        let html = render_tabs(body, 42, None).expect("renders");
         assert_eq!(html.matches("type=\"radio\"").count(), 3);
         assert_eq!(html.matches("<label for=").count(), 3);
         assert_eq!(html.matches("class=\"md-tabs-panel ").count(), 3);
@@ -470,7 +485,7 @@ mod tests {
     #[test]
     fn escapes_content_and_titles() {
         let body = "=== <script>\n<img src=x onerror=alert(1)>";
-        let html = render_tabs(body, 0).expect("renders");
+        let html = render_tabs(body, 0, None).expect("renders");
         assert!(!html.contains("<script>"));
         assert!(!html.contains("<img src=x"));
         assert!(html.contains("&lt;script&gt;"));
@@ -483,7 +498,7 @@ mod tests {
         // renders through the same markdown pass as the rest of the
         // page, so its emphasis is styled by the same stylesheet.
         let body = "=== A\nsome **bold** and *italic* and `code` text";
-        let html = render_tabs(body, 7).expect("renders");
+        let html = render_tabs(body, 7, None).expect("renders");
         assert!(html.contains("md-bold"), "{html}");
         assert!(html.contains("md-italic"), "{html}");
         assert!(html.contains("md-code"), "{html}");
@@ -511,6 +526,6 @@ mod tests {
 
     #[test]
     fn empty_body_is_none() {
-        assert!(render_tabs("   \n  ", 0).is_none());
+        assert!(render_tabs("   \n  ", 0, None).is_none());
     }
 }

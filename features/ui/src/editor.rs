@@ -332,6 +332,11 @@ pub fn Editor(
     /// e.g. `Page`, `Page#Heading`, `Page|alias`). External `http(s)`
     /// links are additionally opened in a new tab by the view itself;
     /// wikilinks only fire this — the host owns vault navigation.
+    ///
+    /// A plain click follows the link in an editable editor too: the
+    /// press does not put the caret inside it. To edit a link,
+    /// Alt/Option+click it (the caret goes where you clicked, and no
+    /// callback fires) or walk into it with the arrow keys.
     #[props(default)]
     on_link_click: Option<Callback<String>>,
 ) -> Element {
@@ -1909,8 +1914,33 @@ pub fn Editor(
                                         evt.preventDefault();
                                         return;
                                     }}
+                                    // A link is followed, not entered.
+                                    // Left alone, the press parks the
+                                    // caret inside the link, the live
+                                    // preview reveals its source, and
+                                    // the rendered span is gone before
+                                    // the click lands — so a click
+                                    // edited the link instead of
+                                    // following it. Alt/Option+click
+                                    // still puts the caret there, and
+                                    // the arrow keys walk into it.
+                                    if (n.nodeType === 1 && n.dataset
+                                        && n.dataset.href && !evt.altKey) {{
+                                        evt.preventDefault();
+                                        return;
+                                    }}
+                                    // A collapsible callout's title bar
+                                    // folds, it does not take the caret
+                                    // (Alt+click edits the title).
+                                    if (n.nodeType === 1 && n.classList && !evt.altKey
+                                        && (n.classList.contains('md-callout-fold')
+                                            || (n.classList.contains('md-callout-collapsible')
+                                                && n.querySelector('.md-callout-fold')))) {{
+                                        evt.preventDefault();
+                                        return;
+                                    }}
                                     if (n.nodeType === 1 && n.tagName === 'LABEL'
-                                        && n.closest && n.closest('.md-tabs-widget')) {{
+                                        && n.closest && n.closest('.md-tabs-widget, .md-scripture-card')) {{
                                         // Tab-strip label: don't let the
                                         // browser park the caret in the
                                         // widget (which would revert it
@@ -1958,7 +1988,7 @@ pub fn Editor(
                                         return;
                                     }}
                                     if (n.nodeType === 1 && n.tagName === 'LABEL'
-                                        && n.closest && n.closest('.md-tabs-widget')) {{
+                                        && n.closest && n.closest('.md-tabs-widget, .md-scripture-card')) {{
                                         // Tabs widget: switch the CSS-only
                                         // tab ourselves — preventDefault
                                         // suppresses the label's native
@@ -1988,8 +2018,25 @@ pub fn Editor(
                                         }}
                                         return;
                                     }}
+                                    if (n.nodeType === 1 && n.classList && !evt.altKey
+                                        && (n.classList.contains('md-callout-fold')
+                                            || n.classList.contains('md-callout-collapsible'))) {{
+                                        const b = n.classList.contains('md-callout-fold')
+                                            ? n : n.querySelector('.md-callout-fold');
+                                        const p = b ? parseInt(b.dataset.foldPos, 10) : NaN;
+                                        if (!isNaN(p)) {{
+                                            evt.preventDefault();
+                                            evt.stopPropagation();
+                                            dioxus.send({{ kind: 'fold-toggle', pos: p }});
+                                            return;
+                                        }}
+                                    }}
                                     if (n.nodeType === 1 && n.dataset
                                         && n.dataset.href) {{
+                                        // Alt/Option+click edits the
+                                        // link: the caret stays where
+                                        // the press put it.
+                                        if (evt.altKey) return;
                                         const href = n.dataset.href;
                                         // Clear caret state so the
                                         // link span goes back to
@@ -2078,6 +2125,67 @@ pub fn Editor(
                                 if (hoverTimer) {{ clearTimeout(hoverTimer); hoverTimer = null; }}
                                 dioxus.send({{ kind: 'hover-end' }});
                             }}, true);
+                            // ── Link cards ──────────────────────────
+                            // Hovering anything that carries `data-preview` — a
+                            // page link, a scripture badge, a source badge, a
+                            // word — shows a small card: `data-preview-head` as
+                            // its head, `data-preview` as its text. Text only
+                            // (textContent), so nothing in a preview can run.
+                            // Lives in the frame beside the editable root so it
+                            // takes the theme without being part of the doc.
+                            const cardHost = el.parentElement || el;
+                            let card = null, cardFor = null, cardTimer = null;
+                            const hideCard = () => {{
+                                if (cardTimer) {{ clearTimeout(cardTimer); cardTimer = null; }}
+                                cardFor = null;
+                                if (card) card.style.display = 'none';
+                            }};
+                            const showCard = (n) => {{
+                                if (!card) {{
+                                    card = document.createElement('div');
+                                    card.className = 'editor-link-card';
+                                    card.setAttribute('contenteditable', 'false');
+                                    cardHost.appendChild(card);
+                                }}
+                                card.replaceChildren();
+                                const head = n.dataset.previewHead;
+                                if (head) {{
+                                    const h = document.createElement('div');
+                                    h.className = 'editor-link-card-head';
+                                    h.textContent = head;
+                                    card.appendChild(h);
+                                }}
+                                const b = document.createElement('div');
+                                b.className = 'editor-link-card-body';
+                                b.textContent = n.dataset.preview;
+                                card.appendChild(b);
+                                card.style.display = 'block';
+                                const r = n.getBoundingClientRect();
+                                const cw = card.offsetWidth, ch = card.offsetHeight;
+                                const x = Math.min(Math.max(8, r.left), window.innerWidth - cw - 8);
+                                let y = r.bottom + 6;
+                                if (y + ch > window.innerHeight - 8) y = r.top - ch - 6;
+                                card.style.left = x + 'px';
+                                card.style.top = Math.max(8, y) + 'px';
+                            }};
+                            el.addEventListener('mouseover', evt => {{
+                                const n = evt.target.closest && evt.target.closest('[data-preview]');
+                                if (!n || !el.contains(n) || n === cardFor) return;
+                                hideCard();
+                                cardFor = n;
+                                cardTimer = setTimeout(() => {{
+                                    cardTimer = null;
+                                    if (cardFor === n && n.isConnected) showCard(n);
+                                }}, 350);
+                            }});
+                            el.addEventListener('mouseout', evt => {{
+                                const n = evt.target.closest && evt.target.closest('[data-preview]');
+                                if (!n || (evt.relatedTarget && n.contains(evt.relatedTarget))) return;
+                                hideCard();
+                            }});
+                            el.addEventListener('mousedown', hideCard, true);
+                            el.addEventListener('keydown', hideCard, true);
+                            window.addEventListener('scroll', hideCard, true);
                             sendSel();
                         }}
                         attach();
@@ -2247,7 +2355,10 @@ pub fn Editor(
             {
                 let caret = cur.selection.primary().head;
                 let spec = TransactionSpec::new()
-                    .changes(Changes::insert(caret, crate::palette::TRIGGER.to_string()))
+                    .changes(Changes::insert(
+                        caret,
+                        crate::palette::trigger().to_string(),
+                    ))
                     .selection(Selection::caret(caret.saturating_add(1)))
                     .annotate("origin", "palette-open");
                 crate::event::apply_tx(state, &cur, spec, sink_for_keys);
@@ -2661,7 +2772,11 @@ pub fn Editor(
         use_effect(move || {
             let s = state.read();
             let caret = s.selection.primary().head;
-            let detected = crate::palette::detect_trigger(&s.doc.to_string(), caret);
+            // A query that matches nothing is not a command being looked
+            // for — `/usr/bin` in prose — so the menu closes rather than
+            // saying "no match" under every path.
+            let detected = crate::palette::detect_trigger(&s.doc.to_string(), caret)
+                .filter(|(_, q)| q.is_empty() || !crate::palette::filter_commands(q).is_empty());
             let cur = palette_sig.peek().clone();
             match (detected, cur) {
                 (Some((start, q)), Some(prev)) if prev.trigger_start == start => {
