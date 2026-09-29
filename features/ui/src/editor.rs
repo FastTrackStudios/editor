@@ -1929,6 +1929,16 @@ pub fn Editor(
                                         evt.preventDefault();
                                         return;
                                     }}
+                                    // A collapsible callout's title bar
+                                    // folds, it does not take the caret
+                                    // (Alt+click edits the title).
+                                    if (n.nodeType === 1 && n.classList && !evt.altKey
+                                        && (n.classList.contains('md-callout-fold')
+                                            || (n.classList.contains('md-callout-collapsible')
+                                                && n.querySelector('.md-callout-fold')))) {{
+                                        evt.preventDefault();
+                                        return;
+                                    }}
                                     if (n.nodeType === 1 && n.tagName === 'LABEL'
                                         && n.closest && n.closest('.md-tabs-widget')) {{
                                         // Tab-strip label: don't let the
@@ -2007,6 +2017,19 @@ pub fn Editor(
                                             dioxus.send({{ kind: 'focus-pos', pos: p }});
                                         }}
                                         return;
+                                    }}
+                                    if (n.nodeType === 1 && n.classList && !evt.altKey
+                                        && (n.classList.contains('md-callout-fold')
+                                            || n.classList.contains('md-callout-collapsible'))) {{
+                                        const b = n.classList.contains('md-callout-fold')
+                                            ? n : n.querySelector('.md-callout-fold');
+                                        const p = b ? parseInt(b.dataset.foldPos, 10) : NaN;
+                                        if (!isNaN(p)) {{
+                                            evt.preventDefault();
+                                            evt.stopPropagation();
+                                            dioxus.send({{ kind: 'fold-toggle', pos: p }});
+                                            return;
+                                        }}
                                     }}
                                     if (n.nodeType === 1 && n.dataset
                                         && n.dataset.href) {{
@@ -2102,6 +2125,67 @@ pub fn Editor(
                                 if (hoverTimer) {{ clearTimeout(hoverTimer); hoverTimer = null; }}
                                 dioxus.send({{ kind: 'hover-end' }});
                             }}, true);
+                            // ── Link cards ──────────────────────────
+                            // Hovering anything that carries `data-preview` — a
+                            // page link, a scripture badge, a source badge, a
+                            // word — shows a small card: `data-preview-head` as
+                            // its head, `data-preview` as its text. Text only
+                            // (textContent), so nothing in a preview can run.
+                            // Lives in the frame beside the editable root so it
+                            // takes the theme without being part of the doc.
+                            const cardHost = el.parentElement || el;
+                            let card = null, cardFor = null, cardTimer = null;
+                            const hideCard = () => {{
+                                if (cardTimer) {{ clearTimeout(cardTimer); cardTimer = null; }}
+                                cardFor = null;
+                                if (card) card.style.display = 'none';
+                            }};
+                            const showCard = (n) => {{
+                                if (!card) {{
+                                    card = document.createElement('div');
+                                    card.className = 'editor-link-card';
+                                    card.setAttribute('contenteditable', 'false');
+                                    cardHost.appendChild(card);
+                                }}
+                                card.replaceChildren();
+                                const head = n.dataset.previewHead;
+                                if (head) {{
+                                    const h = document.createElement('div');
+                                    h.className = 'editor-link-card-head';
+                                    h.textContent = head;
+                                    card.appendChild(h);
+                                }}
+                                const b = document.createElement('div');
+                                b.className = 'editor-link-card-body';
+                                b.textContent = n.dataset.preview;
+                                card.appendChild(b);
+                                card.style.display = 'block';
+                                const r = n.getBoundingClientRect();
+                                const cw = card.offsetWidth, ch = card.offsetHeight;
+                                const x = Math.min(Math.max(8, r.left), window.innerWidth - cw - 8);
+                                let y = r.bottom + 6;
+                                if (y + ch > window.innerHeight - 8) y = r.top - ch - 6;
+                                card.style.left = x + 'px';
+                                card.style.top = Math.max(8, y) + 'px';
+                            }};
+                            el.addEventListener('mouseover', evt => {{
+                                const n = evt.target.closest && evt.target.closest('[data-preview]');
+                                if (!n || !el.contains(n) || n === cardFor) return;
+                                hideCard();
+                                cardFor = n;
+                                cardTimer = setTimeout(() => {{
+                                    cardTimer = null;
+                                    if (cardFor === n && n.isConnected) showCard(n);
+                                }}, 350);
+                            }});
+                            el.addEventListener('mouseout', evt => {{
+                                const n = evt.target.closest && evt.target.closest('[data-preview]');
+                                if (!n || (evt.relatedTarget && n.contains(evt.relatedTarget))) return;
+                                hideCard();
+                            }});
+                            el.addEventListener('mousedown', hideCard, true);
+                            el.addEventListener('keydown', hideCard, true);
+                            window.addEventListener('scroll', hideCard, true);
                             sendSel();
                         }}
                         attach();

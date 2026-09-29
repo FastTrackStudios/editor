@@ -2437,3 +2437,320 @@
     vertical-align: text-bottom;
     margin: 0;
 }
+
+/* ── Lede — a page's `summary:` under its title ────────────────────────
+   The page in one sentence, before the page: a quieter, lighter size of
+   the body face, set as its own block under the heading. */
+.editor-root .md-lede {
+    display: block;
+    margin: 0.35rem 0 0.15rem;
+    font-size: 0.56em;
+    font-weight: 400;
+    font-style: italic;
+    line-height: 1.45;
+    letter-spacing: 0;
+    color: var(--ed-text-dim);
+}
+
+/* ── Link card — hover preview for [data-preview] ─────────────────────
+   What a link points at, without leaving: a page's summary, a verse, the
+   passage a citation cites, a word's gloss. Head in the UI face, small
+   caps-ish; body at a reading size, clamped to a few lines. */
+.editor-link-card {
+    position: fixed;
+    z-index: 9999;
+    display: none;
+    max-width: min(26rem, calc(100vw - 16px));
+    padding: 0.6rem 0.75rem 0.65rem;
+    border-radius: 0.55rem;
+    border: 1px solid var(--ed-border);
+    background: var(--ed-bg-elev);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
+    color: var(--ed-text);
+    pointer-events: none;
+    font-family: var(--ed-font);
+}
+.editor-link-card-head {
+    margin-bottom: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--ed-text-dim);
+}
+.editor-link-card-body {
+    display: -webkit-box;
+    -webkit-line-clamp: 7;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 0.86rem;
+    line-height: 1.5;
+    white-space: pre-line;
+}
+
+/* ── Word badge ([[herem|ḥērem]] → a page with `lemma:`) ─────────────
+   The word in its own script beside its transliteration: the script a
+   little larger (Hebrew points need the room), the transliteration in
+   italic as the name the prose uses. */
+.editor-root .md-wikilink.md-word-chip,
+.editor-root .md-word-chip {
+    display: inline;
+    white-space: nowrap;
+    padding: 0.08em 0.4em;
+    margin: 0 0.04em;
+    border-radius: 0.4em;
+    background: color-mix(in srgb, var(--ed-wikilink) 8%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ed-wikilink) 22%, transparent);
+    color: var(--ed-text);
+    text-decoration: none;
+    cursor: pointer;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+}
+.editor-root .md-word-lemma {
+    margin-right: 0.35em;
+    font-family: "SBL Hebrew", "Ezra SIL", "Noto Serif Hebrew", "Noto Serif", "Times New Roman", serif;
+    font-size: 1.05em;
+    unicode-bidi: isolate;
+}
+.editor-root .md-word-lemma[lang="grc"] {
+    font-family: "SBL Greek", "Gentium Plus", "Noto Serif", "Times New Roman", serif;
+    font-size: 0.98em;
+}
+.editor-root .md-word-translit {
+    font-style: italic;
+}
+.editor-root .md-word-chip:hover {
+    background: color-mix(in srgb, var(--ed-wikilink) 16%, transparent);
+}
+
+/* ── Rendered section embeds (![[Page#Heading]]) ──────────────────────
+   The section in full, in the page's own type — the card says where it
+   lives (its head opens it), the body reads like the page around it. */
+.editor-root .md-embed-rendered {
+    white-space: normal;
+}
+.editor-root .md-embed-rendered .cm-line {
+    padding: 0;
+}
+.editor-root .md-embed-section .md-embed-head {
+    cursor: pointer;
+}
+.editor-root .md-embed-section .md-embed-frag {
+    font-family: inherit;
+}
+.editor-root .md-embed-section .md-embed-head:hover .md-embed-title {
+    text-decoration: underline;
+}
+
+/* ── Study blocks: ```readings, ```timeline, ```map ───────────────────
+   Shared: the UI face at a compact size, so a block of structure reads
+   as structure beside the prose. */
+.editor-root .md-study {
+    display: block;
+    margin: 0.5rem 0;
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: 0.86em;
+    line-height: 1.5;
+    white-space: normal;
+    cursor: default;
+}
+.editor-root .cm-line:has(> .editor-widget > .md-study) > .cm-widgetBuffer,
+.editor-root .cm-line:has(> .editor-widget > .md-study) > br { display: none; }
+.editor-root .cm-line:has(> .editor-widget > .md-study) > .editor-widget { display: block; }
+
+/* Readings: one card per position, side by side on a wide screen. */
+.editor-root .md-readings-q {
+    margin-bottom: 0.45rem;
+    font-weight: 600;
+    color: var(--ed-text);
+}
+.editor-root .md-readings-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr));
+    gap: 0.6rem;
+}
+@media (max-width: 640px) {
+    .editor-root .md-readings-grid { grid-template-columns: 1fr; }
+}
+.editor-root .md-reading {
+    padding: 0.6rem 0.75rem 0.7rem;
+    border: 1px solid var(--ed-border);
+    border-radius: 0.5rem;
+    background: color-mix(in srgb, var(--ed-text) 3%, transparent);
+}
+.editor-root .md-reading-name {
+    margin-bottom: 0.3rem;
+    font-weight: 650;
+    font-size: 1.02em;
+}
+.editor-root .md-reading-says {
+    margin-bottom: 0.4rem;
+    color: var(--ed-text);
+}
+.editor-root .md-reading-pro,
+.editor-root .md-reading-con {
+    margin: 0.2rem 0 0;
+    padding: 0;
+    list-style: none;
+}
+.editor-root .md-reading-pro li,
+.editor-root .md-reading-con li {
+    display: flex;
+    gap: 0.45rem;
+    margin: 0.15rem 0;
+}
+.editor-root .md-reading-mark {
+    flex: none;
+    width: 1.1em;
+    height: 1.1em;
+    margin-top: 0.15em;
+    border-radius: 999px;
+    font-size: 0.8em;
+    font-weight: 700;
+    line-height: 1.1em;
+    text-align: center;
+}
+.editor-root .md-reading-pro .md-reading-mark {
+    color: #2fb37a;
+    background: color-mix(in srgb, #2fb37a 16%, transparent);
+}
+.editor-root .md-reading-con .md-reading-mark {
+    color: #e5484d;
+    background: color-mix(in srgb, #e5484d 16%, transparent);
+}
+.editor-root .md-reading-held {
+    margin-top: 0.45rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid var(--ed-border);
+    color: var(--ed-text-dim);
+    font-size: 0.92em;
+}
+.editor-root .md-reading-held > span:first-child,
+.editor-root .md-readings-verdict > span:first-child {
+    margin-right: 0.35em;
+    font-size: 0.78em;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ed-text-dim);
+}
+.editor-root .md-readings-verdict {
+    margin-top: 0.55rem;
+    padding: 0.5rem 0.75rem;
+    border-left: 3px solid var(--ed-accent);
+    border-radius: 0.2rem 0.5rem 0.5rem 0.2rem;
+    background: color-mix(in srgb, var(--ed-accent) 8%, transparent);
+}
+
+/* Timeline: date, a dot on a rule, the event. */
+.editor-root .md-timeline {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.editor-root .md-timeline li {
+    display: grid;
+    grid-template-columns: minmax(4.5rem, max-content) 1rem 1fr;
+    column-gap: 0.55rem;
+    position: relative;
+    padding: 0.2rem 0;
+}
+.editor-root .md-timeline-date {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--ed-text-dim);
+    white-space: nowrap;
+}
+.editor-root .md-timeline-dot {
+    position: relative;
+}
+.editor-root .md-timeline-dot::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: -0.4rem;
+    width: 1px;
+    background: var(--ed-border);
+}
+.editor-root .md-timeline li:last-child .md-timeline-dot::before { bottom: 50%; }
+.editor-root .md-timeline-dot::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 0.45em;
+    width: 0.55rem;
+    height: 0.55rem;
+    margin-left: -0.275rem;
+    border-radius: 999px;
+    background: var(--ed-bg);
+    box-shadow: inset 0 0 0 2px var(--ed-accent);
+}
+
+/* Map: places and routes to scale. */
+.editor-root .md-study-map {
+    padding: 0.6rem 0.7rem 0.5rem;
+    border: 1px solid var(--ed-border);
+    border-radius: 0.5rem;
+    background: color-mix(in srgb, var(--ed-text) 2%, transparent);
+}
+.editor-root .md-map-title {
+    margin-bottom: 0.3rem;
+    font-weight: 650;
+}
+.editor-root .md-map-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 26rem;
+}
+.editor-root .md-map-grid {
+    stroke: var(--ed-border);
+    stroke-width: 0.6;
+    stroke-dasharray: 2 4;
+}
+.editor-root .md-map-route {
+    fill: none;
+    stroke: var(--ed-accent);
+    stroke-width: 2;
+    stroke-linejoin: round;
+    opacity: 0.85;
+}
+.editor-root .md-map-arrowhead { fill: var(--ed-accent); }
+.editor-root .md-map-place circle {
+    fill: var(--ed-bg);
+    stroke: var(--ed-text);
+    stroke-width: 1.6;
+}
+.editor-root .md-map-place text {
+    fill: var(--ed-text);
+    font-size: 12px;
+    paint-order: stroke;
+    stroke: var(--ed-bg);
+    stroke-width: 3px;
+    stroke-linejoin: round;
+}
+.editor-root .md-map-scale {
+    margin-top: 0.2rem;
+    font-size: 0.78em;
+    color: var(--ed-text-dim);
+    text-align: right;
+}
+.editor-root .md-map-notes {
+    margin: 0.4rem 0 0;
+    padding: 0;
+    list-style: none;
+    columns: 2 14rem;
+    column-gap: 1.2rem;
+}
+.editor-root .md-map-notes li { break-inside: avoid; margin: 0.1rem 0; }
+.editor-root .md-map-note-name { font-weight: 600; }
+
+/* Collapsible callout: the whole title bar is the toggle while the caret
+   is elsewhere (Alt+click edits the title), and a touch gets a real
+   target for the chevron. */
+.editor-root .cm-line.md-callout-collapsible:has(.md-callout-fold) { cursor: pointer; }
+@media (pointer: coarse) {
+    .editor-root .md-callout-fold { min-width: 44px; min-height: 44px; }
+}

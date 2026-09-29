@@ -76,6 +76,11 @@ pub trait VaultLookup {
     fn lookup_source(&self, _name: &str) -> Option<VaultSourceHit> {
         None
     }
+    /// The page `name` is a word (a Hebrew or Greek term) → the link
+    /// renders as a word badge. `None` (default) = plain link.
+    fn lookup_word(&self, _name: &str) -> Option<VaultWordHit> {
+        None
+    }
     /// Find a block by Obsidian short-id `Page#^id`.
     fn lookup_block_short(&self, page: &str, short_id: &str) -> Option<String>;
 }
@@ -131,6 +136,29 @@ pub struct VaultSourceHit {
     pub title: String,
     /// Author or channel, for the tooltip; empty when unknown.
     pub author: String,
+    /// Where the source lives (`https://www.youtube.com/watch?v=…`);
+    /// empty when unknown. The host plays a timestamp from it.
+    pub url: String,
+}
+
+/// A wikilink target that is a *word* — a Hebrew or Greek term with its
+/// own page (frontmatter `lemma:`).
+///
+/// Drives the WORD BADGE: `[[herem|ḥērem]]` shows the word in its own
+/// script beside the transliteration, with the gloss as the preview.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VaultWordHit {
+    /// The word in its own script (`חֵרֶם`).
+    pub lemma: String,
+    /// Transliteration (`ḥērem`) — the badge's text when the link has
+    /// none of its own.
+    pub translit: String,
+    /// Short gloss (`devoted to God; banned`).
+    pub gloss: String,
+    /// Strong's number (`H2764`), empty when unknown.
+    pub strongs: String,
+    /// `hebrew`, `aramaic` or `greek` — sets the script's direction.
+    pub language: String,
 }
 
 /// A wikilink target that parses as a scripture reference.
@@ -336,6 +364,7 @@ pub fn live_preview_with_lookups(
     reset_keyflow_budget();
     reset_tabs_budget();
     reset_block_index();
+    set_fold_starts(&state.folds);
 
     let text = state.doc.to_string();
     // In reading mode, swap the primary selection for one that
@@ -360,6 +389,7 @@ pub fn live_preview_with_lookups(
     let inline_decs_before = out.len();
     emit_status_pills(&text, primary, &mut out);
     emit_roster_rows(&text, primary, vault, &mut out);
+    emit_lede(&text, primary, vault, &mut out);
     // Lazily computed on the first song strip (resolver scans are cheap
     // and cached, but most documents have no strips at all).
     let mut strip_runs: Option<std::collections::HashMap<usize, StripRunCtx>> = None;
@@ -978,10 +1008,11 @@ fn embed_widget_html(raw: &str, doc: &str, vault: Option<&dyn VaultLookup>) -> S
             vault.and_then(|v| v.lookup_section(page_part, frag))
         };
         return render_embed_card_section(
-            "📄",
             &safe_page,
             &html_escape(frag),
             resolved.as_deref(),
+            (!is_intra_doc).then_some(vault).flatten(),
+            &format!("{page_part}#{frag}"),
         );
     }
     // 3. Whole-page embed. Cross-doc resolution via vault;
@@ -1077,19 +1108,54 @@ fn render_embed_card_page(icon: &str, page: &str, resolved: Option<&str>) -> Str
     )
 }
 
+/// A section of another page, shown in this one: `![[Page#Heading]]`.
+///
+/// The section renders in full — lists, tables, verse cards, badges, its
+/// links resolved against `vault` — so one page can hold a thing and
+/// others show it without copying it. The head names where it lives
+/// and opens it (`data-href`).
 fn render_embed_card_section(
-    icon: &str,
     page: &str,
     heading: &str,
     resolved: Option<&str>,
+    vault: Option<&dyn VaultLookup>,
+    href: &str,
 ) -> String {
     let body = resolved.map_or_else(
         || r#"<span class="md-embed-placeholder">multi-file lookup pending</span>"#.to_string(),
-        render_embed_preview,
+        |md| render_embedded_markdown(md, vault),
     );
     format!(
-        r#"<div class="md-embed-card md-embed-section"><div class="md-embed-head">{icon} <span class="md-embed-title">{page}</span> <span class="md-embed-sep">›</span> <span class="md-embed-frag">{heading}</span></div><div class="md-embed-body">{body}</div></div>"#
+        r#"<div class="md-embed-card md-embed-section"><div class="md-embed-head" data-href="{}"><span class="md-embed-title">{page}</span> <span class="md-embed-sep">›</span> <span class="md-embed-frag">{heading}</span></div><div class="md-embed-body md-embed-rendered">{body}</div></div>"#,
+        html_escape(href)
     )
+}
+
+thread_local! {
+    /// How deep inside an embed the current render is — an embed that
+    /// embeds itself must stop somewhere.
+    static EMBED_DEPTH: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+}
+
+/// Markdown rendered in full for an embed: its own decoration pass, with
+/// the vault. That pass resets this thread's per-pass state (the block
+/// index), so the outer pass's copy is kept and put back. Two levels
+/// deep, an embed shows its lines plainly instead of rendering again.
+fn render_embedded_markdown(md: &str, vault: Option<&dyn VaultLookup>) -> String {
+    let depth = EMBED_DEPTH.with(std::cell::Cell::get);
+    if depth >= 2 {
+        return render_embed_preview(md);
+    }
+    let saved = BLOCK_INDEX.with(|m| m.borrow().clone());
+    EMBED_DEPTH.with(|d| d.set(depth.saturating_add(1)));
+    let mut opts = crate::html::HtmlOptions::new();
+    if let Some(v) = vault {
+        opts = opts.vault(v);
+    }
+    let html = crate::html::render_markdown_html_opts(md.trim(), &opts);
+    EMBED_DEPTH.with(|d| d.set(depth));
+    BLOCK_INDEX.with(|m| *m.borrow_mut() = saved);
+    html
 }
 
 fn render_embed_card_short(icon: &str, page: &str, short: &str, resolved: Option<&str>) -> String {
@@ -1680,7 +1746,8 @@ fn decorate_link_span(
         // stripped before the page-name lookup so
         // `[[Page#Section]]` resolves when Page exists.
         if span.class == "md-wikilink"
-            && decorate_source_citation(span, text, primary, vault, &h, &display, out)
+            && (decorate_source_citation(span, text, primary, vault, &h, &display, out)
+                || decorate_word_link(span, text, primary, vault, &h, &display, out))
         {
             return true;
         }
@@ -1721,20 +1788,18 @@ fn decorate_link_span(
             .as_ref()
             .filter(|_| !cursor_touches(primary, span.outer.clone()))
         {
-            out.push(Decoration::replace(display.clone()));
-            out.push(Decoration::widget(
-                display.start,
-                scripture_chip_html(&h, sc, alias.as_deref()),
-            ));
-            out.push(Decoration::atomic(span.outer.clone()));
+            out.extend(badge(span, &display, scripture_chip_html(&h, sc, alias.as_deref())));
             return true;
         }
+        let preview = page_preview(span.class, cls, &h, vault);
         let mut attrs = vec![("data-href".into(), h)];
-        if let Some(t) = link_title {
-            attrs.push(("title".into(), t));
-        }
-        if let Some(text) = scripture_hit.as_ref().and_then(scripture_tooltip) {
-            attrs.push(("title".into(), text));
+        attrs.extend(link_title.map(|t| ("title".into(), t)));
+        attrs.extend(scripture_hit.as_ref().and_then(scripture_tooltip).map(|t| ("title".into(), t)));
+        // A page link previews its page — the summary, or the opening
+        // lines — in the hover card, so a reader can see what it is
+        // without leaving.
+        if let Some((page, text)) = preview {
+            attrs.extend([("data-preview-head".into(), page), ("data-preview".into(), text)]);
         }
         out.push(Decoration::mark_with_attrs(display, cls, attrs));
         if !cursor_touches(primary, span.outer.clone()) {
@@ -1750,6 +1815,31 @@ fn decorate_link_span(
     true
 }
 
+/// A widget standing in for a link's display text, the whole link atomic.
+fn badge(span: &Span, display: &std::ops::Range<usize>, html: String) -> [DecoratedRange; 3] {
+    [
+        Decoration::replace(display.clone()),
+        Decoration::widget(display.start, html),
+        Decoration::atomic(span.outer.clone()),
+    ]
+}
+
+/// A resolved page link's hover card: the page name and its preview
+/// (summary or opening lines). `None` for anything but a plain page link.
+fn page_preview(
+    span_class: &str,
+    cls: &str,
+    href: &str,
+    vault: Option<&dyn VaultLookup>,
+) -> Option<(String, String)> {
+    if span_class != "md-wikilink" || cls != "md-wikilink" {
+        return None;
+    }
+    let page = href.split(['#', '|']).next().unwrap_or(href).trim().to_owned();
+    let hit = vault?.lookup_page(&page)?;
+    (!hit.preview.trim().is_empty()).then_some((page, hit.preview))
+}
+
 /// A scripture chip's hover text: the reference, its translation, and the
 /// verse text once the host has it.
 fn scripture_tooltip(sc: &VaultScriptureHit) -> Option<String> {
@@ -1762,8 +1852,19 @@ fn scripture_tooltip(sc: &VaultScriptureHit) -> Option<String> {
 /// and for a table cell. `label` is the writer's display text; without
 /// one the chip reads as the reference (`Joshua 11:21`).
 fn scripture_chip_html(href: &str, sc: &VaultScriptureHit, label: Option<&str>) -> String {
-    let title = scripture_tooltip(sc)
-        .map(|t| format!(r#" title="{}""#, html_escape(&t)))
+    // The verse is the hover card: the reference and translation as its
+    // head, the text as its body.
+    let title = sc
+        .text
+        .as_ref()
+        .map(|t| {
+            format!(
+                r#" data-preview-head="{} · {}" data-preview="{}""#,
+                html_escape(&sc.display),
+                html_escape(&sc.translation),
+                html_escape(t)
+            )
+        })
         .unwrap_or_default();
     let label = label.unwrap_or(&sc.display);
     let body = reference_parts(label).map_or_else(
@@ -1817,17 +1918,109 @@ fn decorate_source_citation(
     out.push(Decoration::replace(display.clone()));
     out.push(Decoration::widget(
         display.start,
-        source_chip_html(target, &src, alias.as_deref()),
+        source_chip_html(target, &src, alias.as_deref(), cited_passage(target, vault).as_deref()),
     ));
     out.push(Decoration::atomic(span.outer.clone()));
     true
+}
+
+/// What a citation points at inside its source — the transcript lines at
+/// `#^t1226`, the block at `#^id` — cut to a readable length for the
+/// hover card. `None` without an anchor, or before the host has the text.
+fn cited_passage(target: &str, vault: Option<&dyn VaultLookup>) -> Option<String> {
+    const MAX: usize = 320;
+    let (page, anchor) = target.split_once("#^")?;
+    let text = vault?.lookup_block_short(page.trim(), anchor.trim())?;
+    let text = text.trim();
+    // Drop a leading `[12:34]` stamp and the trailing `^id`.
+    let text = text
+        .strip_prefix('[')
+        .and_then(|t| t.split_once("] "))
+        .map_or(text, |(_, t)| t);
+    let text = text.rsplit_once(" ^").map_or(text, |(t, _)| t).trim();
+    if text.chars().count() <= MAX {
+        return Some(text.to_owned());
+    }
+    let cut: String = text.chars().take(MAX).collect();
+    let cut = cut.rsplit_once(' ').map_or(cut.as_str(), |(a, _)| a);
+    Some(format!("{cut}…"))
+}
+
+/// A link to a word's page — a Hebrew or Greek term — reads as the word:
+/// its own script beside the transliteration, the gloss in the hover
+/// card. Caret inside: the source text. `true` when the span was consumed.
+fn decorate_word_link(
+    span: &Span,
+    text: &str,
+    primary: Range,
+    vault: Option<&dyn VaultLookup>,
+    href: &str,
+    display: &std::ops::Range<usize>,
+    out: &mut Vec<DecoratedRange>,
+) -> bool {
+    if cursor_touches(primary, span.outer.clone()) {
+        return false;
+    }
+    let target = href.split('|').next().unwrap_or(href).trim();
+    let page = target.split('#').next().unwrap_or(target).trim();
+    let Some(word) = vault.and_then(|v| v.lookup_word(page)) else {
+        return false;
+    };
+    let alias = text
+        .slice(span.body.clone())
+        .split_once('|')
+        .map(|(_, a)| a.trim().to_owned());
+    out.push(Decoration::replace(display.clone()));
+    out.push(Decoration::widget(
+        display.start,
+        word_chip_html(target, &word, alias.as_deref()),
+    ));
+    out.push(Decoration::atomic(span.outer.clone()));
+    true
+}
+
+/// A word badge as HTML — the lemma in its script (right to left for
+/// Hebrew and Aramaic), then the transliteration or the link's own text.
+fn word_chip_html(href: &str, w: &VaultWordHit, label: Option<&str>) -> String {
+    let (lang, dir) = match w.language.to_lowercase().as_str() {
+        "greek" => ("grc", "ltr"),
+        "aramaic" => ("arc", "rtl"),
+        _ => ("he", "rtl"),
+    };
+    let head = [w.lemma.as_str(), w.translit.as_str(), w.strongs.as_str()]
+        .iter()
+        .filter(|s| !s.is_empty())
+        .copied()
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let label = label.filter(|l| !l.is_empty()).unwrap_or(&w.translit);
+    let mut out = format!(
+        r#"<span class="md-wikilink md-word-chip" data-href="{}" data-preview-head="{}" data-preview="{}">"#,
+        html_escape(href),
+        html_escape(&head),
+        html_escape(&w.gloss),
+    );
+    if !w.lemma.is_empty() {
+        let _ = write!(
+            out,
+            r#"<span class="md-word-lemma" lang="{lang}" dir="{dir}">{}</span>"#,
+            html_escape(&w.lemma)
+        );
+    }
+    let _ = write!(out, r#"<span class="md-word-translit">{}</span></span>"#, html_escape(label));
+    out
 }
 
 /// A source badge as HTML — for a widget standing in for a citation,
 /// and for a table cell. The locator is the writer's display text
 /// (`20:26`, `p. 42`) or, without one, a `#^t<seconds>` anchor as a
 /// clock time.
-fn source_chip_html(href: &str, src: &VaultSourceHit, label: Option<&str>) -> String {
+fn source_chip_html(
+    href: &str,
+    src: &VaultSourceHit,
+    label: Option<&str>,
+    passage: Option<&str>,
+) -> String {
     let locator = label.map(str::to_owned).or_else(|| {
         let secs: u64 = href.split_once("#^t")?.1.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()?;
         Some(clock(secs))
@@ -1837,11 +2030,22 @@ fn source_chip_html(href: &str, src: &VaultSourceHit, label: Option<&str>) -> St
     } else {
         format!("{} — {}", src.title, src.author)
     };
+    // The hover card: the source as its head, the cited passage (or,
+    // without one, nothing more) as its body.
+    let card = passage.map_or_else(
+        || format!(r#" title="{}""#, html_escape(&tip)),
+        |p| {
+            format!(
+                r#" data-preview-head="{}" data-preview="{}""#,
+                html_escape(&tip),
+                html_escape(p)
+            )
+        },
+    );
     let mut out = format!(
-        r#"<span class="md-wikilink md-source-chip" data-kind="{}" data-href="{}" title="{}"><span class="md-source-name">{}</span>"#,
+        r#"<span class="md-wikilink md-source-chip" data-kind="{}" data-href="{}"{card}><span class="md-source-name">{}</span>"#,
         html_escape(&src.kind),
         html_escape(href),
-        html_escape(&tip),
         html_escape(&src.short),
     );
     if let Some(at) = locator.filter(|l| !l.trim().is_empty()) {
@@ -2288,6 +2492,9 @@ fn emit_callout_header(
     let abs_marker_end = line_from.saturating_add(marker_end);
     let after_marker = line.after(marker_end);
     if let Some((kind, header_end_off, fold)) = parse_callout_header(after_marker) {
+        // `-` / `+` in the source is where a collapsible callout starts;
+        // a click on it (`EditorState::folds`) flips it from there.
+        let fold = fold.map(|folded| folded != fold_toggled(line_from));
         // Extend the stack with synthetic ancestors if
         // the user opens a depth-3 callout without
         // having opened a depth-2 first. Real docs
@@ -2337,7 +2544,7 @@ fn emit_callout_header(
                 out.push(Decoration::widget(
                         line_to,
                         format!(
-                            r#"<button class="md-callout-fold" data-folded="{folded}" aria-label="Toggle callout">&rsaquo;</button>"#
+                            r#"<button class="md-callout-fold" data-folded="{folded}" data-fold-pos="{line_from}" aria-label="Toggle callout">&rsaquo;</button>"#
                         ),
                     ));
             }
@@ -2676,12 +2883,13 @@ fn emit_rendered_fence(
 fn open_fence_at_line(
     text: &str,
     trimmed: &str,
-    line_from: usize,
-    line_to: usize,
+    line: std::ops::Range<usize>,
     primary: Range,
     fence: &mut Option<(usize, u8, usize, bool)>,
+    vault: Option<&dyn VaultLookup>,
     out: &mut Vec<DecoratedRange>,
 ) -> bool {
+    let (line_from, line_to) = (line.start, line.end);
     if let Some((mc, mlen, info_start)) = opens_fence(trimmed) {
         let info_peek = trimmed.after(info_start).trim();
         let is_kf_fence = info_peek.eq_ignore_ascii_case("kf")
@@ -2720,6 +2928,7 @@ fn open_fence_at_line(
         // that build their widgets inline in `emit_rendered_fence`
         // rather than through a plugin, so they still say so here.
         let is_rendered_fence = crate::plugin::get(info).is_some()
+            || crate::study_blocks::is_study_fence(info)
             || info.eq_ignore_ascii_case("kf")
             || info.eq_ignore_ascii_case("kf+")
             || info.eq_ignore_ascii_case("kf-")
@@ -2743,6 +2952,20 @@ fn open_fence_at_line(
         // code. Skip when the caret is anywhere inside the
         // fence range (so the user sees the raw source while
         // editing).
+        if crate::study_blocks::is_study_fence(info) {
+            let body_end = find_fence_close(text, content_start, mc, mlen);
+            let close_end = text.after(body_end).find('\n').map_or(text.len(), |i| body_end.saturating_add(i));
+            let whole = line_from..close_end;
+            let body = text.slice(content_start..body_end);
+            if !cursor_touches(primary, whole.clone())
+                && let Some(html) = crate::study_blocks::render(info, body, content_start, vault)
+            {
+                out.push(Decoration::replace(whole.clone()));
+                out.push(Decoration::widget(line_from, html));
+                out.push(Decoration::atomic(whole));
+            }
+            return true;
+        }
         if emit_rendered_fence(
             text,
             info,
@@ -3106,7 +3329,7 @@ fn scan_blocks(
 
         // ── Starting a fence ───────────────────────────────
         let trimmed = line.trim_start();
-        if open_fence_at_line(text, trimmed, line_from, line_to, primary, &mut fence, out) {
+        if open_fence_at_line(text, trimmed, line_from..line_to, primary, &mut fence, vault, out) {
             continue;
         }
 
@@ -3154,6 +3377,42 @@ fn frontmatter_scalar(text: &str, key: &str) -> Option<String> {
             .and_then(|r| r.strip_prefix(':'))
             .map(|v| v.trim().trim_matches(['"', '\'']).trim().to_owned())
     })
+}
+
+/// A page's one-line `summary:` (frontmatter), set under its title as a
+/// lede — the page in a sentence, before the page itself. Only when the
+/// title is the first thing after the frontmatter; the caret on the title
+/// line hides it, so the heading edits like any line.
+fn emit_lede(
+    text: &str,
+    primary: Range,
+    vault: Option<&dyn VaultLookup>,
+    out: &mut Vec<DecoratedRange>,
+) {
+    let Some(summary) = frontmatter_scalar(text, "summary").filter(|s| !s.is_empty()) else {
+        return;
+    };
+    let mut pos = parse_frontmatter(text).map_or(0, |fm| fm.outer.end);
+    for line in text.after(pos).split_inclusive('\n') {
+        let body = line.trim_end_matches(['\n', '\r']);
+        if body.starts_with("# ") {
+            let end = pos.saturating_add(body.len());
+            if !cursor_touches(primary, pos..end) {
+                out.push(Decoration::widget(
+                    end,
+                    format!(
+                        r#"<span class="md-lede">{}</span>"#,
+                        render_table_cell(&summary, vault)
+                    ),
+                ));
+            }
+            return;
+        }
+        if !body.trim().is_empty() {
+            return;
+        }
+        pos = pos.saturating_add(line.len());
+    }
 }
 
 /// Does the document's YAML frontmatter declare `type: setlist`?
@@ -3398,7 +3657,10 @@ fn render_cell_wikilink(body: &str, vault: Option<&dyn VaultLookup>) -> String {
     };
     let page = target.split('#').next().unwrap_or(target).trim();
     if let Some(src) = vault.and_then(|v| v.lookup_source(page)) {
-        return source_chip_html(target, &src, alias);
+        return source_chip_html(target, &src, alias, cited_passage(target, vault).as_deref());
+    }
+    if let Some(word) = vault.and_then(|v| v.lookup_word(page)) {
+        return word_chip_html(target, &word, alias);
     }
     let known = vault.is_none_or(|v| v.lookup_page(page).is_some());
     if !known && let Some(sc) = vault.and_then(|v| v.lookup_scripture(page)) {
@@ -3416,7 +3678,7 @@ fn render_cell_wikilink(body: &str, vault: Option<&dyn VaultLookup>) -> String {
     )
 }
 
-fn render_table_cell(cell: &str, vault: Option<&dyn VaultLookup>) -> String {
+pub(crate) fn render_table_cell(cell: &str, vault: Option<&dyn VaultLookup>) -> String {
     let b = cell.as_bytes();
     let mut out = String::with_capacity(cell.len());
     let mut i = 0;
@@ -4372,6 +4634,21 @@ static BLOCK_INDEX: std::cell::RefCell<std::collections::HashMap<String, usize>>
     std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
+thread_local! {
+    /// Line starts of the collapsible callouts the reader has flipped
+    /// from their written state — this pass's copy of `EditorState::folds`.
+    static FOLD_STARTS: std::cell::RefCell<Vec<usize>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn fold_toggled(line_start: usize) -> bool {
+    FOLD_STARTS.with(|f| f.borrow().contains(&line_start))
+}
+
+pub(crate) fn set_fold_starts(folds: &[std::ops::Range<usize>]) {
+    FOLD_STARTS.with(|f| *f.borrow_mut() = folds.iter().map(|r| r.start).collect());
+}
+
 pub(crate) fn reset_block_index() {
     BLOCK_INDEX.with(|m| m.borrow_mut().clear());
 }
@@ -5084,6 +5361,7 @@ mod tests {
         sections: std::collections::HashMap<(String, String), String>,
         scripture: std::collections::HashMap<String, super::VaultScriptureHit>,
         sources: std::collections::HashMap<String, super::VaultSourceHit>,
+        words: std::collections::HashMap<String, super::VaultWordHit>,
     }
     impl super::VaultLookup for FakeVault {
         fn lookup_block(&self, u: &str) -> Option<super::VaultBlockHit> {
@@ -5095,7 +5373,10 @@ mod tests {
         fn lookup_section(&self, p: &str, h: &str) -> Option<String> {
             self.sections.get(&(p.into(), h.into())).cloned()
         }
-        fn lookup_block_short(&self, _p: &str, _id: &str) -> Option<String> {
+        fn lookup_block_short(&self, p: &str, id: &str) -> Option<String> {
+            if let Some(b) = self.blocks.get(&format!("{p}#^{id}")) {
+                return Some(b.preview.clone());
+            }
             None
         }
         fn lookup_scripture(&self, t: &str) -> Option<super::VaultScriptureHit> {
@@ -5103,6 +5384,9 @@ mod tests {
         }
         fn lookup_source(&self, n: &str) -> Option<super::VaultSourceHit> {
             self.sources.get(n).cloned()
+        }
+        fn lookup_word(&self, n: &str) -> Option<super::VaultWordHit> {
+            self.words.get(n).cloned()
         }
     }
 
@@ -5224,6 +5508,7 @@ mod tests {
                 short: "The Other Gods".into(),
                 title: "What the Bible Really Says About the Other Gods".into(),
                 author: "Nils Glenn".into(),
+                url: "https://www.youtube.com/watch?v=CweAM530ryc".into(),
             },
         );
         FakeVault {
@@ -5273,6 +5558,7 @@ mod tests {
                 short: "Ancient Conquest Accounts".into(),
                 title: "Ancient Conquest Accounts".into(),
                 author: String::new(),
+                url: String::new(),
             },
         );
         let names = |doc: &str| -> Vec<String> {
@@ -5300,6 +5586,94 @@ mod tests {
         assert_eq!(names(&format!("x {a}\n\n## Next\n\ny {a}\n")), ["The Other Gods", "The Other Gods"]);
         assert_eq!(super::short_name("Genesis"), "Genesis");
         assert_eq!(super::short_name("Unforgettable Encounters"), "Unforget…");
+    }
+
+    #[test]
+    fn a_summary_is_the_lede_under_the_title() {
+        let doc = "---\ntitle: T\nsummary: The page in *one* line.\n---\n\n# T\n\nBody\n";
+        let decs = super::live_preview(&state(doc, doc.len()));
+        let lede = widget_with(&decs, "md-lede").expect("a lede");
+        assert!(lede.contains(r#"in <span class="md-italic">one</span> line."#), "{lede}");
+        // Caret on the title: no lede in the way.
+        let at = doc.find("# T").unwrap() + 2;
+        assert!(widget_with(&super::live_preview(&state(doc, at)), "md-lede").is_none());
+        // No title first: no lede.
+        let doc = "---\nsummary: x\n---\nIntro\n# T\n";
+        assert!(widget_with(&super::live_preview(&state(doc, 0)), "md-lede").is_none());
+    }
+
+    /// Hover cards: a page link carries its page's preview, a citation
+    /// the passage it points at, a word its gloss.
+    #[test]
+    fn links_carry_what_their_hover_card_shows() {
+        let mut vault = source_vault();
+        vault.pages.insert(
+            "Elohim".into(),
+            super::VaultPageHit { preview: "Not a name but a category.".into() },
+        );
+        vault.blocks.insert(
+            "other-gods-ac25#^t1226".into(),
+            super::VaultBlockHit {
+                page: "other-gods-ac25".into(),
+                preview: "[20:26] Mount Sinai matters so much ^t1226".into(),
+            },
+        );
+        vault.words.insert(
+            "herem".into(),
+            super::VaultWordHit {
+                lemma: "חֵרֶם".into(),
+                translit: "ḥērem".into(),
+                gloss: "a thing devoted to God".into(),
+                strongs: "H2764".into(),
+                language: "hebrew".into(),
+            },
+        );
+        let doc = "see [[Elohim]], [[other-gods-ac25#^t1226|20:26]] and [[herem]].";
+        let decs = super::live_preview_with(&state(doc, 0), Some(&vault));
+        assert!(decs.iter().any(|d| matches!(&d.kind,
+            crate::decoration::DecorationKind::Mark { attrs, .. }
+                if attrs.iter().any(|(k, v)| k == "data-preview" && v == "Not a name but a category."))));
+        let cite = widget_with(&decs, "md-source-chip").expect("a badge");
+        assert!(cite.contains(r#"data-preview="Mount Sinai matters so much""#), "{cite}");
+        let word = widget_with(&decs, "md-word-chip").expect("a word");
+        assert!(word.contains(r#"<span class="md-word-lemma" lang="he" dir="rtl">חֵרֶם</span>"#), "{word}");
+        assert!(word.contains(r#"<span class="md-word-translit">ḥērem</span>"#), "{word}");
+        assert!(word.contains(r#"data-preview-head="חֵרֶם · ḥērem · H2764""#), "{word}");
+    }
+
+    /// `![[Page#Heading]]` renders the section in full — here a list and a
+    /// resolved link — and the head opens it.
+    #[test]
+    fn a_section_embed_renders_the_section() {
+        let mut vault = FakeVault::default();
+        vault.pages.insert("Other".into(), super::VaultPageHit { preview: "x".into() });
+        vault.sections.insert(
+            ("Three".into(), "Tiers".into()),
+            "- **Yahweh** over all\n- the sons of God, see [[Other]]\n".into(),
+        );
+        let doc = "before\n\n![[Three#Tiers]]\n\nafter";
+        let decs = super::live_preview_with(&state(doc, 0), Some(&vault));
+        let card = widget_with(&decs, "md-embed-section").expect("an embed");
+        assert!(card.contains(r#"data-href="Three#Tiers""#), "{card}");
+        assert!(card.contains("md-bold"), "{card}");
+        assert!(card.contains(r#"data-href="Other""#) && !card.contains("md-wikilink-unresolved"), "{card}");
+    }
+
+    /// A collapsible callout starts as written (`-` folded) and a fold
+    /// toggle at its header flips it; the button knows where it is.
+    #[test]
+    fn a_folded_callout_opens_when_toggled() {
+        let doc = "> [!note]- How firm is this?\n> Not very.\n";
+        let folded = |s: &crate::EditorState| {
+            super::live_preview(s).iter().any(|d| matches!(&d.kind,
+                crate::decoration::DecorationKind::Line { class } if class == "md-callout-folded"))
+        };
+        let mut s = state(doc, doc.len());
+        assert!(folded(&s));
+        let btn = widget_with(&super::live_preview(&s), "md-callout-fold").expect("a button");
+        assert!(btn.contains(r#"data-fold-pos="0""#), "{btn}");
+        s.folds = vec![0..1];
+        assert!(!folded(&s));
     }
 
     #[test]
