@@ -71,6 +71,11 @@ pub trait VaultLookup {
     fn lookup_scripture(&self, _target: &str) -> Option<VaultScriptureHit> {
         None
     }
+    /// The page `name` is a source (a video, book, article …) → the
+    /// link renders as a source badge. `None` (default) = plain link.
+    fn lookup_source(&self, _name: &str) -> Option<VaultSourceHit> {
+        None
+    }
     /// Find a block by Obsidian short-id `Page#^id`.
     fn lookup_block_short(&self, page: &str, short_id: &str) -> Option<String>;
 }
@@ -107,6 +112,25 @@ pub struct VaultSetlistSongRow {
     pub artist: Option<String>,
     pub duration_sec: f64,
     pub stem_count: usize,
+}
+
+/// A wikilink target that is a *source* the page cites.
+///
+/// A video, book, article or text. Drives the SOURCE BADGE: a citation
+/// such as `[[talk#^t1226|20:26]]` reads as what it cites (an icon for
+/// the kind, the source's short name) and where in it, not as a bare
+/// timestamp.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VaultSourceHit {
+    /// `youtube`, `video`, `podcast`, `book`, `article`, `paper`, `web`
+    /// or `text` — picks the icon.
+    pub kind: String,
+    /// The short name the badge shows (`The Other Gods`).
+    pub short: String,
+    /// Full title, for the tooltip.
+    pub title: String,
+    /// Author or channel, for the tooltip; empty when unknown.
+    pub author: String,
 }
 
 /// A wikilink target that parses as a scripture reference.
@@ -811,17 +835,68 @@ fn song_strip_html(target: &str, song: &VaultSongHit, ctx: StripRunCtx) -> Strin
 /// translation as the caption. The card carries
 /// `data-href="scripture-open:<target>"` — the host routes it to the
 /// scripture reader anchored at the verse.
-fn scripture_card_html(target: &str, sc: &VaultScriptureHit) -> String {
+///
+/// `note` is the writer's annotation — the text after ` — ` on the
+/// reference's line, with its offset in the doc — set under the verse,
+/// with its own links and emphasis rendered.
+fn scripture_card_html(
+    target: &str,
+    sc: &VaultScriptureHit,
+    note: Option<(&str, usize)>,
+    vault: Option<&dyn VaultLookup>,
+) -> String {
     let safe = html_escape(target);
-    let display = html_escape(&sc.display);
+    let display = reference_parts(&sc.display).map_or_else(
+        || html_escape(&sc.display),
+        |(book, chapter, verses)| {
+            let mut d = format!(
+                r#"<span class="md-scripture-book">{}</span> <span class="md-scripture-ch">{}</span>"#,
+                html_escape(book),
+                html_escape(chapter)
+            );
+            if let Some(v) = verses {
+                let _ = write!(
+                    d,
+                    r#"<span class="md-scripture-sep">:</span><span class="md-scripture-vs">{}</span>"#,
+                    html_escape(v)
+                );
+            }
+            d
+        },
+    );
     let tx = html_escape(&sc.translation);
     let body = sc
         .text
         .as_ref()
         .map_or_else(|| "Loading…".to_string(), |t| html_escape(t));
+    // A click on the note (not on a link in it) puts the caret there to
+    // edit it, rather than opening the verse.
+    let note = note
+        .map(|(n, at)| (n.trim(), at))
+        .filter(|(n, _)| !n.is_empty())
+        .map(|(n, at)| {
+            format!(
+                r#"<span class="md-scripture-card-note" data-focus-pos="{at}">{}</span>"#,
+                render_table_cell(n, vault)
+            )
+        })
+        .unwrap_or_default();
     format!(
-        r#"<span class="md-scripture-card" data-href="scripture-open:{safe}"><span class="md-scripture-card-text">{body}</span><span class="md-scripture-card-ref"><span class="md-scripture-card-display">{display}</span><span class="md-scripture-card-tx">{tx}</span><span class="md-scripture-card-open">Study ›</span></span></span>"#
+        r#"<span class="md-scripture-card" data-href="scripture-open:{safe}"><span class="md-scripture-card-text">{body}</span><span class="md-scripture-card-ref"><span class="md-scripture-card-display">{display}</span><span class="md-scripture-card-tx">{tx}</span><span class="md-scripture-card-open">Study ›</span></span>{note}</span>"#
     )
+}
+
+/// The annotation after a reference on its own line:
+/// `[[John 3:16]] — why it matters` → `why it matters`. `Some("")` for a
+/// bare reference, `None` when the rest of the line is not a note.
+fn card_note(rest: &str) -> Option<&str> {
+    let rest = rest.trim();
+    if rest.is_empty() {
+        return Some("");
+    }
+    rest.strip_prefix('—')
+        .or_else(|| rest.strip_prefix("--"))
+        .map(str::trim)
 }
 
 /// Render the HTML for an `![[file|opts]]` embed when the
@@ -1073,6 +1148,19 @@ fn cursor_touches(primary: Range, range: std::ops::Range<usize>) -> bool {
     sel_to >= range.start && sel_from <= range.end
 }
 
+/// Where the span just decorated ends its claim, when that is past the
+/// span itself — the atomic range an annotated verse card pushes over its
+/// whole line. `None` for the ordinary case.
+fn claimed_past(span: &Span, out: &[DecoratedRange]) -> Option<usize> {
+    out.last()
+        .filter(|d| {
+            matches!(d.kind, crate::decoration::DecorationKind::Atomic)
+                && d.from == span.outer.start
+                && d.to > span.outer.end
+        })
+        .map(|d| d.to)
+}
+
 /// Walk every inline span in `text` and push its decorations onto `out`.
 ///
 /// The inline half of [`live_preview_with_lookups`], split out so that
@@ -1088,8 +1176,13 @@ fn decorate_inline_spans(
     out: &mut Vec<DecoratedRange>,
 ) {
     let defs = link_definitions(text);
+    // A span can claim more than itself: an annotated verse card takes
+    // the rest of its line (the note, with its own links and emphasis).
+    // Spans inside a claimed stretch are already drawn by that widget,
+    // and decorating them again would put replaces inside its replace.
+    let mut claimed_to = 0usize;
     for span in find_spans(text) {
-        if in_fenced_code(fenced_ranges, span.outer.start) {
+        if in_fenced_code(fenced_ranges, span.outer.start) || span.outer.start < claimed_to {
             continue;
         }
         if !span.body.is_empty() {
@@ -1116,6 +1209,10 @@ fn decorate_inline_spans(
                 continue;
             }
             if !decorate_link_span(&span, text, primary, &defs, vault, strip_runs, out) {
+                continue;
+            }
+            if let Some(end) = claimed_past(&span, out) {
+                claimed_to = end;
                 continue;
             }
         }
@@ -1365,20 +1462,59 @@ fn decorate_standalone_wikilink(
             // embeds the verse text. Real pages win (checked
             // above via setlist/song; the general page check
             // below keeps ordinary links untouched).
-            if vault.is_some_and(|v| v.lookup_page(page_part).is_none())
-                && let Some(sc) = vault.and_then(|v| v.lookup_scripture(page_part))
-            {
-                out.push(Decoration::replace(span.outer.clone()));
-                out.push(Decoration::widget(
-                    span.outer.start,
-                    scripture_card_html(page_part, &sc),
-                ));
-                out.push(Decoration::atomic(span.outer.clone()));
+            if let Some(card) = scripture_card(span, page_part, None, line_end, vault) {
+                out.extend(card);
                 return true;
             }
         }
+        // VERSE CARD with a note: `[[John 3:16]] — why it matters`, the
+        // reference first on its line. The whole line is the card, so
+        // the caret anywhere on it shows the source.
+        let at_line_start = text.slice(line_start..span.outer.start).trim().is_empty();
+        if at_line_start
+            && !cursor_touches(primary, span.outer.start..line_end)
+            && let Some(note) = card_note(text.slice(span.outer.end..line_end))
+            && !note.is_empty()
+            && let Some(at) = text.slice(span.outer.end..line_end).find(note)
+            && let Some(card) = scripture_card(
+                span,
+                page_part,
+                Some((note, span.outer.end.saturating_add(at))),
+                line_end,
+                vault,
+            )
+        {
+            out.extend(card);
+            return true;
+        }
     }
     false
+}
+
+/// The decorations for a verse card standing in for `span` and the rest
+/// of its line (the note, when there is one). `None` when the target is
+/// a page, or not scripture.
+fn scripture_card(
+    span: &Span,
+    page: &str,
+    note: Option<(&str, usize)>,
+    line_end: usize,
+    vault: Option<&dyn VaultLookup>,
+) -> Option<[DecoratedRange; 3]> {
+    let v = vault?;
+    if v.lookup_page(page).is_some() {
+        return None;
+    }
+    let sc = v.lookup_scripture(page)?;
+    let whole = span.outer.start..line_end.max(span.outer.end);
+    Some([
+        Decoration::replace(whole.clone()),
+        Decoration::widget(
+            span.outer.start,
+            scripture_card_html(page, &sc, note, vault),
+        ),
+        Decoration::atomic(whole),
+    ])
 }
 
 /// Decorate the link family — `[text](url)`, `[[wikilink]]` and their vault
@@ -1467,6 +1603,11 @@ fn decorate_link_span(
         // unresolved — `#Heading` / `#^id` suffixes are
         // stripped before the page-name lookup so
         // `[[Page#Section]]` resolves when Page exists.
+        if span.class == "md-wikilink"
+            && decorate_source_citation(span, text, primary, vault, &h, &display, out)
+        {
+            return true;
+        }
         let mut scripture_hit: Option<VaultScriptureHit> = None;
         let cls = if span.class == "md-wikilink" {
             let page_part = h.split(['#', '|']).next().unwrap_or(&h).trim();
@@ -1491,19 +1632,23 @@ fn decorate_link_span(
         } else {
             span.class
         };
-        // A scripture chip without its own display text reads as the
-        // reference — `Joshua 11:21` — not as the target it was written
-        // with (`bible::Josh.11.21`). Caret inside: the source, as for
-        // every link.
-        let unaliased = !text.slice(span.body.clone()).contains('|');
+        // A scripture link is a badge — book, chapter and verses each
+        // set apart. Without its own display text it reads as the
+        // reference (`Joshua 11:21`), not as the target it was written
+        // with (`bible::Josh.11.21`); with display text, that text.
+        // Caret inside: the source, as for every link.
+        let alias = text
+            .slice(span.body.clone())
+            .split_once('|')
+            .map(|(_, a)| a.trim().to_owned());
         if let Some(sc) = scripture_hit
             .as_ref()
-            .filter(|_| unaliased && !cursor_touches(primary, span.outer.clone()))
+            .filter(|_| !cursor_touches(primary, span.outer.clone()))
         {
             out.push(Decoration::replace(display.clone()));
             out.push(Decoration::widget(
                 display.start,
-                scripture_chip_html(&h, sc, None),
+                scripture_chip_html(&h, sc, alias.as_deref()),
             ));
             out.push(Decoration::atomic(span.outer.clone()));
             return true;
@@ -1544,11 +1689,123 @@ fn scripture_chip_html(href: &str, sc: &VaultScriptureHit, label: Option<&str>) 
     let title = scripture_tooltip(sc)
         .map(|t| format!(r#" title="{}""#, html_escape(&t)))
         .unwrap_or_default();
+    let label = label.unwrap_or(&sc.display);
+    let body = reference_parts(label).map_or_else(
+        || html_escape(label),
+        |(book, chapter, verses)| {
+            let mut b = format!(
+                r#"<span class="md-scripture-book">{}</span> <span class="md-scripture-ch">{}</span>"#,
+                html_escape(book),
+                html_escape(chapter)
+            );
+            if let Some(v) = verses {
+                let _ = write!(
+                    b,
+                    r#"<span class="md-scripture-sep">:</span><span class="md-scripture-vs">{}</span>"#,
+                    html_escape(v)
+                );
+            }
+            b
+        },
+    );
     format!(
-        r#"<span class="md-wikilink md-scripture-chip" data-href="{}"{title}>{}</span>"#,
+        r#"<span class="md-wikilink md-scripture-chip" data-href="{}"{title}>{body}</span>"#,
         html_escape(href),
-        html_escape(label.unwrap_or(&sc.display))
     )
+}
+
+/// A citation of a source — a video, a book, an article — reads as what
+/// it cites and where: a badge, not a bare `20:26`. Caret inside: the
+/// source text, as for every link. `true` when the span was consumed.
+fn decorate_source_citation(
+    span: &Span,
+    text: &str,
+    primary: Range,
+    vault: Option<&dyn VaultLookup>,
+    href: &str,
+    display: &std::ops::Range<usize>,
+    out: &mut Vec<DecoratedRange>,
+) -> bool {
+    if cursor_touches(primary, span.outer.clone()) {
+        return false;
+    }
+    let target = href.split('|').next().unwrap_or(href).trim();
+    let page = target.split('#').next().unwrap_or(target).trim();
+    let Some(src) = vault.and_then(|v| v.lookup_source(page)) else {
+        return false;
+    };
+    let alias = text
+        .slice(span.body.clone())
+        .split_once('|')
+        .map(|(_, a)| a.trim().to_owned());
+    out.push(Decoration::replace(display.clone()));
+    out.push(Decoration::widget(
+        display.start,
+        source_chip_html(target, &src, alias.as_deref()),
+    ));
+    out.push(Decoration::atomic(span.outer.clone()));
+    true
+}
+
+/// A source badge as HTML — for a widget standing in for a citation,
+/// and for a table cell. The locator is the writer's display text
+/// (`20:26`, `p. 42`) or, without one, a `#^t<seconds>` anchor as a
+/// clock time.
+fn source_chip_html(href: &str, src: &VaultSourceHit, label: Option<&str>) -> String {
+    let locator = label.map(str::to_owned).or_else(|| {
+        let secs: u64 = href.split_once("#^t")?.1.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()?;
+        Some(clock(secs))
+    });
+    let tip = if src.author.is_empty() {
+        src.title.clone()
+    } else {
+        format!("{} — {}", src.title, src.author)
+    };
+    let mut out = format!(
+        r#"<span class="md-wikilink md-source-chip" data-kind="{}" data-href="{}" title="{}"><span class="md-source-name">{}</span>"#,
+        html_escape(&src.kind),
+        html_escape(href),
+        html_escape(&tip),
+        html_escape(&src.short),
+    );
+    if let Some(at) = locator.filter(|l| !l.trim().is_empty()) {
+        let _ = write!(out, r#"<span class="md-source-loc">{}</span>"#, html_escape(at.trim()));
+    }
+    out.push_str("</span>");
+    out
+}
+
+/// `3725` → `1:02:05`, `1226` → `20:26`.
+fn clock(secs: u64) -> String {
+    let (h, m, s) = (secs / 3600, secs / 60 % 60, secs % 60);
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m}:{s:02}")
+    }
+}
+
+/// A reference label split into book, chapter and verses, so each can
+/// be set differently: `1 Corinthians 15:24–25` is (`1 Corinthians`,
+/// `15`, `24–25`); `Revelation 4–5` has no verses. `None` for display
+/// text that is not a reference (`the verse`), which renders as written.
+fn reference_parts(label: &str) -> Option<(&str, &str, Option<&str>)> {
+    let label = label.trim();
+    let split = label.rfind(' ')?;
+    let book = label.get(..split)?.trim_end();
+    let loc = label.get(split.saturating_add(1)..)?;
+    let is_loc = |c: char| c.is_ascii_digit() || matches!(c, ':' | '–' | '-' | ',' | '.');
+    if book.is_empty()
+        || !loc.starts_with(|c: char| c.is_ascii_digit())
+        || !loc.chars().all(is_loc)
+        || !book.chars().any(char::is_alphabetic)
+    {
+        return None;
+    }
+    Some(match loc.split_once(':') {
+        Some((chapter, verses)) => (book, chapter, Some(verses)),
+        None => (book, loc, None),
+    })
 }
 
 /// Span classes whose decoration is self-contained: `^[inline footnotes]`,
@@ -3055,6 +3312,34 @@ fn collect_table_cells(text: &str, rows: &[(usize, usize)]) -> Vec<Vec<String>> 
 ///
 /// Emits the same `md-*` classes the decoration path uses, so a table
 /// cell and a paragraph style identically.
+/// A `[[wikilink]]` inside a table cell (`body` is between the
+/// brackets), resolved the way a link in a paragraph is: a source badge,
+/// a scripture chip, a page, or unresolved.
+fn render_cell_wikilink(body: &str, vault: Option<&dyn VaultLookup>) -> String {
+    let (target, alias) = match body.split_once('|') {
+        Some((t, a)) => (t.trim(), Some(a.trim())),
+        None => (body.trim(), None),
+    };
+    let page = target.split('#').next().unwrap_or(target).trim();
+    if let Some(src) = vault.and_then(|v| v.lookup_source(page)) {
+        return source_chip_html(target, &src, alias);
+    }
+    let known = vault.is_none_or(|v| v.lookup_page(page).is_some());
+    if !known && let Some(sc) = vault.and_then(|v| v.lookup_scripture(page)) {
+        return scripture_chip_html(target, &sc, alias);
+    }
+    let cls = if known {
+        "md-wikilink"
+    } else {
+        "md-wikilink md-wikilink-unresolved"
+    };
+    format!(
+        r#"<span class="{cls}" data-href="{}">{}</span>"#,
+        html_escape(target),
+        html_escape(alias.unwrap_or(target))
+    )
+}
+
 fn render_table_cell(cell: &str, vault: Option<&dyn VaultLookup>) -> String {
     let b = cell.as_bytes();
     let mut out = String::with_capacity(cell.len());
@@ -3079,30 +3364,7 @@ fn render_table_cell(cell: &str, vault: Option<&dyn VaultLookup>) -> String {
             && let Some(end) = cell.after(i.saturating_add(2)).find("]]")
         {
             let body = cell.slice(i.saturating_add(2)..i.saturating_add(2).saturating_add(end));
-            let (target, alias) = match body.split_once('|') {
-                Some((t, a)) => (t.trim(), Some(a.trim())),
-                None => (body.trim(), None),
-            };
-            let page = target.split('#').next().unwrap_or(target).trim();
-            let scripture = vault
-                .filter(|v| v.lookup_page(page).is_none())
-                .and_then(|v| v.lookup_scripture(page));
-            if let Some(sc) = scripture {
-                out.push_str(&scripture_chip_html(target, &sc, alias));
-            } else {
-                let cls = match vault {
-                    Some(v) if v.lookup_page(page).is_none() => {
-                        "md-wikilink md-wikilink-unresolved"
-                    }
-                    _ => "md-wikilink",
-                };
-                let _ = write!(
-                    out,
-                    r#"<span class="{cls}" data-href="{}">{}</span>"#,
-                    html_escape(target),
-                    html_escape(alias.unwrap_or(target))
-                );
-            }
+            out.push_str(&render_cell_wikilink(body, vault));
             i = i.saturating_add(end.saturating_add(4));
             continue;
         }
@@ -4745,6 +5007,7 @@ mod tests {
         pages: std::collections::HashMap<String, super::VaultPageHit>,
         sections: std::collections::HashMap<(String, String), String>,
         scripture: std::collections::HashMap<String, super::VaultScriptureHit>,
+        sources: std::collections::HashMap<String, super::VaultSourceHit>,
     }
     impl super::VaultLookup for FakeVault {
         fn lookup_block(&self, u: &str) -> Option<super::VaultBlockHit> {
@@ -4761,6 +5024,9 @@ mod tests {
         }
         fn lookup_scripture(&self, t: &str) -> Option<super::VaultScriptureHit> {
             self.scripture.get(t).cloned()
+        }
+        fn lookup_source(&self, n: &str) -> Option<super::VaultSourceHit> {
+            self.sources.get(n).cloned()
         }
     }
 
@@ -4832,7 +5098,9 @@ mod tests {
         let vault = scripture_vault("John 3:16", Some("For God so loved the world…"));
         let decs = super::live_preview_with(&s, Some(&vault));
         let chip = widget_with(&decs, "md-scripture-chip").expect("a chip");
-        assert!(chip.contains(">John 3:16<"), "{chip}");
+        assert!(chip.contains(r#"<span class="md-scripture-book">John</span>"#), "{chip}");
+        assert!(chip.contains(r#"<span class="md-scripture-ch">3</span>"#), "{chip}");
+        assert!(chip.contains(r#"<span class="md-scripture-vs">16</span>"#), "{chip}");
         assert!(
             chip.contains("For God so loved"),
             "the verse is the tooltip: {chip}"
@@ -4847,24 +5115,86 @@ mod tests {
         let vault = scripture_vault("bible::John.3.16", None);
         let decs = super::live_preview_with(&s, Some(&vault));
         let chip = widget_with(&decs, "md-scripture-chip").expect("a chip");
-        assert!(chip.contains(">John 3:16<"), "{chip}");
+        assert!(chip.contains(">John</span> <span"), "{chip}");
+        assert!(!chip.contains("bible::John.3.16<"), "{chip}");
         assert!(chip.contains(r#"data-href="bible::John.3.16""#), "{chip}");
     }
 
-    /// Display text the writer chose wins, and the caret inside the link
-    /// shows its source.
+    /// Display text the writer chose wins — split into its parts when it
+    /// is a reference, as written when it is not — and the caret inside
+    /// the link shows its source.
     #[test]
     fn an_aliased_or_edited_scripture_link_keeps_its_text() {
         let vault = scripture_vault("bible::John.3.16", None);
         let aliased = state("see [[bible::John.3.16|the verse]] here", 0);
         let decs = super::live_preview_with(&aliased, Some(&vault));
-        assert!(widget_with(&decs, "md-scripture-chip").is_none());
-        assert!(decs.iter().any(|d| matches!(&d.kind,
-            crate::decoration::DecorationKind::Mark { class, .. }
-                if class == "md-wikilink md-scripture-chip")));
+        let chip = widget_with(&decs, "md-scripture-chip").expect("a chip");
+        assert!(chip.contains(">the verse</span>"), "{chip}");
+        let named = state("see [[bible::John.3.16|John 3:16]] here", 0);
+        let decs = super::live_preview_with(&named, Some(&vault));
+        let chip = widget_with(&decs, "md-scripture-chip").expect("a chip");
+        assert!(chip.contains(r#"<span class="md-scripture-vs">16</span>"#), "{chip}");
         let editing = state("see [[bible::John.3.16]] here", 10);
         let decs = super::live_preview_with(&editing, Some(&vault));
         assert!(widget_with(&decs, "md-scripture-chip").is_none());
+    }
+
+    fn source_vault() -> FakeVault {
+        let mut sources = std::collections::HashMap::new();
+        sources.insert(
+            "other-gods-ac25".to_string(),
+            super::VaultSourceHit {
+                kind: "youtube".into(),
+                short: "The Other Gods".into(),
+                title: "What the Bible Really Says About the Other Gods".into(),
+                author: "Nils Glenn".into(),
+            },
+        );
+        FakeVault {
+            sources,
+            ..Default::default()
+        }
+    }
+
+    /// A citation reads as what it cites and where — not a bare `20:26`.
+    #[test]
+    fn a_citation_of_a_source_renders_a_source_badge() {
+        let vault = source_vault();
+        let s = state("as argued [[other-gods-ac25#^t1226|20:26]] here", 0);
+        let decs = super::live_preview_with(&s, Some(&vault));
+        let chip = widget_with(&decs, "md-source-chip").expect("a badge");
+        assert!(chip.contains(r#"data-kind="youtube""#), "{chip}");
+        assert!(chip.contains(">The Other Gods<"), "{chip}");
+        assert!(chip.contains(r#"<span class="md-source-loc">20:26</span>"#), "{chip}");
+        assert!(chip.contains("— Nils Glenn"), "the tooltip names the author: {chip}");
+        assert!(chip.contains(r#"data-href="other-gods-ac25#^t1226""#), "{chip}");
+
+        // No display text: the anchor becomes the clock time.
+        let s = state("see [[other-gods-ac25#^t3725]]", 0);
+        let decs = super::live_preview_with(&s, Some(&vault));
+        let chip = widget_with(&decs, "md-source-chip").expect("a badge");
+        assert!(chip.contains(">1:02:05<"), "{chip}");
+
+        // In a table cell too.
+        let cell = super::render_table_cell("[[other-gods-ac25#^t46|0:46]]", Some(&vault));
+        assert!(cell.contains("md-source-chip") && cell.contains(">0:46<"), "{cell}");
+
+        // Caret inside: the source text.
+        let s = state("see [[other-gods-ac25#^t46|0:46]]", 8);
+        let decs = super::live_preview_with(&s, Some(&vault));
+        assert!(widget_with(&decs, "md-source-chip").is_none());
+    }
+
+    #[test]
+    fn a_reference_splits_into_book_chapter_and_verses() {
+        use super::reference_parts as p;
+        assert_eq!(p("John 3:16"), Some(("John", "3", Some("16"))));
+        assert_eq!(p("1 Corinthians 15:24–25"), Some(("1 Corinthians", "15", Some("24–25"))));
+        assert_eq!(p("Job 1:6–2:7"), Some(("Job", "1", Some("6–2:7"))));
+        assert_eq!(p("Revelation 4–5"), Some(("Revelation", "4–5", None)));
+        assert_eq!(p("Song of Solomon 2:1"), Some(("Song of Solomon", "2", Some("1"))));
+        assert_eq!(p("the verse"), None);
+        assert_eq!(p("1 2"), None);
     }
 
     #[test]
@@ -4881,11 +5211,47 @@ mod tests {
         let vault = scripture_vault("bible::John.3.16", Some("For God so loved…"));
         let chip = super::render_table_cell("[[bible::John.3.16]]", Some(&vault));
         assert!(chip.contains("md-scripture-chip"), "{chip}");
-        assert!(chip.contains(">John 3:16<"), "{chip}");
-        let aliased = super::render_table_cell("[[bible::John.3.16|v. 16]]", Some(&vault));
-        assert!(aliased.contains(">v. 16<"), "{aliased}");
+        assert!(chip.contains(r#"<span class="md-scripture-ch">3</span>"#), "{chip}");
+        let aliased = super::render_table_cell("[[bible::John.3.16|the verse]]", Some(&vault));
+        assert!(aliased.contains(">the verse<"), "{aliased}");
         let missing = super::render_table_cell("[[Nowhere]]", Some(&vault));
         assert!(missing.contains("md-wikilink-unresolved"), "{missing}");
+    }
+
+    /// `[[ref]] — note` on its own line is a verse card carrying the
+    /// note; in a list item it stays an inline chip; the caret anywhere
+    /// on the line shows the source.
+    #[test]
+    fn a_reference_line_with_a_note_is_an_annotated_verse_card() {
+        let vault = scripture_vault("bible::John.3.16", Some("For God so loved the world…"));
+        let doc = "intro\n[[bible::John.3.16|John 3:16]] — the *whole* gospel in one verse\nafter";
+        let s = state(doc, 0);
+        let decs = super::live_preview_with(&s, Some(&vault));
+        let card = widget_with(&decs, "md-scripture-card").expect("a card");
+        assert!(card.contains("For God so loved"), "{card}");
+        assert!(card.contains(r#"data-focus-pos="41">the <span class="md-italic">whole</span> gospel in one verse</span>"#), "{card}");
+        assert!(card.contains(r#"<span class="md-scripture-ch">3</span>"#), "{card}");
+        // The card draws the whole line; nothing else is decorated
+        // inside it (the italic, the brackets), or the source leaks
+        // out around the widget.
+        let line = 6..doc.len() - 6;
+        let inside: Vec<_> = decs
+            .iter()
+            .filter(|d| d.from > line.start && d.from < line.end)
+            .collect();
+        assert!(inside.is_empty(), "{inside:?}");
+
+        let listed = state("- [[bible::John.3.16|John 3:16]] — inline", 0);
+        let decs = super::live_preview_with(&listed, Some(&vault));
+        assert!(widget_with(&decs, "md-scripture-card").is_none());
+
+        let editing = state(doc, doc.len() - 8);
+        let decs = super::live_preview_with(&editing, Some(&vault));
+        assert!(widget_with(&decs, "md-scripture-card").is_none());
+
+        assert_eq!(super::card_note("  — why"), Some("why"));
+        assert_eq!(super::card_note(""), Some(""));
+        assert_eq!(super::card_note(" and more"), None);
     }
 
     #[test]
