@@ -2815,3 +2815,15 @@
 .editor-root .md-sc-radio:nth-of-type(7):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(7) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
 .editor-root .md-sc-radio:nth-of-type(8):checked ~ .md-sc-texts > .md-sc-panel:nth-child(8) { display: block; }
 .editor-root .md-sc-radio:nth-of-type(8):checked ~ .md-scripture-card-ref .md-sc-switch > label:nth-of-type(8) { background: color-mix(in srgb, var(--ed-scripture) 22%, transparent); color: var(--ed-text); }
+
+/* Phones: the reference row wraps as a whole — a label never breaks
+   inside ("WE/B") — and a map keeps a legible size and scrolls sideways
+   rather than shrinking its names to a few pixels. */
+.editor-root .md-scripture-card-ref { flex-wrap: wrap; row-gap: 0.35rem; }
+.editor-root .md-scripture-card-display,
+.editor-root .md-sc-switch > label,
+.editor-root .md-scripture-card-open { white-space: nowrap; }
+@media (max-width: 640px) {
+    .editor-root .md-study-map { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .editor-root .md-map-svg { min-width: 34rem; max-height: none; }
+}
