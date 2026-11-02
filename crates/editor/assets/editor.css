@@ -37,6 +37,19 @@
     --ed-warn: var(--signal-warn, #d4a957);
     --ed-danger: var(--signal-danger, #ff7373);
     --ed-mono: var(--font-mono, ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace);
+    /* Decoration tokens: what the editor paints itself rather than the
+       platform (the native caret, the native selection, the vim block
+       caret, the IME preedit). A host theme restyles them by setting the
+       `--editor-*` name above the editor; each defaults to today's
+       accent-derived look. */
+    --ed-caret: var(--editor-caret, var(--ed-accent));
+    --ed-selection-bg: var(--editor-selection-bg, color-mix(in srgb, var(--ed-accent) 32%, transparent));
+    --ed-selection-line-bg: var(
+        --editor-selection-line-bg,
+        color-mix(in srgb, var(--ed-accent) 26%, transparent)
+    );
+    --ed-preedit-bg: var(--editor-preedit-bg, color-mix(in srgb, var(--ed-accent) 14%, transparent));
+    --ed-preedit-underline: var(--editor-preedit-underline, var(--ed-accent));
     /* Reading face for document content — prose, headings, lists.
        Only genuinely-code surfaces (inline code, fenced blocks, kf
        source, frontmatter delimiters, key caps) keep --ed-mono. */
@@ -171,7 +184,7 @@
    WEB: a plain inline mark; the browser paints the inline background and
    the glyph keeps its exact advance, so nothing shifts. */
 .ed-modal-caret-block {
-    background: var(--ed-accent);
+    background: var(--ed-caret);
     color: var(--ed-bg, #1e1e2e);
     border-radius: 1px;
 }
@@ -191,7 +204,7 @@
    the glyph, and covers descenders for free. Scoped to `.ed-render-native`
    so the web block rule above is untouched. */
 .ed-render-native .ed-modal-caret-block > span {
-    background: var(--ed-accent);
+    background: var(--ed-caret);
     color: var(--ed-bg, #1e1e2e);
     border-radius: 2px;
 }
@@ -206,7 +219,7 @@
    edge by the .cm-line block background (a block bg DOES paint in Blitz,
    unlike inline). Translucent so text and line styling read through. */
 .ed-render-native .cm-line.ed-selection-line {
-    background: color-mix(in srgb, var(--ed-accent) 26%, transparent);
+    background: var(--ed-selection-line-bg);
 }
 
 .ed-render-native .ed-selection,
@@ -215,7 +228,7 @@
        selection a glyph run may be owned by a nested decoration span
        (bold, italic, link…), and `draw_inline_backgrounds` paints the
        background of whichever span owns the run — so all of them need it. */
-    background: color-mix(in srgb, var(--ed-accent) 32%, transparent);
+    background: var(--ed-selection-bg);
 }
 /* NATIVE inline-mark backgrounds (code, highlight). Same Blitz
    limitation as the caret/selection: `draw_inline_backgrounds` paints
@@ -263,8 +276,22 @@
        Normal↔Insert (block↔bar) nudges the line vertically. */
     height: 1em;
     margin: 0 -0.75px;
-    border-left: 1.5px solid var(--ed-accent);
+    border-left: 1.5px solid var(--ed-caret);
     vertical-align: middle;
+}
+
+/* Native (Blitz) IME preedit: the text an input method is still
+   composing, drawn at the caret by `native_preedit_decoration` until the
+   IME commits or cancels it. It is not in the document yet, so it reads
+   as provisional — underlined, on a faint wash — like a platform text
+   field's marked text. Only the native renderer emits it (the web's
+   contenteditable draws its own). */
+.ed-preedit {
+    background: var(--ed-preedit-bg);
+    text-decoration: underline;
+    text-decoration-color: var(--ed-preedit-underline);
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 2px;
 }
 
 /* Reading mode: dim the editor frame so it's clearly distinct

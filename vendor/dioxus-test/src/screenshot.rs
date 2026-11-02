@@ -61,3 +61,26 @@ impl DocumentTester {
             .expect("png data");
     }
 }
+
+impl DocumentTester {
+    /// FTS: one frame, as the window would produce it after an input event:
+    /// apply the pending vdom work (handlers' re-renders and their DOM
+    /// mutations), restyle and relayout, then paint the document into a
+    /// recorded scene. No rasterization, so a timing around it measures the
+    /// work an input costs up to the GPU hand-off. Returns the number of
+    /// paint commands (so the paint can't be optimised away).
+    pub fn frame(&self) -> usize {
+        let mut doc = self.document.borrow_mut();
+        while doc.poll(None) {}
+        doc.inner_mut().resolve(self.now);
+        let (w, h, scale) = {
+            let inner = doc.inner();
+            let vp = inner.viewport();
+            (vp.window_size.0, vp.window_size.1, vp.scale_f64())
+        };
+        let mut scene = anyrender::Scene::new();
+        let mut inner = doc.inner_mut();
+        paint_scene(&mut scene, &mut inner, scale, w, h, 0, 0);
+        scene.commands.len()
+    }
+}
