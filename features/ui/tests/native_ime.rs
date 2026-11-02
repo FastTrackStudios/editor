@@ -141,11 +141,25 @@ async fn composing_over_a_selection_replaces_it() {
     t.press_key(parse_key("ArrowRight"), Modifiers::SHIFT);
     expect_probe(&t, "head", "4").await;
     t.ime(preedit("k"));
-    expect_probe(&t, "doc", "ho").await;
+    expect_probe(&t, "doc", "hello").await;
     expect_preedit(&t, "k").await;
     t.ime(cleared());
     t.ime(commit("か"));
     expect_probe(&t, "doc", "hかo").await;
+}
+
+#[tokio::test]
+async fn cancelling_composition_over_a_selection_preserves_text() {
+    let t = mount(Setup::text("hello").caret(1));
+    for _ in 0..3 {
+        t.press_key(parse_key("ArrowRight"), Modifiers::SHIFT);
+    }
+    t.ime(preedit("k"));
+    expect_preedit(&t, "k").await;
+    t.ime(cleared());
+    expect_probe(&t, "doc", "hello").await;
+    expect_probe(&t, "head", "4").await;
+    expect_no_preedit(&t).await;
 }
 
 #[tokio::test]
