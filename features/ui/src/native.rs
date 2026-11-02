@@ -25,6 +25,14 @@
 //!    fallthrough the web delegates to `contenteditable`: a printable
 //!    character (or `Enter`) with no modifier that nothing else claimed
 //!    gets inserted over the current selection as a transaction.
+//! 3. **IME composition.** An input method (Pinyin, Kana, dead-key
+//!    accents, …) composes text before committing it. The FTS Blitz fork
+//!    turns the platform IME on for this element (`inputmode="text"`) and
+//!    dioxus-native-dom delivers its preedit and commit as
+//!    `compositionupdate` / `compositionend`. [`ime_step`] folds those into
+//!    a [`Composition`] held in a signal beside the state, and
+//!    [`native_preedit_decoration`] draws it at the caret until it commits
+//!    (one transaction) or is cancelled (none).
 
 use editor_state::{
     Changes, DecoratedRange, EditorState, KeySpec, Range, Selection, TransactionSpec,
@@ -66,6 +74,115 @@ pub fn native_caret_decoration(
         head,
         "<span class=\"ed-native-caret\"></span>".to_string(),
     )]
+}
+
+/// An IME composition in progress: the preedit text the input method is
+/// still composing.
+///
+/// It is *not* in the document: it lives in a signal
+/// beside the editor state and is drawn at the caret, so a re-render (a
+/// remote edit, the idle decoration pass, a theme change) neither drops it
+/// nor commits it, and it follows the caret when an edit elsewhere moves
+/// it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Composition {
+    pub text: String,
+}
+
+/// One IME event, as the native view receives it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ImeEvent {
+    /// `compositionupdate`: the preedit is now this text. Empty means it
+    /// was cleared — a cancel, or the clear that precedes a commit.
+    Preedit(String),
+    /// `compositionend`: insert this text; the composition is over.
+    Commit(String),
+}
+
+/// What an [`ImeEvent`] does: the composition that follows it, and the
+/// transaction (if any) to apply first.
+#[derive(Debug)]
+pub struct ImeOutcome {
+    pub composition: Option<Composition>,
+    pub spec: Option<TransactionSpec>,
+}
+
+/// The pure IME state machine, split out so it is testable without a
+/// Dioxus runtime.
+///
+/// - A non-empty preedit starts or updates the composition. Starting one
+///   over a selection deletes the selection first, as a browser does at
+///   `compositionstart`, so the preedit visibly replaces it.
+/// - An empty preedit ends the composition with no edit: a cancel leaves
+///   the document as it was before composing began (less any replaced
+///   selection, again as in a browser).
+/// - A commit inserts its text over the selection as one transaction,
+///   tagged `origin: native-ime`, with the caret after it. The IME's
+///   literal text is inserted as is: no bracket auto-pairing or list
+///   continuation.
+#[must_use]
+pub fn ime_step(cur: &EditorState, composing: Option<&Composition>, event: ImeEvent) -> ImeOutcome {
+    let p = cur.selection.primary();
+    let (from, to) = (p.from(), p.to());
+    match event {
+        ImeEvent::Preedit(text) if text.is_empty() => ImeOutcome {
+            composition: None,
+            spec: None,
+        },
+        ImeEvent::Preedit(text) => ImeOutcome {
+            spec: (composing.is_none() && from != to).then(|| {
+                TransactionSpec::new()
+                    .changes(Changes::replace(from..to, ""))
+                    .selection(Selection::caret(from))
+                    .annotate("origin", "native-ime")
+            }),
+            composition: Some(Composition { text }),
+        },
+        ImeEvent::Commit(text) => ImeOutcome {
+            spec: (!text.is_empty()).then(|| {
+                TransactionSpec::new()
+                    .changes(Changes::replace(from..to, &text))
+                    .selection(Selection::caret(from.saturating_add(text.len())))
+                    .annotate("origin", "native-ime")
+            }),
+            composition: None,
+        },
+    }
+}
+
+/// The preedit, drawn at the selection head as an inline widget.
+///
+/// It is styled by `.ed-preedit` (the `--ed-preedit-*` theme tokens). The painted insert
+/// caret sits at the same offset and is pushed after it, so it reads at
+/// the end of the composed text.
+#[must_use]
+pub fn native_preedit_decoration(
+    s: &EditorState,
+    composition: Option<&Composition>,
+) -> Vec<DecoratedRange> {
+    let Some(c) = composition.filter(|c| !c.text.is_empty()) else {
+        return Vec::new();
+    };
+    let head = s.selection.primary().head.min(s.doc.len());
+    vec![DecoratedRange::widget(
+        head,
+        format!("<span class=\"ed-preedit\">{}</span>", escape_text(&c.text)),
+    )]
+}
+
+/// Escape text for the widget's HTML body.
+fn escape_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// Selection highlight for the native renderer. The web path shows the
@@ -486,6 +603,92 @@ mod tests {
         assert!(text_input_spec(&at("", 0), &key("é")).is_some());
         assert!(text_input_spec(&at("", 0), &key("世")).is_some());
         assert!(text_input_spec(&at("", 0), &key("🚀")).is_some());
+    }
+
+    // ── IME ──────────────────────────────────────────────────────
+
+    fn preedit(text: &str) -> ImeEvent {
+        ImeEvent::Preedit(text.to_string())
+    }
+
+    fn commit(text: &str) -> ImeEvent {
+        ImeEvent::Commit(text.to_string())
+    }
+
+    #[test]
+    fn preedit_composes_without_touching_the_doc() {
+        let st = at("ab", 1);
+        let out = ime_step(&st, None, preedit("ni"));
+        assert!(out.spec.is_none());
+        assert_eq!(out.composition.unwrap().text, "ni");
+        let out = ime_step(&st, Some(&Composition { text: "ni".into() }), preedit("你"));
+        assert!(out.spec.is_none());
+        assert_eq!(out.composition.unwrap().text, "你");
+    }
+
+    #[test]
+    fn commit_inserts_once_and_ends_composition() {
+        let st = at("ab", 1);
+        let composing = Composition {
+            text: "nihao".into(),
+        };
+        // winit clears the preedit just before it commits.
+        let cleared = ime_step(&st, Some(&composing), preedit(""));
+        assert!(cleared.spec.is_none() && cleared.composition.is_none());
+        let out = ime_step(&st, None, commit("你好"));
+        assert!(out.composition.is_none());
+        let next = st.update(out.spec.expect("commit edits"));
+        assert_eq!(next.doc.to_string(), "a你好b");
+        assert_eq!(next.selection.primary().head, 1 + "你好".len());
+    }
+
+    #[test]
+    fn cancel_leaves_doc_unchanged() {
+        let st = at("ab", 1);
+        let composing = Composition { text: "ni".into() };
+        let out = ime_step(&st, Some(&composing), preedit(""));
+        assert!(out.spec.is_none());
+        assert!(out.composition.is_none());
+    }
+
+    #[test]
+    fn composing_over_a_selection_replaces_it_once() {
+        let st = sel("hello", 1, 4);
+        let out = ime_step(&st, None, preedit("k"));
+        let next = st.update(out.spec.expect("selection is deleted"));
+        assert_eq!(next.doc.to_string(), "ho");
+        assert_eq!(next.selection.primary().head, 1);
+        // Later updates of the same composition don't edit again.
+        let again = ime_step(&next, out.composition.as_ref(), preedit("ka"));
+        assert!(again.spec.is_none());
+    }
+
+    #[test]
+    fn commit_is_literal_text() {
+        // No bracket auto-pair for an IME commit.
+        let st = at("", 0);
+        let next = st.update(ime_step(&st, None, commit("(")).spec.unwrap());
+        assert_eq!(next.doc.to_string(), "(");
+        // An empty commit edits nothing.
+        assert!(ime_step(&st, None, commit("")).spec.is_none());
+    }
+
+    #[test]
+    fn preedit_decoration_sits_at_the_head_escaped() {
+        let st = at("ab", 1);
+        assert!(native_preedit_decoration(&st, None).is_empty());
+        let c = Composition {
+            text: "<x&>".into(),
+        };
+        let d = native_preedit_decoration(&st, Some(&c));
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].from, 1);
+        assert_eq!(
+            d[0].kind,
+            editor_state::DecorationKind::Widget {
+                html: "<span class=\"ed-preedit\">&lt;x&amp;&gt;</span>".into()
+            }
+        );
     }
 
     // ── navigation ───────────────────────────────────────────────

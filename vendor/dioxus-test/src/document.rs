@@ -1,6 +1,7 @@
 use crate::{
     condition::{AllElementsCondition, ElementCondition},
     element::{NodeId, ResolvedElement},
+    ime::RecordingShell,
     result::{ErrorBuilder, TesterError},
 };
 use blitz_dom::{Document as _, SelectorList};
@@ -22,7 +23,9 @@ pub fn render(element: fn() -> Element) -> DocumentTester {
 /// A wrapper which allows querying and interacting with a DOM in Dioxus tests.
 pub struct DocumentTester {
     pub(crate) document: Rc<RefCell<DioxusDocument>>,
-    now: f64,
+    /// FTS: records the IME requests the document makes (see `ime.rs`).
+    pub(crate) shell: std::sync::Arc<RecordingShell>,
+    pub(crate) now: f64,
     window_size: Option<(u32, u32)>,
 }
 
@@ -30,10 +33,12 @@ impl DocumentTester {
     /// Constructs a new instance by rendering the given `element`.
     pub fn from_element(element: fn() -> Element) -> Self {
         let virtual_dom = VirtualDom::new(element);
+        let shell = std::sync::Arc::new(RecordingShell::default());
         let document = Rc::new(RefCell::new(DioxusDocument::new(
             virtual_dom,
             DocumentConfig {
                 style_threading: blitz_dom::StyleThreading::Sequential,
+                shell_provider: Some(shell.clone()),
                 // Same provider dioxus-native registers (html feature):
                 // without it `dangerous_inner_html` silently no-ops.
                 html_parser_provider: Some(std::sync::Arc::new(blitz_html::HtmlProvider)),
@@ -42,6 +47,7 @@ impl DocumentTester {
         )));
         Self {
             document,
+            shell,
             now: 0.0,
             window_size: None,
         }
@@ -49,16 +55,19 @@ impl DocumentTester {
 
     /// Constructs a new instance from the given [VirtualDom].
     pub fn from_virtual_dom(virtual_dom: VirtualDom) -> Self {
+        let shell = std::sync::Arc::new(RecordingShell::default());
         let document = Rc::new(RefCell::new(DioxusDocument::new(
             virtual_dom,
             DocumentConfig {
                 style_threading: blitz_dom::StyleThreading::Sequential,
+                shell_provider: Some(shell.clone()),
                 html_parser_provider: Some(std::sync::Arc::new(blitz_html::HtmlProvider)),
                 ..Default::default()
             },
         )));
         Self {
             document,
+            shell,
             now: 0.0,
             window_size: None,
         }

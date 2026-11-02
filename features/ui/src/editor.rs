@@ -365,6 +365,11 @@ pub fn Editor(
     // moves focus on click for text INPUTS, so clicking the editor
     // fires no focusin either). Web keeps the event-driven default.
     let editor_focused = use_signal(|| cfg!(feature = "native"));
+    // Native: the IME composition in progress, if any (see
+    // `crate::native::Composition`). Held here, beside the state, so a
+    // re-render neither drops nor commits it.
+    #[cfg(feature = "native")]
+    let composition = use_signal(|| None::<crate::native::Composition>);
     // Trigger-autocomplete open state (`[[` / `#`). Owned by the
     // editor (unlike `palette`, which the host threads in) because the
     // host's only contract is the candidate source prop.
@@ -2330,6 +2335,13 @@ pub fn Editor(
         if widget_focused_dom() || *widget_focus_for_keys.peek() {
             return;
         }
+        // An IME composition owns the keyboard until it commits or
+        // cancels: a key the IME passes through mid-composition must not
+        // edit or move the caret under the preedit.
+        #[cfg(feature = "native")]
+        if composition.peek().is_some() {
+            return;
+        }
         let mods = evt.modifiers();
         let mut key_str = match evt.key() {
             Key::Character(c) => c,
@@ -3056,6 +3068,14 @@ pub fn Editor(
             editor_focused,
         ));
         decos.extend(modal_caret_decoration(&s, vim, editor_focused));
+        // Preedit before the insert caret: both sit at the head, and the
+        // stable sort below keeps the caret after the composed text.
+        if editor_focused() {
+            decos.extend(crate::native::native_preedit_decoration(
+                &s,
+                composition.read().as_ref(),
+            ));
+        }
         decos.extend(crate::native::native_caret_decoration(
             &s,
             vim,
@@ -3097,6 +3117,33 @@ pub fn Editor(
     // `#[cfg]` an individual child node, so the two variants are whole
     // blocks. Everything else (focus tracking, overlays) is identical.
     //
+    // IME: fold a composition event into the composition and the doc. Only
+    // where typing would insert text: an editable, non-reading editor, in
+    // vim's insert mode when vim is on.
+    #[cfg(feature = "native")]
+    let on_ime = move |event: crate::native::ImeEvent| {
+        if !editable || vim.is_some_and(|v| !v.peek().is_inserting()) {
+            return;
+        }
+        let cur = state.peek().clone();
+        if cur.reading_mode {
+            return;
+        }
+        let mut composition = composition;
+        let out = crate::native::ime_step(&cur, composition.peek().as_ref(), event);
+        if let Some(spec) = out.spec {
+            tracing::debug!("editor.native.ime");
+            crate::event::apply_tx(state, &cur, spec, on_transaction);
+        }
+        if *composition.peek() != out.composition {
+            composition.set(out.composition);
+        }
+    };
+    // `inputmode` is what makes the FTS Blitz fork turn the platform IME
+    // on when this div takes focus (it does so only for form inputs
+    // otherwise); `none` keeps it off where nothing can be typed.
+    #[cfg(feature = "native")]
+    let inputmode = if read_only { "none" } else { "text" };
     #[cfg(feature = "native")]
     let rendered = rsx! {
         div {
@@ -3117,7 +3164,14 @@ pub fn Editor(
             // task is NOT an option: it re-borrows the doc RefCell during
             // the vdom poll and panics.)
             autofocus: "true",
+            "inputmode": "{inputmode}",
             onkeydown: on_keydown,
+            oncompositionupdate: move |e: Event<CompositionData>| {
+                on_ime(crate::native::ImeEvent::Preedit(e.data().data()));
+            },
+            oncompositionend: move |e: Event<CompositionData>| {
+                on_ime(crate::native::ImeEvent::Commit(e.data().data()));
+            },
             onfocusin: move |_| {
                 let mut focused = editor_focused;
                 if !*focused.peek() { focused.set(true); }
@@ -3125,6 +3179,10 @@ pub fn Editor(
             onfocusout: move |_| {
                 let mut focused = editor_focused;
                 if *focused.peek() { focused.set(false); }
+                // Losing focus ends a composition without committing it
+                // (the IME is switched off with it).
+                let mut composition = composition;
+                if composition.peek().is_some() { composition.set(None); }
             },
             // Rendered tile tree — the Dioxus reconciler diffs it against
             // Blitz's DOM (no JS patcher on native).

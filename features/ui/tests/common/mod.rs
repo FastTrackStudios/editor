@@ -25,6 +25,7 @@ pub struct Setup {
     pub vim: bool,
     pub markdown: bool,
     pub theme: Option<&'static str>,
+    pub remote_edit: bool,
 }
 
 impl Setup {
@@ -35,6 +36,7 @@ impl Setup {
             vim: false,
             markdown: false,
             theme: None,
+            remote_edit: false,
         }
     }
     pub fn caret(mut self, caret: usize) -> Self {
@@ -48,6 +50,13 @@ impl Setup {
     /// Attach the standard markdown live-preview decoration source.
     pub fn markdown(mut self) -> Self {
         self.markdown = true;
+        self
+    }
+    /// Render a `remote-edit` probe button that prepends `"X"` to the doc
+    /// from outside the editor (as a collaborator's edit would), so a test
+    /// can re-render the editor mid-interaction.
+    pub fn remote_edit(mut self) -> Self {
+        self.remote_edit = true;
         self
     }
     /// Inject extra CSS (design tokens etc.) so screenshots render with a
@@ -79,6 +88,8 @@ pub fn Harness() -> Element {
     drop(s);
 
     let theme = setup.theme;
+    let remote_edit = setup.remote_edit;
+    let mut remote_state = state;
     rsx! {
         style { dangerous_inner_html: EDITOR_CSS }
         if let Some(css) = theme {
@@ -89,6 +100,18 @@ pub fn Harness() -> Element {
         div { "data-testid": "anchor", "{primary.anchor}" }
         div { "data-testid": "mode", "{mode}" }
         div { "data-testid": "doc", "{doc}" }
+        if remote_edit {
+            div {
+                "data-testid": "remote-edit",
+                onclick: move |_| {
+                    let cur = remote_state.peek().clone();
+                    let spec = editor_state::TransactionSpec::new()
+                        .changes(editor_state::Changes::replace(0..0, "X"));
+                    remote_state.set(cur.update(spec));
+                },
+                "remote edit"
+            }
+        }
     }
 }
 

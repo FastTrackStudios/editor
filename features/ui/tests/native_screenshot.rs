@@ -196,3 +196,25 @@ after",
     );
     t.render_png(out("editor_empty_caret.png"));
 }
+
+#[tokio::test]
+async fn shot_ime_preedit() {
+    // Mid-composition: the preedit underlined at the caret, then the same
+    // with a theme overriding the `--editor-preedit-*` tokens.
+    let t = mount(Setup::text("type here: done").caret(11).theme(THEME));
+    t.ime(dioxus_test::BlitzImeEvent::Preedit("nihao".into(), None));
+    t.pump().await.ok();
+    t.render_png(out("editor_ime_preedit.png"));
+
+    const THEMED: &str = "
+:root { --background:#ffffff; --muted:#f2f4f7; --foreground:#1a1c20;
+        --muted-foreground:#6b7280; --primary:#1d4ed8;
+        --editor-preedit-underline:#dc2626; --editor-preedit-bg:#fef3c7;
+        --editor-caret:#dc2626; }
+.cm-line { font-size: 22px; line-height: 1.6; }
+";
+    let t = mount(Setup::text("type here: done").caret(11).theme(THEMED));
+    t.ime(dioxus_test::BlitzImeEvent::Preedit("nihao".into(), None));
+    t.pump().await.ok();
+    t.render_png(out("editor_ime_preedit_themed.png"));
+}
