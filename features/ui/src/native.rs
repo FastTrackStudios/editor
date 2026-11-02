@@ -110,18 +110,16 @@ pub struct ImeOutcome {
 /// The pure IME state machine, split out so it is testable without a
 /// Dioxus runtime.
 ///
-/// - A non-empty preedit starts or updates the composition. Starting one
-///   over a selection deletes the selection first, as a browser does at
-///   `compositionstart`, so the preedit visibly replaces it.
-/// - An empty preedit ends the composition with no edit: a cancel leaves
-///   the document as it was before composing began (less any replaced
-///   selection, again as in a browser).
+/// - A non-empty preedit starts or updates the composition without changing
+///   the document or selection.
+/// - An empty preedit ends the composition with no edit, preserving any
+///   selected text if composition is cancelled.
 /// - A commit inserts its text over the selection as one transaction,
 ///   tagged `origin: native-ime`, with the caret after it. The IME's
 ///   literal text is inserted as is: no bracket auto-pairing or list
 ///   continuation.
 #[must_use]
-pub fn ime_step(cur: &EditorState, composing: Option<&Composition>, event: ImeEvent) -> ImeOutcome {
+pub fn ime_step(cur: &EditorState, event: ImeEvent) -> ImeOutcome {
     let p = cur.selection.primary();
     let (from, to) = (p.from(), p.to());
     match event {
@@ -130,12 +128,7 @@ pub fn ime_step(cur: &EditorState, composing: Option<&Composition>, event: ImeEv
             spec: None,
         },
         ImeEvent::Preedit(text) => ImeOutcome {
-            spec: (composing.is_none() && from != to).then(|| {
-                TransactionSpec::new()
-                    .changes(Changes::replace(from..to, ""))
-                    .selection(Selection::caret(from))
-                    .annotate("origin", "native-ime")
-            }),
+            spec: None,
             composition: Some(Composition { text }),
         },
         ImeEvent::Commit(text) => ImeOutcome {
@@ -163,7 +156,7 @@ pub fn native_preedit_decoration(
     let Some(c) = composition.filter(|c| !c.text.is_empty()) else {
         return Vec::new();
     };
-    let head = s.selection.primary().head.min(s.doc.len());
+    let head = s.selection.primary().from().min(s.doc.len());
     vec![DecoratedRange::widget(
         head,
         format!("<span class=\"ed-preedit\">{}</span>", escape_text(&c.text)),
@@ -618,10 +611,10 @@ mod tests {
     #[test]
     fn preedit_composes_without_touching_the_doc() {
         let st = at("ab", 1);
-        let out = ime_step(&st, None, preedit("ni"));
+        let out = ime_step(&st, preedit("ni"));
         assert!(out.spec.is_none());
         assert_eq!(out.composition.unwrap().text, "ni");
-        let out = ime_step(&st, Some(&Composition { text: "ni".into() }), preedit("你"));
+        let out = ime_step(&st, preedit("你"));
         assert!(out.spec.is_none());
         assert_eq!(out.composition.unwrap().text, "你");
     }
@@ -629,13 +622,10 @@ mod tests {
     #[test]
     fn commit_inserts_once_and_ends_composition() {
         let st = at("ab", 1);
-        let composing = Composition {
-            text: "nihao".into(),
-        };
         // winit clears the preedit just before it commits.
-        let cleared = ime_step(&st, Some(&composing), preedit(""));
+        let cleared = ime_step(&st, preedit(""));
         assert!(cleared.spec.is_none() && cleared.composition.is_none());
-        let out = ime_step(&st, None, commit("你好"));
+        let out = ime_step(&st, commit("你好"));
         assert!(out.composition.is_none());
         let next = st.update(out.spec.expect("commit edits"));
         assert_eq!(next.doc.to_string(), "a你好b");
@@ -645,8 +635,7 @@ mod tests {
     #[test]
     fn cancel_leaves_doc_unchanged() {
         let st = at("ab", 1);
-        let composing = Composition { text: "ni".into() };
-        let out = ime_step(&st, Some(&composing), preedit(""));
+        let out = ime_step(&st, preedit(""));
         assert!(out.spec.is_none());
         assert!(out.composition.is_none());
     }
@@ -654,23 +643,21 @@ mod tests {
     #[test]
     fn composing_over_a_selection_replaces_it_once() {
         let st = sel("hello", 1, 4);
-        let out = ime_step(&st, None, preedit("k"));
-        let next = st.update(out.spec.expect("selection is deleted"));
-        assert_eq!(next.doc.to_string(), "ho");
-        assert_eq!(next.selection.primary().head, 1);
-        // Later updates of the same composition don't edit again.
-        let again = ime_step(&next, out.composition.as_ref(), preedit("ka"));
-        assert!(again.spec.is_none());
+        let out = ime_step(&st, preedit("k"));
+        assert!(out.spec.is_none());
+        let next = st.update(ime_step(&st, commit("か")).spec.unwrap());
+        assert_eq!(next.doc.to_string(), "hかo");
+        assert_eq!(next.selection.primary().head, 1 + "か".len());
     }
 
     #[test]
     fn commit_is_literal_text() {
         // No bracket auto-pair for an IME commit.
         let st = at("", 0);
-        let next = st.update(ime_step(&st, None, commit("(")).spec.unwrap());
+        let next = st.update(ime_step(&st, commit("(")).spec.unwrap());
         assert_eq!(next.doc.to_string(), "(");
         // An empty commit edits nothing.
-        assert!(ime_step(&st, None, commit("")).spec.is_none());
+        assert!(ime_step(&st, commit("")).spec.is_none());
     }
 
     #[test]

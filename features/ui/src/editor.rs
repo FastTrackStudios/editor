@@ -3130,7 +3130,7 @@ pub fn Editor(
             return;
         }
         let mut composition = composition;
-        let out = crate::native::ime_step(&cur, composition.peek().as_ref(), event);
+        let out = crate::native::ime_step(&cur, event);
         if let Some(spec) = out.spec {
             tracing::debug!("editor.native.ime");
             crate::event::apply_tx(state, &cur, spec, on_transaction);
