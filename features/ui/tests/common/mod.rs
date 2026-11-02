@@ -11,7 +11,7 @@ use editor_state::{EditorState, Selection};
 use editor_view::Editor;
 use editor_vim::VimState;
 
-pub use dioxus_test::keyboard_types::{Key, Modifiers};
+pub use dioxus_test::keyboard_types::{Key, Modifiers, NamedKey};
 pub use dioxus_test::matchers::{contains_substring, eq, inner_html};
 
 /// The editor stylesheet, inlined so screenshots paint with real styles.
@@ -133,17 +133,17 @@ pub fn parse_key(k: &str) -> Key {
         Key::Character(k.to_string())
     } else {
         match k {
-            "Escape" => Key::Escape,
-            "Enter" => Key::Enter,
-            "Backspace" => Key::Backspace,
-            "Delete" => Key::Delete,
-            "Tab" => Key::Tab,
-            "ArrowLeft" => Key::ArrowLeft,
-            "ArrowRight" => Key::ArrowRight,
-            "ArrowUp" => Key::ArrowUp,
-            "ArrowDown" => Key::ArrowDown,
-            "Home" => Key::Home,
-            "End" => Key::End,
+            "Escape" => Key::Named(NamedKey::Escape),
+            "Enter" => Key::Named(NamedKey::Enter),
+            "Backspace" => Key::Named(NamedKey::Backspace),
+            "Delete" => Key::Named(NamedKey::Delete),
+            "Tab" => Key::Named(NamedKey::Tab),
+            "ArrowLeft" => Key::Named(NamedKey::ArrowLeft),
+            "ArrowRight" => Key::Named(NamedKey::ArrowRight),
+            "ArrowUp" => Key::Named(NamedKey::ArrowUp),
+            "ArrowDown" => Key::Named(NamedKey::ArrowDown),
+            "Home" => Key::Named(NamedKey::Home),
+            "End" => Key::Named(NamedKey::End),
             other => panic!("unmapped key name: {other}"),
         }
     }

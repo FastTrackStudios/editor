@@ -40,6 +40,7 @@ members = [
     "features/ui",
     "features/vim",
     "apps/playground",
+    "vendor/dioxus-test",
 ]
 
 [workspace.package]
@@ -76,14 +77,30 @@ editor-vim = { path = "features/vim" }
 # and PNG stack stay off: the editor only needs the SVG pipeline.
 mermaid-rs-renderer = { path = "features/mermaid/mermaid-rs-renderer", default-features = false }
 
-# ── External ──────────────────────────────────────────────────────────
-dioxus-test = { git = "https://github.com/FastTrackStudios/FastTrackStudio", tag = "v0.1.0" }
+# Headless component tests on blitz-dom (dev-only, unpublished). Vendored
+# from DioxusLabs/dioxus-test by way of FastTrackStudio's copy, and ported
+# here to the pins below: the FastTrackStudio copy pins its own (older)
+# dioxus rev, which would put two Dioxus copies in this lock.
+dioxus-test = { path = "vendor/dioxus-test" }
 
 # ── UI framework ──────────────────────────────────────────────────────
-# dioxus 0.8 line — git rev pinned; it must stay in lockstep across every
-# dioxus-* entry AND the FTS fork branches that pin the same rev.
-dioxus = { git = "https://github.com/DioxusLabs/dioxus", rev = "f717a8e184a522d078b70bb4b4d62a5f9a99ddfc", default-features = false, features = ["lib"] }
-dioxus-native = { git = "https://github.com/DioxusLabs/dioxus", rev = "f717a8e184a522d078b70bb4b4d62a5f9a99ddfc", features = ["prelude", "system-fonts", "svg", "autofocus", "incremental", "data-uri"] }
+# dioxus 0.8 line — git rev pinned (main 430cfb56, the 0.8.0-alpha.3 line),
+# the same rev, blitz tag and vendor tag architect v0.10.0 pins, so a
+# downstream lock (keyflow, task, studio) resolves one Dioxus and one
+# Blitz. It must stay in lockstep across every dioxus-* entry and the
+# `[patch]` sections below; move it only together with architect.
+dioxus = { git = "https://github.com/DioxusLabs/dioxus", rev = "430cfb563f1b70602ef387f0c80f171d84527b41", default-features = false, features = ["lib"] }
+dioxus-native = { git = "https://github.com/DioxusLabs/dioxus", rev = "430cfb563f1b70602ef387f0c80f171d84527b41", features = ["prelude", "system-fonts", "svg", "autofocus", "data-uri"] }
+dioxus-native-dom = { git = "https://github.com/DioxusLabs/dioxus", rev = "430cfb563f1b70602ef387f0c80f171d84527b41" }
+dioxus-vdom = { git = "https://github.com/DioxusLabs/dioxus", rev = "430cfb563f1b70602ef387f0c80f171d84527b41" }
+dioxus-html = { git = "https://github.com/DioxusLabs/dioxus", rev = "430cfb563f1b70602ef387f0c80f171d84527b41" }
+blitz-dom = "=0.3.0-beta.4"
+blitz-html = "=0.3.0-beta.4"
+blitz-paint = "=0.3.0-beta.4"
+blitz-traits = "=0.3.0-beta.4"
+anyrender = "0.14"
+anyrender_vello_cpu = "0.18"
+peniko = "0.6"
 
 # ── Editor stack externals ────────────────────────────────────────────
 arborium = { version = "2.16.0", default-features = false }
@@ -105,23 +122,44 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 
 [patch.crates-io]
-# Blitz from the FTS fork (0.3.0-beta.1 line, upstream 02523b83 +
-# fts-focus: focus-follows-pointerdown for all focusable content —
-# upstream only click-focuses text inputs, leaving the editor's tabindex
-# div unfocusable by mouse). dioxus git pins `=0.3.0-beta.1`, and
-# `dioxus-test` needs post-beta.1 APIs (`Node::outer_html_pretty`), so
-# without this the snapshot tests do not compile. One rev across all
-# blitz crates; it moves together with the dioxus rev.
-blitz-dom = { git = "https://github.com/FastTrackStudios/blitz", rev = "c82dd238000515c44c758845b9a17e9b48eb0087" }
-blitz-traits = { git = "https://github.com/FastTrackStudios/blitz", rev = "c82dd238000515c44c758845b9a17e9b48eb0087" }
-blitz-paint = { git = "https://github.com/FastTrackStudios/blitz", rev = "c82dd238000515c44c758845b9a17e9b48eb0087" }
-blitz-shell = { git = "https://github.com/FastTrackStudios/blitz", rev = "c82dd238000515c44c758845b9a17e9b48eb0087" }
-blitz-net = { git = "https://github.com/FastTrackStudios/blitz", rev = "c82dd238000515c44c758845b9a17e9b48eb0087" }
-blitz-html = { git = "https://github.com/FastTrackStudios/blitz", rev = "c82dd238000515c44c758845b9a17e9b48eb0087" }
+# Blitz from the FTS fork, at the tag architect v0.10.0 pins: DioxusLabs/
+# blitz main (0.3.0-beta.4+) with the FTS work (fts-focus: focus follows
+# pointerdown for all focusable content — upstream only click-focuses
+# text inputs, leaving the editor's tabindex div unfocusable by mouse;
+# touch as pointer events; the measure fix; …). dioxus git pins
+# `=0.3.0-beta.4`. One tag across all blitz crates, and anyrender from
+# the same tag; it moves together with the dioxus rev.
+blitz-dom = { git = "https://github.com/FastTrackStudios/blitz", tag = "fts-upstream-2026-11" }
+blitz-traits = { git = "https://github.com/FastTrackStudios/blitz", tag = "fts-upstream-2026-11" }
+blitz-paint = { git = "https://github.com/FastTrackStudios/blitz", tag = "fts-upstream-2026-11" }
+blitz-shell = { git = "https://github.com/FastTrackStudios/blitz", tag = "fts-upstream-2026-11" }
+blitz-net = { git = "https://github.com/FastTrackStudios/blitz", tag = "fts-upstream-2026-11" }
+blitz-html = { git = "https://github.com/FastTrackStudios/blitz", tag = "fts-upstream-2026-11" }
+anyrender = { git = "https://github.com/FastTrackStudios/blitz", tag = "fts-upstream-2026-11" }
+# The renderer and windowing forks a Blitz app needs, as architect v0.10.0
+# pins them (each one's reason is in vendor's README). architect also
+# patches `anyrender_vello` (same tag); dioxus-native renders through
+# `anyrender_vello_hybrid` here, so it does not resolve into this graph and
+# is left out rather than carried as an unused-patch warning on every build.
+anyrender_vello_hybrid = { git = "https://github.com/FastTrackStudios/vendor", tag = "v0.7.0" }
+winit-uikit = { git = "https://github.com/FastTrackStudios/vendor", tag = "v0.7.0" }
+wgpu-hal = { git = "https://github.com/FastTrackStudios/vendor", tag = "v0.7.0" }
+raw-window-metal = { git = "https://github.com/FastTrackStudios/vendor", tag = "v0.7.0" }
 # task also patches styx-format / phon / phon-jit / facet-core to the
 # vendor repo. None of them resolves into this graph — the editor has no
 # RPC or reflection layer — so they are deliberately absent rather than
 # carried as unused-patch warnings on every build.
+
+# The Dioxus crates from the FTS vendor fork, as architect v0.10.0 pins
+# them (each one's reason is in its UPSTREAM.md): dioxus-native — winit
+# beta.4 to match Blitz main; dioxus-native-dom — `text_input_focused`,
+# focus and measurements that never panic on a busy document; dioxus-vdom
+# (upstream's renamed dioxus-core) — a dropped handler's owner is not a
+# panic.
+[patch."https://github.com/DioxusLabs/dioxus"]
+dioxus-native = { git = "https://github.com/FastTrackStudios/vendor", tag = "v0.7.0" }
+dioxus-native-dom = { git = "https://github.com/FastTrackStudios/vendor", tag = "v0.7.0" }
+dioxus-vdom = { git = "https://github.com/FastTrackStudios/vendor", tag = "v0.7.0" }
 
 [workspace.lints.rust]
 dead_code = "warn"

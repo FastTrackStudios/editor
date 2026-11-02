@@ -81,7 +81,9 @@
 .editor-frame--flush .editor-root {
     padding-left: 24px;
 }
-.editor-frame--flush .cm-line::before {
+/* The gutter's line number is a line's `::before`; so are the quote bar,
+   the callout bar and the rule. Hide the number, not those. */
+.editor-frame--flush .cm-line:not(.md-blockquote, .md-callout, .md-hr)::before {
     display: none;
 }
 /* Sit the properties block right under the title — no leading margin,
@@ -271,7 +273,7 @@
 .editor-root.reading-mode {
     padding-left: 0;
 }
-.editor-root.reading-mode .cm-line::before {
+.editor-root.reading-mode .cm-line:not(.md-blockquote, .md-callout, .md-hr)::before {
     display: none;
 }
 
@@ -1372,6 +1374,46 @@
     user-select: none;
 }
 
+/* A list or task marker on the line being typed: the source (`- `,
+   `1. `, `- [ ] `) stays in the text, so the caret after it sits in
+   real text, but reads as what it makes — the bullet, the number, the
+   box — drawn over it. Off the line a widget replaces it outright. */
+.editor-root .md-marker-typing {
+    position: relative;
+    color: transparent;
+    user-select: none;
+}
+.editor-root .md-list-marker-typing::before {
+    content: attr(data-glyph);
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--ed-text-dim);
+}
+.editor-root .md-task-marker-typing::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 1.1em;
+    height: 1.1em;
+    transform: translateY(-50%);
+    box-sizing: border-box;
+    border: 1.5px solid var(--ed-text-dim);
+    border-radius: 3px;
+    background: var(--ed-bg-elev);
+}
+.editor-root .md-task-marker-typing[data-checked="true"]::before {
+    content: "✓";
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85em;
+    color: #ffffff;
+    background: var(--ed-link);
+    border-color: var(--ed-link);
+}
+
 /* HR — single row in both states. When caret is off the line,
    the `---` source is hidden via Replace and `border-top` on
    the line itself draws the rule. When caret is on the line
@@ -1393,6 +1435,9 @@
     position: absolute;
     left: 0;
     right: 0;
+    /* The gutter's line-number `::before` sets a 36px width; a rule
+       spans the line. */
+    width: auto;
     top: 50%;
     border-top: 1px solid var(--ed-text-dim);
 }

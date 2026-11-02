@@ -691,6 +691,35 @@ pub fn Editor(
                                     sel: [a, b]
                                 }});
                             }}
+                            // An edit the editor authors itself (it
+                            // cancelled the browser's: Enter, a paired
+                            // bracket, an insert into an empty mark) is
+                            // applied in Rust and comes back as a patch
+                            // carrying the new selection. Until then the
+                            // DOM's selection is the one from BEFORE the
+                            // edit, and reporting it (the key's keyup, a
+                            // selectionchange) puts the caret back where
+                            // it was. Where Rust runs outside the page
+                            // (a WKWebView on iOS, a desktop webview)
+                            // that report lands after the edit and wins:
+                            // Return made the new line and left the caret
+                            // on the old one. So selection reports wait
+                            // for the authored edit's patch (or a second,
+                            // should it never come).
+                            let authoredAt = 0;
+                            function author(msg) {{
+                                authoredAt = performance.now();
+                                dioxus.send(msg);
+                            }}
+                            // A key a handler took (the keymap's
+                            // Backspace, a command) is an authored edit
+                            // too. `window` hears the keydown after every
+                            // handler, so `defaultPrevented` is settled.
+                            window.addEventListener('keydown', evt => {{
+                                if (evt.defaultPrevented && el.contains(evt.target)) {{
+                                    authoredAt = performance.now();
+                                }}
+                            }});
                             function sendSel() {{
                                 // Skip during programmatic
                                 // writes (Phase 10) and during
@@ -699,6 +728,7 @@ pub fn Editor(
                                 // be orphaned and unreliable.
                                 if (el.dataset.writing === '1') return;
                                 if (el.dataset.muting === '1') return;
+                                if (authoredAt && performance.now() - authoredAt < 1000) return;
                                 const [a, b] = selOffsets();
                                 dioxus.send({{ kind: 'sel', sel: [a, b] }});
                             }}
@@ -957,7 +987,7 @@ pub fn Editor(
                                     // the list. Falls back to a
                                     // plain `\n` insert if the
                                     // line isn't a list item.
-                                    dioxus.send({{
+                                    author({{
                                         kind: 'enter-continue-list',
                                         sel: selOffsets(),
                                     }});
@@ -981,7 +1011,7 @@ pub fn Editor(
                                     // cursor reference is lost.
                                     if (/^[\(\[\{{\)\]\}}\'\"`]$/.test(evt.data)) {{
                                         evt.preventDefault();
-                                        dioxus.send({{
+                                        author({{
                                             kind: 'insert-bracket',
                                             text: evt.data,
                                             sel: selOffsets(),
@@ -1017,7 +1047,7 @@ pub fn Editor(
                                     }}
                                     if (inEmptyMark) {{
                                         evt.preventDefault();
-                                        dioxus.send({{
+                                        author({{
                                             kind: 'before-input-insert',
                                             text: evt.data,
                                             sel: selOffsets(),
@@ -1487,6 +1517,9 @@ pub fn Editor(
                                 try {{
                                     patchChildren(el, descs, firstChanged);
                                     if (sel) placeSelection(sel.anchor, sel.head);
+                                    // The authored edit has landed: its
+                                    // selection is the DOM's again.
+                                    authoredAt = 0;
                                 }} finally {{
                                     mo.takeRecords();
                                     mo.observe(el, observeOpts);

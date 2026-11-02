@@ -1283,6 +1283,17 @@ fn cursor_touches(primary: Range, range: std::ops::Range<usize>) -> bool {
     sel_to >= range.start && sel_from <= range.end
 }
 
+/// Whether the caret is *inside* a line's block marker (`> `, `- `, `1. `,
+/// `> [!note] `) — between its first character and its end. Only then
+/// does the marker show as source: once the caret is past it, the line
+/// renders as what it is (a bullet, a quote bar, a callout) while you type
+/// the rest, formatting as you go. Sitting at the line's very start or
+/// just after the marker is not inside it.
+fn caret_in_marker(primary: Range, line_from: usize, marker_end: usize) -> bool {
+    let (sel_from, sel_to) = (primary.from(), primary.to());
+    sel_to > line_from && sel_from < marker_end
+}
+
 /// Where the span just decorated ends its claim, when that is past the
 /// span itself — the atomic range an annotated verse card pushes over its
 /// whole line. `None` for the ordinary case.
@@ -2517,14 +2528,28 @@ fn emit_block_line(
         } else {
             format!(r#"<span class="md-task-checkbox" data-task-pos="{line_from}"></span>"#)
         };
-        // Two states: source-visible when the caret is on
-        // the line (so `- [ ]` is editable), checkbox-widget
-        // otherwise. Rendering both at once gave you the
+        // Two states: source-visible while the caret is inside
+        // `- [ ] ` (so the marker is editable), the checkbox
+        // otherwise — the caret's line included, so a task formats
+        // as it is typed. Rendering both at once gave you the
         // checkbox + the literal source overlapping.
-        if cursor_touches(primary, line_from..line_to) {
+        if caret_in_marker(primary, line_from, abs_prefix_end) {
             out.push(Decoration::mark(
                 line_from..abs_prefix_end,
                 "md-task-marker-active",
+            ));
+        } else if cursor_touches(primary, line_from..line_to) {
+            // Typing the task: the box is drawn over the `- [ ] `, which
+            // stays in the text, so the caret after it has real text to sit
+            // in (a Replace there left nothing, and typed letters landed in
+            // front of the box). Off the line, the widget below.
+            out.push(Decoration::mark_with_attrs(
+                line_from..abs_prefix_end,
+                "md-marker-typing md-task-marker-typing",
+                vec![
+                    ("data-task-pos".to_owned(), line_from.to_string()),
+                    ("data-checked".to_owned(), checked.to_string()),
+                ],
             ));
         } else {
             out.push(Decoration::replace(line_from..abs_prefix_end));
@@ -2559,7 +2584,7 @@ fn emit_block_line(
         if depth > 1 {
             out.push(Decoration::line(line_from, callout_depth_class(depth)));
         }
-        if !cursor_touches(primary, line_from..line_to) {
+        if !caret_in_marker(primary, line_from, abs_marker_end) {
             out.push(Decoration::mark(
                 line_from..abs_marker_end,
                 "md-quote-marker",
@@ -2639,7 +2664,7 @@ fn emit_callout_header(
         // line class stand in for them. The marker span
         // covers all `>` chars + their spaces.
         let abs_header_end = abs_marker_end.saturating_add(header_end_off);
-        if !cursor_touches(primary, line_from..line_to) {
+        if !caret_in_marker(primary, line_from, abs_header_end) {
             out.push(Decoration::mark(
                 line_from..abs_marker_end,
                 "md-quote-marker",
@@ -2699,23 +2724,25 @@ fn emit_list_line(
         if let Some(cls) = list_depth_class(line) {
             out.push(Decoration::line(line_from, cls));
         }
-        // Caret on the line: keep the raw `- ` / `1. ` source
-        // visible (muted) so clicks land on real text and vim
-        // motions don't fall through the Replace into the
-        // line-tile end fallback. Off the line: hide source
-        // and render the bullet/number widget.
-        if cursor_touches(primary, line_from..line_to) {
+        // Caret inside the marker: keep the raw `- ` / `1. ` source
+        // visible (muted) so it can be edited. On the line but past it:
+        // the bullet/number drawn over the source, so the item formats as
+        // it is typed. Off the line: the source replaced by the widget.
+        if caret_in_marker(primary, line_from, abs_marker_end) {
             out.push(Decoration::mark(
                 line_from..abs_marker_end,
                 "md-list-marker-active",
             ));
         } else {
             let kind_byte = line.trim_start().as_bytes().at(0);
-            let widget_html = if kind_byte.is_ascii_digit() {
+            let (glyph_text, widget_html) = if kind_byte.is_ascii_digit() {
                 let leading = line.len().saturating_sub(line.trim_start().len());
                 let num_end = marker_end.saturating_sub(2).saturating_sub(leading);
                 let num = line.trim_start().before(num_end);
-                format!(r#"<span class="md-list-marker">{num}.&nbsp;</span>"#)
+                (
+                    format!("{num}."),
+                    format!(r#"<span class="md-list-marker">{num}.&nbsp;</span>"#),
+                )
             } else {
                 // A real bullet, not the source's `-`/`*`/`+`. Obsidian
                 // steps the glyph by depth; so does this, which is the
@@ -2726,8 +2753,22 @@ fn emit_list_line(
                     Some("md-list-depth-2") => "▪",
                     _ => "•",
                 };
-                format!(r#"<span class="md-list-marker">{glyph}&nbsp;</span>"#)
+                (
+                    glyph.to_owned(),
+                    format!(r#"<span class="md-list-marker">{glyph}&nbsp;</span>"#),
+                )
             };
+            if cursor_touches(primary, line_from..line_to) {
+                // Typing the item: the bullet/number is drawn over the
+                // `- ` / `1. `, which stays in the text so the caret after it
+                // has real text to sit in. Off the line, the widget.
+                out.push(Decoration::mark_with_attrs(
+                    line_from..abs_marker_end,
+                    "md-marker-typing md-list-marker-typing",
+                    vec![("data-glyph".to_owned(), glyph_text)],
+                ));
+                return;
+            }
             out.push(Decoration::replace(line_from..abs_marker_end));
             out.push(Decoration::widget(line_from, widget_html));
         }
@@ -6733,32 +6774,69 @@ mod tests {
     }
 
     #[test]
-    fn list_with_caret_on_line_keeps_source_visible() {
-        // Caret on the bullet line — no Replace, no widget; the
-        // `- ` source stays editable. Same pattern as headings.
-        let s = state("- item", 3);
-        let decs = live_preview(&s);
-        let has_replace = decs.iter().any(|d| {
-            d.from == 0 && d.to == 2 && matches!(d.kind, crate::decoration::DecorationKind::Replace)
-        });
-        assert!(
-            !has_replace,
-            "marker source must stay visible while caret is on the line"
+    fn a_list_item_renders_as_it_is_typed() {
+        // Caret past the marker (typing the item): the bullet is drawn
+        // over the source, which stays in the text for the caret.
+        let drawn = |s: &EditorState| {
+            live_preview(s).iter().find_map(|d| match &d.kind {
+                crate::decoration::DecorationKind::Mark { class, attrs }
+                    if class.contains("md-list-marker-typing") =>
+                {
+                    attrs
+                        .iter()
+                        .find(|(k, _)| k == "data-glyph")
+                        .map(|(_, v)| v.clone())
+                }
+                _ => None,
+            })
+        };
+        assert_eq!(
+            drawn(&state("- item", 3)).as_deref(),
+            Some("•"),
+            "shown while typing"
         );
-        let has_widget = decs
-            .iter()
-            .any(|d| matches!(&d.kind, crate::decoration::DecorationKind::Widget { .. }));
-        assert!(!has_widget, "no bullet widget while caret is on the line");
+        assert_eq!(
+            drawn(&state("- ", 2)).as_deref(),
+            Some("•"),
+            "the moment `- ` is typed"
+        );
+        assert_eq!(
+            drawn(&state("1. foo", 3)).as_deref(),
+            Some("1."),
+            "a number too"
+        );
+        // Caret inside the marker: the source shows, to be edited.
+        assert_eq!(
+            drawn(&state("- item", 1)),
+            None,
+            "inside the marker it stays source"
+        );
+        // Off the line: the widget replaces the source.
+        let off = state("- item\nnext", 10);
+        assert!(live_preview(&off).iter().any(|d| {
+            d.from == 0 && d.to == 2 && matches!(d.kind, crate::decoration::DecorationKind::Replace)
+        }));
     }
 
     #[test]
-    fn ordered_list_with_caret_on_line_keeps_source_visible() {
-        let s = state("1. foo", 3);
-        let decs = live_preview(&s);
-        let has_replace = decs.iter().any(|d| {
-            d.from == 0 && d.to == 3 && matches!(d.kind, crate::decoration::DecorationKind::Replace)
-        });
-        assert!(!has_replace);
+    fn a_quote_formats_as_it_is_typed() {
+        let hidden = |s: &EditorState| {
+            live_preview(s).iter().any(|d| {
+                matches!(&d.kind, crate::decoration::DecorationKind::Mark { class, .. } if class == "md-quote-marker")
+            })
+        };
+        assert!(
+            hidden(&state("> words", 7)),
+            "the `>` hides while typing the quote"
+        );
+        assert!(
+            hidden(&state("> ", 2)),
+            "the `>` hides the moment `> ` is typed"
+        );
+        assert!(
+            !hidden(&state("> words", 1)),
+            "inside the marker it stays source"
+        );
     }
 
     #[test]
