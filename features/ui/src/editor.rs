@@ -40,6 +40,7 @@
               not do, and a false positive here costs one redundant re-render"
 )]
 
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -339,6 +340,18 @@ pub fn Editor(
     /// callback fires) or walk into it with the arrow keys.
     #[props(default)]
     on_link_click: Option<Callback<String>>,
+    /// The editor's focus flag, for a host that reads it. The editor writes
+    /// it (focusin/focusout, and a click into the content); the host only
+    /// reads. Absent, the editor keeps its own. A host's signal must start
+    /// at the value the editor starts at: `true` on native, where autofocus
+    /// claims focus on mount.
+    #[props(default)]
+    focused: Option<Signal<bool>>,
+    /// Moves keyboard focus into the editor each time it is bumped. The host
+    /// owns the counter and the editor only reads it; the value at mount
+    /// (zero) does nothing.
+    #[props(default)]
+    focus_request: Option<Signal<u64>>,
 ) -> Element {
     // True when a decoration widget cell currently has focus
     // (frontmatter property contenteditable, chip-add box, etc.).
@@ -364,7 +377,8 @@ pub fn Editor(
     // false forever and no caret would ever paint (Blitz also only
     // moves focus on click for text INPUTS, so clicking the editor
     // fires no focusin either). Web keeps the event-driven default.
-    let editor_focused = use_signal(|| cfg!(feature = "native"));
+    let own_focused = use_signal(|| cfg!(feature = "native"));
+    let editor_focused = focused.unwrap_or(own_focused);
     // Native: the IME composition in progress, if any (see
     // `crate::native::Composition`). Held here, beside the state, so a
     // re-render neither drops nor commits it.
@@ -407,6 +421,25 @@ pub fn Editor(
     let editor_id = use_hook(|| {
         let n = EDITOR_INSTANCE.fetch_add(1, Ordering::Relaxed);
         format!("editor-{n}")
+    });
+
+    // The root's mounted handle, kept so a focus request can reach it. A
+    // request is the host asking, so it runs from an effect, not an event.
+    let root = use_hook(|| Rc::new(RefCell::new(None::<Rc<MountedData>>)));
+    let mounted_root = root.clone();
+    use_effect({
+        let root = root.clone();
+        move || {
+            let Some(request) = focus_request else { return };
+            if request() == 0 {
+                return;
+            }
+            if let Some(el) = root.borrow().clone() {
+                spawn(async move {
+                    let _ = el.set_focus(true).await;
+                });
+            }
+        }
     });
 
     // ── DOM → state: MutationObserver + selection bridge ─────────
@@ -3165,6 +3198,7 @@ pub fn Editor(
             // the vdom poll and panics.)
             autofocus: "true",
             "inputmode": "{inputmode}",
+            onmounted: move |e: Event<MountedData>| *mounted_root.borrow_mut() = Some(e.data()),
             onkeydown: on_keydown,
             oncompositionupdate: move |e: Event<CompositionData>| {
                 on_ime(crate::native::ImeEvent::Preedit(e.data().data()));
@@ -3210,6 +3244,7 @@ pub fn Editor(
             // Focusable so tab order is sane; the contenteditable is
             // already focusable, so this is harmless.
             tabindex: "0",
+            onmounted: move |e: Event<MountedData>| *mounted_root.borrow_mut() = Some(e.data()),
             onkeydown: on_keydown,
             // Focus tracking for the painted modal caret: like the
             // native caret, it must not render until the user
