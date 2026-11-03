@@ -89,6 +89,12 @@ impl DocumentTester {
         }
     }
 
+    /// The blitz-dom node currently under the pointer (test diagnostics). Wheel
+    /// events scroll from this node, so a test checks it first.
+    pub fn hover_node_id(&self) -> Option<blitz_dom::NodeId> {
+        self.document.borrow().inner().get_hover_node_id()
+    }
+
     /// The blitz-dom node id that currently holds focus (test diagnostics).
     pub fn blitz_focus(&self) -> Option<blitz_dom::NodeId> {
         self.document

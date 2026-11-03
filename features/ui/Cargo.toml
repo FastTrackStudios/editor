@@ -31,18 +31,33 @@ ropey = { workspace = true }
 [features]
 default = ["web"]
 web = []
-native = []
+# Native line virtualization polls the scroll position on a timer (Blitz
+# sends no scroll events), so the native build needs a timer.
+native = ["dep:tokio"]
 
 # wasm-only: `performance.now()` for our perf spans (the std
 # `Instant::now` traps on wasm32-unknown-unknown).
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3", features = ["Window", "Performance", "Document", "Element", "HtmlElement", "DomStringMap", "MediaQueryList"] }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Timer for the native viewport poll (see `virtual_lines`).
+tokio = { workspace = true, optional = true }
+
 [dev-dependencies]
+# Wheel events for the scroll tests (a Blitz UiEvent, as the window shell sends).
+blitz-traits = { workspace = true }
 # Headless component tests on blitz-dom — native-feature builds only
 # (`cargo test -p editor-view --no-default-features --features native`).
 dioxus-test = { workspace = true }
 tokio = { workspace = true }
+# The formatting document has math, Typst and Mermaid fences. The
+# `editor` facade turns these on for the playground; the tests need the
+# same renderers or they measure source text, not what a user sees.
+editor-state = { workspace = true, features = ["typst", "mermaid"] }
+# Decodes the PNGs `DocumentTester::render_png` writes, so the caret tests
+# can check what is painted, not only what the DOM says is there.
+png = "0.17"
 
 [lints]
 workspace = true

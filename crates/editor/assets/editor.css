@@ -116,6 +116,10 @@
 }
 
 .editor-root {
+    /* border-box: the gutter padding below sits inside the 100% width.
+       Under content-box every line was 60px wider than the pane and the
+       wrapped text was clipped at the right edge. */
+    box-sizing: border-box;
     width: 100%;
     outline: none;
     border: none;
@@ -275,9 +279,23 @@
        bar never exceeds the natural line height — otherwise switching
        Normal↔Insert (block↔bar) nudges the line vertically. */
     height: 1em;
-    margin: 0 -0.75px;
-    border-left: 1.5px solid var(--ed-caret);
-    vertical-align: middle;
+    /* Out of flow: an absolutely positioned bar takes no width in the line,
+       so the text after it never moves. A zero-width inline box with a border
+       or a shadow did move the text in Blitz (its negative margins were not
+       cancelled), and a shadow on a zero-width box paints nothing there. */
+    width: 0;
+    position: relative;
+}
+/* The bar itself: a child of the zero-width box above, so it hangs at the
+   caret's x and takes no width in the line. */
+.editor-root .ed-native-caret::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 1.5px;
+    background: var(--ed-caret);
 }
 
 /* Native (Blitz) IME preedit: the text an input method is still
@@ -1399,6 +1417,14 @@
 .editor-root .md-quote-marker {
     color: transparent;
     user-select: none;
+    /* The `> ` stays in the text (the caret needs real text to sit in), but
+       takes no width. Otherwise it pushes the first row of a wrapped quote or
+       callout right of the rows below it, which hang from the padding edge.
+       nowrap keeps the zero-width box from breaking the marker apart. */
+    display: inline-block;
+    width: 0;
+    white-space: nowrap;
+    overflow: visible;
 }
 
 /* A list or task marker on the line being typed: the source (`- `,
@@ -1505,6 +1531,14 @@
     border-color: var(--ed-link);
     color: #ffffff;
 }
+/* Non-done statuses (Obsidian Tasks): each glyph takes a colour so the
+   state reads without the source marker. Unknown statuses stay empty. */
+.editor-root .md-task-checkbox[data-status="/"] { color: var(--ed-warn); border-color: var(--ed-warn); }
+.editor-root .md-task-checkbox[data-status="<"] { color: var(--ed-warn); border-color: var(--ed-warn); }
+.editor-root .md-task-checkbox[data-status=">"] { color: var(--ed-link); border-color: var(--ed-link); }
+.editor-root .md-task-checkbox[data-status="-"] { color: var(--ed-danger); border-color: var(--ed-danger); }
+.editor-root .md-task-checkbox[data-status="?"],
+.editor-root .md-task-checkbox[data-status="!"] { color: var(--ed-wikilink); border-color: var(--ed-wikilink); }
 
 .editor-root .cm-line {
     /* Long prose wraps to the next visual row instead of
@@ -1568,21 +1602,28 @@
 /* Arborium scope tags inside code fences. The set of tags here
    matches `arborium_theme::tag_for_capture` short forms — see
    research/dioxus-code/src/advanced.rs. */
-.editor-root .md-tok-k  { color: #c792ea; }                   /* keyword */
-.editor-root .md-tok-co { color: #f78c6c; font-weight: 600; } /* control */
-.editor-root .md-tok-o  { color: #c5cad8; }                   /* operator */
-.editor-root .md-tok-p  { color: #c5cad8; }                   /* punctuation */
-.editor-root .md-tok-c  { color: #6a7392; font-style: italic;}/* comment */
-.editor-root .md-tok-s  { color: #c3e88d; }                   /* string */
-.editor-root .md-tok-n  { color: #f78c6c; }                   /* number */
-.editor-root .md-tok-b  { color: #ff5370; }                   /* boolean */
-.editor-root .md-tok-f  { color: #82aaff; }                   /* function */
-.editor-root .md-tok-t  { color: #ffcb6b; }                   /* type */
-.editor-root .md-tok-v  { color: #eeffff; }                   /* variable */
-.editor-root .md-tok-prop { color: #82b1ff; }                 /* property */
-.editor-root .md-tok-a  { color: #ffcb6b; }                   /* attribute */
-.editor-root .md-tok-m  { color: #c792ea; }                   /* macro */
-.editor-root .md-tok-tag { color: #ff5370; }                  /* tag */
+/* Each accent is mixed with the theme's text colour, so it reads on a light
+   code background and a dark one alike. A raw pastel was tuned for a dark
+   background only: on the light theme `variable` (#eeffff) disappeared.
+   Variables and punctuation take the text colour itself. */
+.editor-root .md-tok-k  { color: color-mix(in oklab, #c792ea 65%, var(--ed-text)); } /* keyword */
+.editor-root .md-tok-co { color: color-mix(in oklab, #f78c6c 65%, var(--ed-text)); font-weight: 600; } /* control */
+.editor-root .md-tok-o  { color: var(--ed-text-dim); }                    /* operator */
+.editor-root .md-tok-p  { color: var(--ed-text-dim); }                    /* punctuation */
+.editor-root .md-tok-c  { color: var(--ed-text-dim); font-style: italic; } /* comment */
+.editor-root .md-tok-s  { color: color-mix(in oklab, #c3e88d 55%, var(--ed-text)); } /* string */
+.editor-root .md-tok-n  { color: color-mix(in oklab, #f78c6c 65%, var(--ed-text)); } /* number */
+.editor-root .md-tok-b  { color: color-mix(in oklab, #ff5370 65%, var(--ed-text)); } /* boolean */
+.editor-root .md-tok-f  { color: color-mix(in oklab, #82aaff 65%, var(--ed-text)); } /* function */
+.editor-root .md-tok-t  { color: color-mix(in oklab, #ffcb6b 60%, var(--ed-text)); } /* type */
+.editor-root .md-tok-v  { color: var(--ed-text); }                        /* variable */
+.editor-root .md-tok-prop { color: color-mix(in oklab, #82b1ff 65%, var(--ed-text)); } /* property */
+.editor-root .md-tok-a  { color: color-mix(in oklab, #ffcb6b 60%, var(--ed-text)); } /* attribute */
+.editor-root .md-tok-m  { color: color-mix(in oklab, #c792ea 65%, var(--ed-text)); } /* macro */
+.editor-root .md-tok-tag { color: color-mix(in oklab, #ff5370 65%, var(--ed-text)); } /* tag */
+/* Math the compiler rejected: the source stays, underlined, so it reads as
+   a formula that failed rather than one never rendered. */
+.editor-root .md-math-error { text-decoration: underline wavy var(--ed-danger); }
 /* Round the corners at the fence boundaries — first/last code
    line in a run picks up extra padding + radius. The CSS-only
    approach: use adjacent-sibling rules to detect run edges. */
@@ -2898,4 +2939,15 @@
 @media (max-width: 640px) {
     .editor-root .md-study-map { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .editor-root .md-map-svg { min-width: 34rem; max-height: none; }
+}
+
+/* Native (Blitz): the editor is its own scroll container. Only the lines in
+   view are built, so the viewport's height is what a host sets, through
+   `--ed-scroll-height`. The spacers stand in for the lines not built. */
+.editor-root.ed-render-native {
+    height: var(--ed-scroll-height, 480px);
+    overflow-y: auto;
+}
+.editor-root .ed-spacer {
+    display: block;
 }

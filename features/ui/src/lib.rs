@@ -15,6 +15,8 @@ pub mod native;
 pub mod palette;
 pub mod tile;
 pub mod trigger;
+#[cfg(feature = "native")]
+mod virtual_lines;
 
 pub use editor::{DecorationSource, Editor, coarse_pointer};
 pub use event::{TransactionEvent, dispatch_spec};

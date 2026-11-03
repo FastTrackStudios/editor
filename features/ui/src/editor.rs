@@ -384,6 +384,10 @@ pub fn Editor(
     // re-render neither drops nor commits it.
     #[cfg(feature = "native")]
     let composition = use_signal(|| None::<crate::native::Composition>);
+    // Native only: the line virtualization state (scroll container, measured
+    // viewport and line heights). Only the lines near the viewport are built.
+    #[cfg(feature = "native")]
+    let vlines = crate::virtual_lines::use_virtual_lines(state);
     // Trigger-autocomplete open state (`[[` / `#`). Owned by the
     // editor (unlike `palette`, which the host threads in) because the
     // host's only contract is the candidate source prop.
@@ -2940,8 +2944,13 @@ pub fn Editor(
         // (Signal is Copy; `.set()` needs a mutable binding).
         let mut prev_line_hashes = prev_line_hashes;
         let mut force_full_patch = force_full_patch;
+        // Bumped when a pass deferred a compile, so the effect runs again and
+        // a static document converges on its math and diagrams (see the
+        // native render below for why this is needed).
+        let mut repass = use_signal(|| 0_u32);
         use_effect(move || {
             let _span = tracing::debug_span!("editor.patch_effect").entered();
+            let _ = repass();
             let s = state.read();
             let doc_len = s.doc.len();
             // Ask sources for the full set once editing settles, and only
@@ -2958,6 +2967,9 @@ pub fn Editor(
                 let mut v = deco_source_patch
                     .as_ref()
                     .map_or_else(Vec::new, |src| src.run(&s));
+                if editor_state::markdown::take_render_deferred() {
+                    repass.with_mut(|n| *n = n.wrapping_add(1));
+                }
                 // Painted modal caret (block/underscore) — the native
                 // caret can't take these shapes everywhere (CSS
                 // `caret-shape` is Chromium-only as of 2026; Firefox
@@ -3094,6 +3106,13 @@ pub fn Editor(
             .as_ref()
             .map(|src| src.run(&s))
             .unwrap_or_default();
+        // A fence the compile budget refused is still source in this pass.
+        // Run the pass again, so a document that is only rendered once (a
+        // mounted page, not one being typed in) converges on its math and
+        // diagrams instead of staying as source until the next keystroke.
+        if editor_state::markdown::take_render_deferred() {
+            dioxus::dioxus_vdom::needs_update();
+        }
         // Selection highlight FIRST so the caret decoration paints on top.
         decos.extend(crate::native::native_selection_decoration(
             &s,
@@ -3142,7 +3161,24 @@ pub fn Editor(
                 );
             })
         };
-        crate::tile::render_dx::render_tile(&arena, root, on_click)
+        // Only the lines near the viewport are built (see `virtual_lines`);
+        // the caret's line is scrolled into view rather than built on its own.
+        let lines = arena.get(root).children.len();
+        let starts: Vec<usize> = arena
+            .get(root)
+            .children
+            .iter()
+            .map(|&child| crate::tile::pos::pos_at_start(&arena, child))
+            .collect();
+        vlines.record_line_starts(starts);
+        let win = vlines.window(lines);
+        let on_mounted = {
+            let vlines = vlines.clone();
+            Callback::new(move |(index, el): (usize, Rc<MountedData>)| {
+                vlines.line_mounted(index, el);
+            })
+        };
+        crate::tile::render_dx::render_window(&arena, root, &win, on_click, on_mounted)
     };
 
     // The root div differs by renderer: native emits the tile tree as rsx
@@ -3188,6 +3224,19 @@ pub fn Editor(
             contenteditable: "{contenteditable}",
             spellcheck: "false",
             tabindex: "0",
+            // The root is the scroll container: its height comes from
+            // `--ed-scroll-height` (editor.css), and its position is polled.
+            // One handler: the virtualizer measures this scroll container, and
+            // the host's focus control (`focus_request`) holds the same node.
+            onmounted: {
+                let vlines = vlines.clone();
+                let mounted_root = mounted_root.clone();
+                move |e: Event<MountedData>| {
+                    let data = e.data();
+                    *mounted_root.borrow_mut() = Some(data.clone());
+                    vlines.attach(data);
+                }
+            },
             // Native: Blitz routes key events to the focused node, so the
             // editor must hold focus to be typable. `autofocus` claims it
             // on mount; the FTS blitz fork focuses the nearest focussable
@@ -3198,7 +3247,6 @@ pub fn Editor(
             // the vdom poll and panics.)
             autofocus: "true",
             "inputmode": "{inputmode}",
-            onmounted: move |e: Event<MountedData>| *mounted_root.borrow_mut() = Some(e.data()),
             onkeydown: on_keydown,
             oncompositionupdate: move |e: Event<CompositionData>| {
                 on_ime(crate::native::ImeEvent::Preedit(e.data().data()));
