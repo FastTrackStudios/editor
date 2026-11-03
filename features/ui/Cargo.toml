@@ -32,8 +32,9 @@ ropey = { workspace = true }
 default = ["web"]
 web = []
 # Native line virtualization polls the scroll position on a timer (Blitz
-# sends no scroll events), so the native build needs a timer.
-native = ["dep:tokio"]
+# sends no scroll events). The timer is a thread feeding a channel, so it
+# runs on any executor (`virtual_lines::ticker`), not only under Tokio.
+native = ["dep:futures-channel", "dep:futures-util"]
 
 # wasm-only: `performance.now()` for our perf spans (the std
 # `Instant::now` traps on wasm32-unknown-unknown).
@@ -41,8 +42,9 @@ native = ["dep:tokio"]
 web-sys = { version = "0.3", features = ["Window", "Performance", "Document", "Element", "HtmlElement", "DomStringMap", "MediaQueryList"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-# Timer for the native viewport poll (see `virtual_lines`).
-tokio = { workspace = true, optional = true }
+# The native viewport poll's tick channel (see `virtual_lines::ticker`).
+futures-channel = { version = "0.3", optional = true }
+futures-util = { version = "0.3", default-features = false, features = ["std"], optional = true }
 
 [dev-dependencies]
 # Wheel events for the scroll tests (a Blitz UiEvent, as the window shell sends).

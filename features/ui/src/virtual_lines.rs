@@ -16,6 +16,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use dioxus::prelude::*;
+use futures_util::StreamExt as _;
 use editor_state::EditorState;
 
 use crate::tile::window::{ESTIMATED_LINE_PX, Window, window};
@@ -71,8 +72,8 @@ pub fn use_virtual_lines(state: Signal<EditorState>) -> VirtualLines {
     use_future(move || {
         let built = built.clone();
         async move {
-            loop {
-                tokio::time::sleep(POLL).await;
+            let mut ticks = ticker(POLL);
+            while ticks.next().await.is_some() {
                 let Some(el) = scroller.peek().clone() else {
                     continue;
                 };
@@ -238,4 +239,30 @@ impl VirtualLines {
         self.built.set(w.lines());
         w
     }
+}
+
+/// A tick every `period`, for any executor.
+///
+/// The poll can't use `tokio::time`: a Blitz host such as architect's lab
+/// runs the vdom on its own executor with no Tokio reactor, and
+/// `tokio::time::sleep` panics there ("no reactor running"). One thread per
+/// editor sleeps and sends; it ends when the editor (the receiver) goes,
+/// because the next send fails. The channel holds one tick, so a busy UI
+/// thread never queues a backlog of polls.
+fn ticker(period: Duration) -> futures_channel::mpsc::Receiver<()> {
+    let (mut tx, rx) = futures_channel::mpsc::channel(0);
+    std::thread::Builder::new()
+        .name("editor-viewport-poll".into())
+        .spawn(move || {
+            loop {
+                std::thread::sleep(period);
+                match tx.try_send(()) {
+                    Ok(()) => {}
+                    Err(e) if e.is_full() => {}
+                    Err(_) => break,
+                }
+            }
+        })
+        .expect("spawn the editor's viewport poll thread");
+    rx
 }
