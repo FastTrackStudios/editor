@@ -69,11 +69,27 @@ pub fn native_caret_decoration(
             _ => return Vec::new(),
         }
     }
-    let head = s.selection.primary().head.min(s.doc.len());
-    vec![DecoratedRange::widget(
-        head,
-        "<span class=\"ed-native-caret\"></span>".to_string(),
-    )]
+    // Before a character, the caret is a mark on that character (Blitz paints
+    // marks, as it does the syntax colours). Where there is no character to
+    // mark (an empty line, or the end of the document) it is a widget span
+    // holding a no-break space, which gives the inline-block caret a box.
+    let text = s.doc.to_string();
+    let head = s.selection.primary().head.min(text.len());
+    let next = text[head..].chars().next();
+    if matches!(next, Some(c) if c != '\n') {
+        let end = head + next.map_or(0, char::len_utf8);
+        vec![DecoratedRange::mark(head..end, "ed-native-caret")]
+    } else if next.is_some() || text[..head].ends_with('\n') || head == text.len() {
+        vec![DecoratedRange::widget(
+            head,
+            "<span class=\"ed-native-caret\">\u{a0}</span>".to_string(),
+        )]
+    } else if let Some(prev) = text[..head].chars().next_back() {
+        let start = head - prev.len_utf8();
+        vec![DecoratedRange::mark(start..head, "ed-native-caret-end")]
+    } else {
+        Vec::new()
+    }
 }
 
 /// An IME composition in progress: the preedit text the input method is
