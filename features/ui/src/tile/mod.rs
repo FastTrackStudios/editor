@@ -44,6 +44,7 @@ pub mod render_dx;
 pub mod text;
 pub mod visible;
 pub mod widget;
+pub mod window;
 
 pub use arena::{Arena, TileId};
 pub use flag::TileFlag;

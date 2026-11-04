@@ -234,9 +234,13 @@ fn percent_decode(s: &str) -> String {
     out
 }
 
+/// Native: `PLAYGROUND_SEED_FILE=path` seeds the editor from that file, so
+/// `cargo run` opens any document (the formatting test document, say).
+/// Unset, the built-in seed is used.
 #[cfg(not(target_arch = "wasm32"))]
-const fn read_seed_query() -> Option<String> {
-    None
+fn read_seed_query() -> Option<String> {
+    let path = std::env::var_os("PLAYGROUND_SEED_FILE")?;
+    std::fs::read_to_string(path).ok()
 }
 
 #[component]
@@ -635,9 +639,19 @@ fn App() -> Element {
     // (rsx can't `#[cfg]` a child node, so the variant is chosen here.)
     #[cfg(not(feature = "native"))]
     let style_node = rsx! { document::Link { rel: "stylesheet", href: STYLE } };
+    // Native also needs the editor's own stylesheet: without it the editor
+    // renders unstyled (no headings, callouts, or the scroll container). The
+    // web build gets it from the editor's `asset!`, which Blitz cannot load.
     #[cfg(feature = "native")]
-    let style_node =
-        rsx! { style { dangerous_inner_html: include_str!("../assets/playground.css") } };
+    let style_node = rsx! {
+        style {
+            dangerous_inner_html: format!(
+                "{}\n{}",
+                editor::editor_view::EDITOR_CSS,
+                include_str!("../assets/playground.css")
+            )
+        }
+    };
 
     rsx! {
         {style_node}

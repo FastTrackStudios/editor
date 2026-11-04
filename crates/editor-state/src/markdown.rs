@@ -317,6 +317,49 @@ thread_local! {
     static RENDER_EVERYTHING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+/// Most passes in a row that a host re-runs for deferred renders. A fence
+/// that can never compile would otherwise defer every pass. Math that needs
+/// more passes than this to finish shows its source, and says so nowhere.
+const MAX_DEFERRED_PASSES: u8 = 16;
+
+thread_local! {
+    static RENDER_DEFERRED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static DEFERRED_STREAK: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+}
+
+/// A fence render was refused by a per-pass compile budget. Set by the Typst
+/// and Mermaid budgets, which otherwise leave the fence as source until some
+/// later pass happens to run.
+pub fn note_render_deferred() {
+    RENDER_DEFERRED.with(|c| c.set(true));
+}
+
+/// Was a render deferred in this pass? Unlike [`take_render_deferred`] this
+/// leaves the flag set. A fence that failed while others were deferred may
+/// only be failing because it ran out of budget, so it is not an error yet.
+#[must_use]
+pub fn render_deferred_this_pass() -> bool {
+    RENDER_DEFERRED.with(std::cell::Cell::get)
+}
+
+/// Should the host run the decoration pass again? True when the last pass
+/// deferred a render, for at most [`MAX_DEFERRED_PASSES`] passes in a row.
+/// Clears the flag. A view calls this after each pass and re-renders while it
+/// is true, so a static document converges on its fences.
+#[must_use]
+pub fn take_render_deferred() -> bool {
+    let deferred = RENDER_DEFERRED.with(|c| c.replace(false));
+    DEFERRED_STREAK.with(|c| {
+        let streak = if deferred {
+            c.get().saturating_add(1)
+        } else {
+            0
+        };
+        c.set(streak);
+        deferred && streak <= MAX_DEFERRED_PASSES
+    })
+}
+
 /// Is a one-shot render in progress?
 ///
 /// The per-pass compile budgets consult this: when it is set they arm
@@ -1508,6 +1551,12 @@ fn decorate_math_span(
         }
         // Source visible (caret on, or compile failed).
         out.push(Decoration::mark(span.body.clone(), span.class));
+        // A formula the compiler rejected says so: it is marked, not left as
+        // plain source that looks like a formula nobody rendered. Not when this
+        // pass deferred a render, since the budget may be the reason.
+        if !render_deferred_this_pass() && !cursor_touches(primary, span.outer.clone()) {
+            out.push(Decoration::mark(span.body.clone(), "md-math-error"));
+        }
         return true;
     }
     false
@@ -2512,7 +2561,8 @@ fn emit_block_line(
     }
 
     // ── Task list ──────────────────────────────────────
-    if let Some((prefix_end, checked)) = parse_task_marker(line) {
+    if let Some((prefix_end, status)) = parse_task_marker(line) {
+        let checked = matches!(status, b'x' | b'X');
         let abs_prefix_end = line_from.saturating_add(prefix_end);
         out.push(Decoration::line(line_from, "md-task"));
         // The checkbox widget is always emitted so it stays
@@ -2521,13 +2571,18 @@ fn emit_block_line(
         // off the line — when the user is editing the line
         // we keep them visible so they can mutate the marker
         // directly and clicks/motions land on real text.
-        let html = if checked {
-            format!(
-                r#"<span class="md-task-checkbox checked" data-task-pos="{line_from}">✓</span>"#
-            )
+        // Every status gets its own glyph (`[/]` in progress, `[-]`
+        // cancelled, …), keyed by `data-status` for the stylesheet.
+        let class = if checked {
+            "md-task-checkbox checked"
         } else {
-            format!(r#"<span class="md-task-checkbox" data-task-pos="{line_from}"></span>"#)
+            "md-task-checkbox"
         };
+        let html = format!(
+            r#"<span class="{class}" data-task-pos="{line_from}" data-status="{}">{}</span>"#,
+            char::from(status),
+            task_glyph(status)
+        );
         // Two states: source-visible while the caret is inside
         // `- [ ] ` (so the marker is editable), the checkbox
         // otherwise — the caret's line included, so a task formats
@@ -3185,10 +3240,9 @@ fn emit_table_widget(
 
 /// Render the YAML frontmatter block as Obsidian's "Properties" panel.
 ///
-/// The widget is emitted whenever the block parses — including with the caret
-/// inside the YAML, so vim row-navigation has something to look at. The active
-/// row is flagged in the HTML for CSS to highlight. Split out of
-/// [`scan_blocks`]; the body is unchanged.
+/// The widget is emitted whenever the block parses, except with the caret inside
+/// the YAML: then the source shows, so the caret has text to sit in. Split out
+/// of [`scan_blocks`].
 fn emit_frontmatter_widget(
     text: &str,
     primary: Range,
@@ -3196,11 +3250,14 @@ fn emit_frontmatter_widget(
 ) -> Option<std::ops::Range<usize>> {
     let fm = parse_frontmatter(text)?;
     let caret = primary.head;
-    let active_idx = fm
-        .props
-        .iter()
-        .position(|p| caret >= p.range.start && caret < p.range.end);
-    let html = render_properties_html(&fm.props, active_idx);
+    // With the caret inside the YAML, the source shows: the caret needs text to
+    // sit in, and the widget's rows have nothing for it (native paints no caret
+    // there, and the web's row inputs are a separate editing surface). The block
+    // is still consumed as frontmatter, so nothing else decorates it.
+    if fm.outer.contains(&caret) {
+        return Some(fm.outer);
+    }
+    let html = render_properties_html(&fm.props, None);
     out.push(Decoration::replace(fm.outer.clone()));
     out.push(Decoration::widget(fm.outer.start, html));
     Some(fm.outer)
@@ -4125,7 +4182,7 @@ fn is_hr(line: &str) -> bool {
     t.bytes().all(|x| x == c)
 }
 
-fn parse_task_marker(line: &str) -> Option<(usize, bool)> {
+fn parse_task_marker(line: &str) -> Option<(usize, u8)> {
     let b = line.as_bytes();
     // `- [ ]` / `- [x]` / `- [/]` / `- [>]` / `* [ ]` ... — must
     // be at least 5 bytes for the `- [X]` form.
@@ -4152,9 +4209,23 @@ fn parse_task_marker(line: &str) -> Option<(usize, bool)> {
     if !is_valid_status {
         return None;
     }
-    let checked = matches!(inner, b'x' | b'X');
     let end = if b.get(5) == Some(&b' ') { 6 } else { 5 };
-    Some((end, checked))
+    Some((end, inner))
+}
+
+/// The glyph a task checkbox shows for its status byte (Obsidian Tasks
+/// conventions). Unknown statuses draw as an empty box, as they always did.
+fn task_glyph(status: u8) -> &'static str {
+    match status {
+        b'x' | b'X' => "✓",
+        b'/' => "◐",
+        b'>' => "→",
+        b'<' => "⏳",
+        b'-' => "✗",
+        b'?' => "?",
+        b'!' => "!",
+        _ => "",
+    }
 }
 
 /// The indent-depth class for a list line, or `None` at the top level.
@@ -6289,6 +6360,83 @@ mod tests {
                 if html.contains("md-properties"))
         });
         assert!(has_widget);
+    }
+
+    #[cfg(feature = "typst")]
+    #[test]
+    fn math_converges_over_a_few_passes() {
+        // Four formulas, two cold compiles per pass: a static document needs
+        // a second and third pass to show them all. The caret sits in the
+        // first, so it stays as source; the other three must become widgets.
+        let text = "$a^2$ $b^2$ $c^2$ $d^2$";
+        let s = state(text, 0);
+        let mut widgets = 0;
+        for _ in 0..4 {
+            let decs = live_preview(&s);
+            widgets = decs
+                .iter()
+                .filter(|d| {
+                    matches!(&d.kind,
+                    crate::decoration::DecorationKind::Widget { html }
+                        if html.contains("md-math-widget"))
+                })
+                .count();
+        }
+        assert_eq!(
+            widgets, 3,
+            "every formula away from the caret should render"
+        );
+    }
+
+    #[cfg(feature = "typst")]
+    #[test]
+    fn math_the_compiler_rejects_is_marked() {
+        // An unknown function is a compile error, not a budget miss. The
+        // formula beside it compiles, so only the broken one is marked.
+        let text = "bad $#nosuchfn(1)$ and good $x^2$";
+        let s = state(text, 0);
+        let mut error_marks = Vec::new();
+        for _ in 0..4 {
+            let decs = live_preview(&s);
+            error_marks = decs
+                .iter()
+                .filter(|d| matches!(&d.kind, crate::decoration::DecorationKind::Mark { class, .. } if class.contains("md-math-error")))
+                .map(|d| d.from)
+                .collect();
+        }
+        let broken = text.find("#nosuchfn").expect("the broken formula");
+        assert_eq!(
+            error_marks.len(),
+            1,
+            "exactly the broken formula is marked: {error_marks:?}"
+        );
+        assert!(error_marks[0] <= broken && broken < error_marks[0] + 20);
+    }
+
+    #[test]
+    fn deferred_render_is_reported_once_then_drained() {
+        note_render_deferred();
+        assert!(
+            take_render_deferred(),
+            "a deferral should ask for another pass"
+        );
+        assert!(!take_render_deferred(), "the flag clears once taken");
+    }
+
+    #[test]
+    fn frontmatter_shows_source_when_caret_is_inside() {
+        // The caret must have text to sit in, so the YAML stays as source.
+        let s = state("---\ntitle: x\n---\n# body", 6);
+        let decs = live_preview(&s);
+        let has_widget = decs.iter().any(|d| {
+            matches!(&d.kind,
+            crate::decoration::DecorationKind::Widget { html }
+                if html.contains("md-properties"))
+        });
+        assert!(
+            !has_widget,
+            "the properties widget should yield to the source"
+        );
     }
 
     #[test]
