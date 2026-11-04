@@ -8,9 +8,19 @@ default:
 # ── Rust ─────────────────────────────────────────────────────────────
 # (`check` — native + wasm — is defined once, further down.)
 
-# nextest: parallel per-test binaries. Does NOT run doctests.
+# nextest: parallel per-test binaries. Does NOT run doctests. Then the
+# native (Blitz) renderer's tests, a feature the default build leaves out.
 rust-test:
     cargo nextest run --workspace
+    cargo nextest run -p editor-view --no-default-features --features native
+
+# pedantic + nursery + the no-panic set (Cargo.toml [workspace.lints]), and
+# the native renderer's library. Its integration tests (features/ui/tests/
+# native_*.rs) are not clippy-clean yet.
+clippy:
+    cargo clippy --workspace --all-targets
+    cargo clippy -p editor-view --no-default-features --features native --lib
+    cargo clippy -p editor-view --no-default-features --features native --lib --profile test
 
 fmt:
     cargo fmt --all
@@ -19,7 +29,7 @@ fmt-check:
     cargo fmt --all --check
 
 # The gate CI runs, in CI's order.
-ci: fmt-check check rust-test
+ci: fmt-check check clippy rust-test
 
 # The dogfooding app — the fastest way to see a change.
 play *ARGS:

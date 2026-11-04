@@ -46,6 +46,16 @@ jobs:
         run: ${NIX_DEV} cargo fmt --all --check
       - name: cargo check --workspace
         run: ${NIX_DEV} cargo check --workspace --all-targets
+      # The workspace lints (Cargo.toml [workspace.lints]: pedantic,
+      # nursery, the no-panic set) are deny: any hit fails here. Then the
+      # native (Blitz) renderer, a feature the default build leaves out:
+      # its library and unit tests. Its integration tests
+      # (features/ui/tests/native_*.rs) are not clippy-clean yet.
+      - name: cargo clippy
+        run: |
+          ${NIX_DEV} cargo clippy --workspace --all-targets
+          ${NIX_DEV} cargo clippy -p editor-view --no-default-features --features native --lib
+          ${NIX_DEV} cargo clippy -p editor-view --no-default-features --features native --lib --profile test
       # The editor runs in the browser as much as on the desktop, and a
       # host build compiles neither the wasm cfg blocks nor the web
       # renderer. `playground --features web` is the smallest thing that
@@ -57,3 +67,9 @@ jobs:
             --no-default-features --features web
       - name: cargo nextest
         run: ${NIX_DEV} cargo nextest run --workspace --no-fail-fast
+      # The native renderer's tests (features/ui/tests/native_*.rs and its
+      # unit tests) build only with `native`, which no member's default
+      # turns on, so the workspace run never had them.
+      - name: cargo nextest (native)
+        if: ${{ !cancelled() }}
+        run: ${NIX_DEV} cargo nextest run -p editor-view --no-default-features --features native --no-fail-fast
