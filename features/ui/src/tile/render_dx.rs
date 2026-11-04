@@ -185,13 +185,20 @@ fn render_line_el(
 /// document, and a callback that receives its mounted element (for measuring).
 pub type LineMount = (usize, Callback<(usize, std::rc::Rc<MountedData>)>);
 
-/// Render only the lines of `win`, with spacers of the lines' total height
+/// Render only the lines of `win`.
+///
+/// Spacers of the lines' total height sit
 /// above and below, so the scroll container keeps the whole document's
 /// height. Each rendered line reports its mounted element through
 /// `on_mounted`, so the view can measure it.
 ///
 /// `win` comes from [`crate::tile::window::window`] over the same document
 /// `root` was built from.
+///
+/// # Errors
+///
+/// None of its own: an `Element` is Dioxus' render result, an error only
+/// when a component under it fails to render.
 pub fn render_window(
     arena: &Arena,
     root: TileId,
@@ -201,10 +208,7 @@ pub fn render_window(
 ) -> Element {
     let children = arena.get(root).children.clone();
     let range = win.lines();
-    let lines: Vec<(usize, TileId)> = range
-        .clone()
-        .filter_map(|i| children.get(i).map(|&child| (i, child)))
-        .collect();
+    let lines = range.filter_map(|i| children.get(i).map(|&child| (i, child)));
     let top = win.top_pad;
     let bottom = win.bottom_pad;
     // Both spacers are always present, even at zero height: adding and removing

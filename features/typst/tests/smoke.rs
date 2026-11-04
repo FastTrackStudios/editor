@@ -37,5 +37,5 @@ fn syntax_error_returns_diagnostic() {
     c.set_source("#text(red, hello");
     let err = c.compile_svg().expect_err("expected error");
     let msg = format!("{err}");
-    assert!(!msg.is_empty());
+    assert_ne!(msg, "");
 }

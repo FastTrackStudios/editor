@@ -69,31 +69,7 @@ pub fn handle_bridge_msg(
             let cur = state.read().clone();
             push_selection(&state, &cur, deco_source, sink, s_off, e_off);
         }
-        "before-input-insert" => {
-            let text = v.get("text").and_then(|t| t.as_str()).unwrap_or("");
-            let cur = state.read().clone();
-            let doc_len = cur.doc.len();
-            let from = s_off.min(doc_len);
-            let to = e_off.min(doc_len).max(from);
-            tracing::debug!(
-                from,
-                to,
-                inserted_len = text.len(),
-                "editor.before_input.insert"
-            );
-            let changes = Changes::replace(from..to, text);
-            let caret = from.saturating_add(text.len());
-            let new_sel = Selection::single(Range::caret(caret));
-            apply_tx(
-                state,
-                &cur,
-                TransactionSpec::new()
-                    .changes(changes)
-                    .selection(new_sel)
-                    .annotate("origin", "before-input"),
-                sink,
-            );
-        }
+        "before-input-insert" => handle_before_input_insert(state, sink, v, s_off, e_off),
         "before-input-delete-backward" => handle_delete_backward(state, sink, s_off, e_off),
         "before-input-delete-forward" => handle_delete_forward(state, sink, s_off, e_off),
         "composition-start" => {
@@ -171,6 +147,74 @@ pub fn handle_bridge_msg(
     }
 }
 
+/// `beforeinput`'s insert: the text replaces the selection `s_off..e_off`
+/// (clamped to the document), the caret after it.
+fn handle_before_input_insert(
+    state: Signal<EditorState>,
+    sink: Option<Callback<TransactionEvent>>,
+    v: &serde_json::Value,
+    s_off: usize,
+    e_off: usize,
+) {
+    let text = v.get("text").and_then(|t| t.as_str()).unwrap_or("");
+    let cur = state.read().clone();
+    let doc_len = cur.doc.len();
+    let from = s_off.min(doc_len);
+    let to = e_off.min(doc_len).max(from);
+    tracing::debug!(
+        from,
+        to,
+        inserted_len = text.len(),
+        "editor.before_input.insert"
+    );
+    let changes = Changes::replace(from..to, text);
+    let caret = from.saturating_add(text.len());
+    let new_sel = Selection::single(Range::caret(caret));
+    apply_tx(
+        state,
+        &cur,
+        TransactionSpec::new()
+            .changes(changes)
+            .selection(new_sel)
+            .annotate("origin", "before-input"),
+        sink,
+    );
+}
+
+/// The document changes behind the visible-text changes `vis_vec`: a single
+/// typed insertion at a caret goes where [`insertion_point`] places it;
+/// anything else maps each change's ends through the visible-to-document
+/// offsets.
+fn doc_changes(
+    old_visible: &VisibleText,
+    new_visible: &str,
+    vis_vec: &[Change],
+    single_caret_insert: Option<String>,
+    s_off: usize,
+    head: usize,
+) -> Vec<Change> {
+    let mut doc_changes: Vec<Change> = Vec::new();
+    if let (Some(inserted), [c]) = (single_caret_insert, vis_vec) {
+        let at = insertion_point(old_visible, new_visible, c.from, &inserted, s_off, head);
+        doc_changes.push(Change {
+            from: at,
+            to: at,
+            inserted,
+        });
+    } else {
+        for c in vis_vec {
+            let doc_from = old_visible.visible_to_doc(c.from);
+            let doc_to = old_visible.visible_to_doc(c.to);
+            doc_changes.push(Change {
+                from: doc_from,
+                to: doc_to,
+                inserted: c.inserted.clone(),
+            });
+        }
+    }
+    doc_changes
+}
+
 /// Resolve a `prop-*` bridge message into a `Changes` against
 /// the frontmatter and dispatch the transaction. `mutate` is
 /// given the existing `PropValue` and the raw payload, and
@@ -225,32 +269,14 @@ fn handle_input(
     } else {
         None
     };
-    let mut doc_changes: Vec<Change> = Vec::new();
-    if let (Some(inserted), [c]) = (single_caret_insert, vis_vec.as_slice()) {
-        let at = insertion_point(
-            &old_visible,
-            new_visible,
-            c.from,
-            &inserted,
-            s_off,
-            primary.head,
-        );
-        doc_changes.push(Change {
-            from: at,
-            to: at,
-            inserted,
-        });
-    } else {
-        for c in &vis_vec {
-            let doc_from = old_visible.visible_to_doc(c.from);
-            let doc_to = old_visible.visible_to_doc(c.to);
-            doc_changes.push(Change {
-                from: doc_from,
-                to: doc_to,
-                inserted: c.inserted.clone(),
-            });
-        }
-    }
+    let doc_changes = doc_changes(
+        &old_visible,
+        new_visible,
+        &vis_vec,
+        single_caret_insert,
+        s_off,
+        primary.head,
+    );
     let changes = Changes::from_sorted(doc_changes);
     let new_doc_len = isize::try_from(cur.doc.len())
         .unwrap_or(isize::MAX)
@@ -363,7 +389,7 @@ fn valid_insertions(old: &str, new: &str, at: usize, inserted: &str) -> Vec<usiz
         if v == 0 {
             break;
         }
-        v -= 1;
+        v = v.saturating_sub(1);
     }
     out
 }

@@ -459,7 +459,7 @@ mod panel_tests {
         // depth guard is what stops a pathological document recursing.
         let deep = "```tabs\n=== A\n".repeat(usize::from(MAX_DEPTH) + 2);
         let html = render_panel_markdown(&deep, None);
-        assert!(!html.is_empty());
+        assert_ne!(html, "");
     }
 }
 

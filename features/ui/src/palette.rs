@@ -230,8 +230,9 @@ pub struct PaletteState {
 /// — Task's notes and wikis — sets `/` with [`set_trigger`].
 pub const TRIGGER: char = '\\';
 
-static ACTIVE_TRIGGER: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(TRIGGER as u32);
+/// The trigger [`set_trigger`] chose, as a code point; 0 (never a
+/// trigger) until it is called, meaning [`TRIGGER`].
+static ACTIVE_TRIGGER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 /// Choose the character that opens the palette, for this process.
 ///
@@ -239,13 +240,16 @@ static ACTIVE_TRIGGER: std::sync::atomic::AtomicU32 =
 /// practice — opens only at the start of a line or after whitespace, so
 /// `https://`, `and/or` and `4/4` never do.
 pub fn set_trigger(c: char) {
-    ACTIVE_TRIGGER.store(c as u32, std::sync::atomic::Ordering::Relaxed);
+    ACTIVE_TRIGGER.store(u32::from(c), std::sync::atomic::Ordering::Relaxed);
 }
 
 /// The character that opens the palette now.
 #[must_use]
 pub fn trigger() -> char {
-    char::from_u32(ACTIVE_TRIGGER.load(std::sync::atomic::Ordering::Relaxed)).unwrap_or(TRIGGER)
+    match ACTIVE_TRIGGER.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => TRIGGER,
+        code => char::from_u32(code).unwrap_or(TRIGGER),
+    }
 }
 
 #[must_use]
@@ -282,7 +286,7 @@ pub fn detect_trigger_with(doc: &str, caret: usize, trig: char) -> Option<(usize
             // middle of a word (`and/or`, `https://`): it opens the menu
             // only where a command could start — the start of the line or
             // after whitespace.
-            if trig != TRIGGER as u8 && i >= 2 {
+            if u32::from(trig) != u32::from(TRIGGER) && i >= 2 {
                 let prev = *bytes.get(i.saturating_sub(2))?;
                 if !char::from(prev).is_whitespace() {
                     return None;
@@ -346,23 +350,7 @@ pub fn run_command(
     }
     match cmd {
         CommandKind::InsertSnippet(text, caret_back) => {
-            let (text, field) = expand_placeholders(text);
-            let at = slash_range.start;
-            let selection = field.map_or_else(
-                || Selection::caret(at.saturating_add(text.len()).saturating_sub(caret_back)),
-                |f| {
-                    Selection::single(editor_state::selection::Range::new(
-                        at + f.start,
-                        at + f.end,
-                    ))
-                },
-            );
-            Some(
-                TransactionSpec::new()
-                    .changes(Changes::replace(slash_range, text))
-                    .selection(selection)
-                    .annotate("origin", "palette"),
-            )
+            Some(insert_snippet(slash_range, text, caret_back))
         }
         CommandKind::InsertBlockSnippet(text, caret_back) => {
             Some(insert_block_snippet(&doc, slash_range, text, caret_back))
@@ -973,11 +961,30 @@ fn push_embeds_and_links(out: &mut Vec<CommandEntry>) {
     ]);
 }
 
-/// Insert a block-level snippet, replacing the palette query.
-///
-/// Split out of [`run_command`]'s `match`: this arm carries the block-context
-/// handling (leading blank line, list-prefix stripping) that the inline
-/// snippet arm does not, and it dominated that function's length.
+/// Insert an inline snippet in place of the palette query: its first
+/// `${field}` selected, else the caret `caret_back` bytes before its end.
+fn insert_snippet(
+    slash_range: std::ops::Range<usize>,
+    text: &str,
+    caret_back: usize,
+) -> TransactionSpec {
+    let (text, field) = expand_placeholders(text);
+    let at = slash_range.start;
+    let selection = field.map_or_else(
+        || Selection::caret(at.saturating_add(text.len()).saturating_sub(caret_back)),
+        |f| {
+            Selection::single(editor_state::selection::Range::new(
+                at.saturating_add(f.start),
+                at.saturating_add(f.end),
+            ))
+        },
+    );
+    TransactionSpec::new()
+        .changes(Changes::replace(slash_range, text))
+        .selection(selection)
+        .annotate("origin", "palette")
+}
+
 /// A snippet's `${placeholder}` fields: the text with the markers taken
 /// out, and the first field's range in it — selected on insert, so
 /// typing replaces it, the way a code editor's snippets work. A snippet
@@ -986,22 +993,26 @@ fn expand_placeholders(text: &str) -> (String, Option<std::ops::Range<usize>>) {
     let mut out = String::with_capacity(text.len());
     let mut first = None;
     let mut rest = text;
-    while let Some(i) = rest.find("${") {
-        let Some(len) = rest[i + 2..].find('}') else {
+    while let Some((head, tail)) = rest.split_once("${") {
+        let Some((body, after)) = tail.split_once('}') else {
             break;
         };
-        out.push_str(&rest[..i]);
-        let body = &rest[i + 2..i + 2 + len];
+        out.push_str(head);
         if first.is_none() {
-            first = Some(out.len()..out.len() + body.len());
+            first = Some(out.len()..out.len().saturating_add(body.len()));
         }
         out.push_str(body);
-        rest = &rest[i + 3 + len..];
+        rest = after;
     }
     out.push_str(rest);
     (out, first)
 }
 
+/// Insert a block-level snippet, replacing the palette query.
+///
+/// Split out of [`run_command`]'s `match`: this arm carries the block-context
+/// handling (leading blank line, list-prefix stripping) that the inline
+/// snippet arm does not, and it dominated that function's length.
 fn insert_block_snippet(
     doc: &str,
     slash_range: std::ops::Range<usize>,
@@ -1021,7 +1032,7 @@ fn insert_block_snippet(
     let snippet = if line_has_content {
         format!("\n{text}")
     } else {
-        text.clone()
+        text
     };
     let lead = usize::from(line_has_content);
     // Build the final doc directly: strip the `/query`,
@@ -1047,10 +1058,10 @@ fn insert_block_snippet(
             )
         },
         |f| {
-            let base = anchor + lead;
+            let base = anchor.saturating_add(lead);
             Selection::single(editor_state::selection::Range::new(
-                base + f.start,
-                base + f.end,
+                base.saturating_add(f.start),
+                base.saturating_add(f.end),
             ))
         },
     );
@@ -1115,7 +1126,7 @@ mod tests {
     fn a_snippet_selects_its_first_field() {
         let (text, field) = super::expand_placeholders("```map\ntitle: ${Title}\n${x}\n```");
         assert_eq!(text, "```map\ntitle: Title\nx\n```");
-        assert_eq!(field.map(|f| &text[f]), Some("Title"));
+        assert_eq!(field.and_then(|f| text.get(f)), Some("Title"));
         let doc = "intro\n/read";
         let state = editor_state::EditorState::new(doc.to_string());
         let spec = super::run_command(
@@ -1127,7 +1138,7 @@ mod tests {
         let next = state.update(spec);
         assert_eq!(next.doc.to_string(), "intro\n```readings\nQ?\n```\n");
         let sel = next.selection.primary();
-        assert_eq!(&next.doc.to_string()[sel.from()..sel.to()], "Q?");
+        assert_eq!(next.doc.to_string().get(sel.from()..sel.to()), Some("Q?"));
     }
 
     #[test]

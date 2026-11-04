@@ -31,32 +31,32 @@ fn reference_has(src: &str, want: fn(&pulldown_cmark::Event<'_>) -> bool) -> boo
     Parser::new_ext(src, opts).any(|e| want(&e))
 }
 
-fn is_image(e: &pulldown_cmark::Event<'_>) -> bool {
+const fn is_image(e: &pulldown_cmark::Event<'_>) -> bool {
     matches!(
         e,
         pulldown_cmark::Event::Start(pulldown_cmark::Tag::Image { .. })
     )
 }
 
-fn is_link(e: &pulldown_cmark::Event<'_>) -> bool {
+const fn is_link(e: &pulldown_cmark::Event<'_>) -> bool {
     matches!(
         e,
         pulldown_cmark::Event::Start(pulldown_cmark::Tag::Link { .. })
     )
 }
 
-fn is_emphasis(e: &pulldown_cmark::Event<'_>) -> bool {
+const fn is_emphasis(e: &pulldown_cmark::Event<'_>) -> bool {
     matches!(
         e,
         pulldown_cmark::Event::Start(pulldown_cmark::Tag::Emphasis)
     )
 }
 
-fn is_hard_break(e: &pulldown_cmark::Event<'_>) -> bool {
+const fn is_hard_break(e: &pulldown_cmark::Event<'_>) -> bool {
     matches!(e, pulldown_cmark::Event::HardBreak)
 }
 
-fn is_table(e: &pulldown_cmark::Event<'_>) -> bool {
+const fn is_table(e: &pulldown_cmark::Event<'_>) -> bool {
     matches!(
         e,
         pulldown_cmark::Event::Start(pulldown_cmark::Tag::Table(_))

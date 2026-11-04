@@ -625,7 +625,7 @@ mod tests {
         assert!(
             !out.contains(">\n<svg") && !out.contains("</svg>\n<"),
             "whitespace around the rendered svg:\n{}",
-            &out[..out.len().min(400)]
+            out.get(..out.len().min(400)).unwrap_or(&out)
         );
     }
 

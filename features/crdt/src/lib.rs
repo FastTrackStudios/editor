@@ -243,7 +243,7 @@ mod tests {
         // strings — must translate to zero ops.
         let doc = Doc::new("same");
         let changes = Changes::replace(4..4, "");
-        assert!(changes_to_text_ops(doc.rope(), &changes).is_empty());
+        assert_eq!(changes_to_text_ops(doc.rope(), &changes), []);
     }
 
     #[test]

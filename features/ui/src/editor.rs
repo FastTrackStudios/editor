@@ -411,7 +411,13 @@ pub fn Editor(
     // after it, whose absolute positions shifted.)
     // (Native renders rsx directly and has no JS patch step, so this hash
     // cache goes unused there — kept as a hook so hook order matches web.)
-    #[cfg_attr(feature = "native", allow(unused_variables))]
+    #[cfg_attr(
+        feature = "native",
+        expect(
+            unused_variables,
+            reason = "native has no JS patch step; the hook keeps web's hook order"
+        )
+    )]
     let prev_line_hashes = use_signal(Vec::<u64>::new);
     // Force the next patch to be a full (prefix=0) reconcile. Set on the
     // first render and after IME composition — the one path where
@@ -432,7 +438,6 @@ pub fn Editor(
     let root = use_hook(|| Rc::new(RefCell::new(None::<Rc<MountedData>>)));
     let mounted_root = root.clone();
     use_effect({
-        let root = root.clone();
         move || {
             let Some(request) = focus_request else { return };
             if request() == 0 {
@@ -2382,7 +2387,7 @@ pub fn Editor(
         let mods = evt.modifiers();
         let mut key_str = match evt.key() {
             Key::Character(c) => c,
-            other => other.to_string(),
+            other @ Key::Named(_) => other.to_string(),
         };
         // Some key sources (notably the Blitz/native event path)
         // report the *unshifted* character with the shift modifier
@@ -3140,7 +3145,7 @@ pub fn Editor(
         // so the caret snaps off atomic/hidden ranges the same way the web
         // selection bridge does.
         let on_click = {
-            let click_deco = decorations.clone();
+            let click_deco = decorations;
             let click_sink = on_transaction;
             let click_state = state;
             Callback::new(move |pos: usize| {
@@ -3222,8 +3227,6 @@ pub fn Editor(
             // One handler: the virtualizer measures this scroll container, and
             // the host's focus control (`focus_request`) holds the same node.
             onmounted: {
-                let vlines = vlines.clone();
-                let mounted_root = mounted_root.clone();
                 move |e: Event<MountedData>| {
                     let data = e.data();
                     *mounted_root.borrow_mut() = Some(data.clone());

@@ -97,7 +97,7 @@ mod tests {
         let t = new_mark_tile(MarkSpec::span_class("md-bold"));
         assert!(t.is_composite());
         assert_eq!(t.length, 0);
-        assert!(t.children.is_empty());
+        assert_eq!(t.children, []);
     }
 
     #[test]

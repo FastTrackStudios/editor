@@ -38,7 +38,9 @@ use editor_state::{
     Changes, DecoratedRange, EditorState, KeySpec, Range, Selection, TransactionSpec,
 };
 
-/// Painted insert caret for the native renderer. A 1px-wide zero-content
+/// Painted insert caret for the native renderer.
+///
+/// A 1px-wide zero-content
 /// widget at the selection head, styled by `.ed-native-caret` in the
 /// stylesheet. Only emitted when the editor is focused, not in reading
 /// mode, and the active vim mode (if any) is one that would normally show
@@ -178,7 +180,9 @@ fn escape_text(text: &str) -> String {
     out
 }
 
-/// Selection highlight for the native renderer. The web path shows the
+/// Selection highlight for the native renderer.
+///
+/// The web path shows the
 /// browser's own `contenteditable` selection; Blitz has none, so we paint
 /// the primary selection range ourselves as a background mark (the same
 /// `draw_inline_backgrounds` mechanism the block caret uses, so it never
@@ -242,13 +246,10 @@ pub fn handle_text_input(
     // Control/super-modified chords are never literal text. Alt is left to
     // the keymap (it may bind Alt-motions); a bare AltGr-composed glyph
     // arrives as `Character` without the alt flag on most layouts.
-    match text_input_spec(cur, press) {
-        Some(spec) => {
-            crate::event::apply_tx(state, cur, spec, sink);
-            true
-        }
-        None => false,
-    }
+    text_input_spec(cur, press).is_some_and(|spec| {
+        crate::event::apply_tx(state, cur, spec, sink);
+        true
+    })
 }
 
 /// Pure decision half of [`handle_text_input`]: the transaction a printable
@@ -314,13 +315,15 @@ pub fn text_input_spec(cur: &EditorState, press: &KeySpec) -> Option<Transaction
     Some(
         TransactionSpec::new()
             .changes(Changes::replace(from..to, inserted))
-            .selection(Selection::caret(from + inserted.len()))
+            .selection(Selection::caret(from.saturating_add(inserted.len())))
             .annotate("origin", "native-input"),
     )
 }
 
 /// Caret movement for the native keydown handler — the work the web hands
-/// to `contenteditable` + the `selectionchange` bridge. Handles
+/// to `contenteditable` + the `selectionchange` bridge.
+///
+/// Handles
 /// Arrow{Left,Right,Up,Down}, Home, End; `Shift` extends the selection
 /// (anchor fixed, head moves) instead of collapsing it. Returns `true`
 /// when the key was a movement key (caller should `prevent_default`).
@@ -338,21 +341,20 @@ pub fn handle_navigation(
     press: &KeySpec,
     sink: Option<dioxus::prelude::Callback<crate::TransactionEvent>>,
 ) -> bool {
-    match nav_target(cur, press) {
-        Some(range) => {
-            let spec = TransactionSpec::new()
-                .selection(Selection::single(range))
-                .annotate("origin", "native-nav");
-            crate::event::apply_tx(state, cur, spec, sink);
-            true
-        }
-        None => false,
-    }
+    nav_target(cur, press).is_some_and(|range| {
+        let spec = TransactionSpec::new()
+            .selection(Selection::single(range))
+            .annotate("origin", "native-nav");
+        crate::event::apply_tx(state, cur, spec, sink);
+        true
+    })
 }
 
 /// Pure decision half of [`handle_navigation`]: the new primary selection
 /// range a movement key produces, or `None` if the key isn't a movement
-/// key. `Shift` keeps the anchor (extend); otherwise the range collapses
+/// key.
+///
+/// `Shift` keeps the anchor (extend); otherwise the range collapses
 /// to a caret at the new head. Split out for unit testing.
 #[must_use]
 pub fn nav_target(cur: &EditorState, press: &KeySpec) -> Option<Range> {
@@ -381,14 +383,14 @@ pub fn nav_target(cur: &EditorState, press: &KeySpec) -> Option<Range> {
     let new_head: usize = match press.key.as_str() {
         "ArrowLeft" => {
             if char_idx > 0 {
-                rope.char_to_byte(char_idx - 1)
+                rope.char_to_byte(char_idx.saturating_sub(1))
             } else {
                 0
             }
         }
         "ArrowRight" => {
             if char_idx < rope.len_chars() {
-                rope.char_to_byte(char_idx + 1)
+                rope.char_to_byte(char_idx.saturating_add(1))
             } else {
                 head
             }
@@ -408,6 +410,7 @@ pub fn nav_target(cur: &EditorState, press: &KeySpec) -> Option<Range> {
     Some(Range::new(anchor, new_head))
 }
 
+#[derive(Clone, Copy)]
 enum Dir {
     Up,
     Down,
@@ -416,8 +419,8 @@ enum Dir {
 /// Byte offset of the end of `line` (just before its `\n`, or the doc end
 /// for the last line).
 fn line_end_byte(rope: &ropey::Rope, line: usize) -> usize {
-    let next_start = if line + 1 < rope.len_lines() {
-        rope.line_to_byte(line + 1)
+    let next_start = if line.saturating_add(1) < rope.len_lines() {
+        rope.line_to_byte(line.saturating_add(1))
     } else {
         rope.len_bytes()
     };
@@ -425,7 +428,7 @@ fn line_end_byte(rope: &ropey::Rope, line: usize) -> usize {
     if next_start > rope.line_to_byte(line)
         && rope.get_char(rope.byte_to_char(next_start).saturating_sub(1)) == Some('\n')
     {
-        rope.char_to_byte(rope.byte_to_char(next_start) - 1)
+        rope.char_to_byte(rope.byte_to_char(next_start).saturating_sub(1))
     } else {
         next_start
     }
@@ -435,23 +438,23 @@ fn line_end_byte(rope: &ropey::Rope, line: usize) -> usize {
 /// chars from the line start) clamped to the target line's length.
 fn vertical(rope: &ropey::Rope, head: usize, char_idx: usize, dir: Dir) -> usize {
     let line = rope.byte_to_line(head);
-    let col = char_idx - rope.line_to_char(line);
+    let col = char_idx.saturating_sub(rope.line_to_char(line));
     let target = match dir {
         Dir::Up if line == 0 => return rope.line_to_byte(0),
-        Dir::Up => line - 1,
-        Dir::Down if line + 1 >= rope.len_lines() => return head,
-        Dir::Down => line + 1,
+        Dir::Up => line.saturating_sub(1),
+        Dir::Down if line.saturating_add(1) >= rope.len_lines() => return head,
+        Dir::Down => line.saturating_add(1),
     };
     let target_start_char = rope.line_to_char(target);
     let target_end_char = rope.byte_to_char(line_end_byte(rope, target));
-    let new_char = (target_start_char + col).min(target_end_char);
+    let new_char = target_start_char.saturating_add(col).min(target_end_char);
     rope.char_to_byte(new_char)
 }
 
 /// True when `key` is a literal text grapheme rather than a named key.
 /// Dioxus reports printable input as `Key::Character(s)` where `s` is the
 /// composed grapheme (usually one `char`, but combining sequences can be
-/// longer); named keys are PascalCase identifiers like `"ArrowLeft"`. We
+/// longer); named keys are `PascalCase` identifiers like `"ArrowLeft"`. We
 /// accept any string whose chars are all non-control, which covers ASCII,
 /// Unicode letters, emoji, and combining sequences while rejecting the
 /// named keys (which are alphabetic and would otherwise slip through — so
@@ -468,7 +471,7 @@ fn is_text_input(key: &str) -> bool {
         && (key.chars().count() == 1 || !is_named_key(key))
 }
 
-/// Heuristic: Dioxus named keys are multi-char PascalCase identifiers
+/// Heuristic: Dioxus named keys are multi-char `PascalCase` identifiers
 /// (`ArrowLeft`, `PageDown`, `Escape`). A real multi-grapheme text input
 /// (an emoji ZWJ sequence, say) contains a non-ASCII char, so we treat a
 /// >1-char all-ASCII-alphabetic string as a named key.
@@ -663,7 +666,7 @@ mod tests {
     #[test]
     fn preedit_decoration_sits_at_the_head_escaped() {
         let st = at("ab", 1);
-        assert!(native_preedit_decoration(&st, None).is_empty());
+        assert_eq!(native_preedit_decoration(&st, None), []);
         let c = Composition {
             text: "<x&>".into(),
         };

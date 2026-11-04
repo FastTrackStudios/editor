@@ -86,7 +86,9 @@ pub fn use_virtual_lines(state: Signal<EditorState>) -> VirtualLines {
                     // are built now, once the layout has run for them.
                     let rendered = prune_and_snapshot(handles, &built);
                     for (index, el) in rendered {
-                        measure(heights, index, &el).await;
+                        if let Ok(rect) = el.get_client_rect().await {
+                            record_height(heights, index, rect.size.height);
+                        }
                     }
                 }
             }
@@ -100,7 +102,9 @@ pub fn use_virtual_lines(state: Signal<EditorState>) -> VirtualLines {
         let rendered = prune_and_snapshot(handles, &built_for_effect);
         spawn(async move {
             for (index, el) in rendered {
-                measure(heights, index, &el).await;
+                if let Ok(rect) = el.get_client_rect().await {
+                    record_height(heights, index, rect.size.height);
+                }
             }
         });
     });
@@ -179,12 +183,8 @@ fn prune_and_snapshot(
         .collect()
 }
 
-/// Read one rendered line's height and record it, if it changed.
-async fn measure(mut heights: Signal<Vec<f64>>, index: usize, el: &MountedData) {
-    let Ok(rect) = el.get_client_rect().await else {
-        return;
-    };
-    let h = rect.size.height;
+/// Record a rendered line's measured height `h`, if it changed.
+fn record_height(mut heights: Signal<Vec<f64>>, index: usize, h: f64) {
     // A line that has not been laid out yet reads as zero. Keep its estimate
     // rather than record a height that would collapse the document.
     if h <= 0.0 {
@@ -196,9 +196,11 @@ async fn measure(mut heights: Signal<Vec<f64>>, index: usize, el: &MountedData) 
     }
     heights.with_mut(|v| {
         if v.len() <= index {
-            v.resize(index + 1, ESTIMATED_LINE_PX);
+            v.resize(index.saturating_add(1), ESTIMATED_LINE_PX);
         }
-        v[index] = h;
+        if let Some(slot) = v.get_mut(index) {
+            *slot = h;
+        }
     });
 }
 
@@ -222,7 +224,9 @@ impl VirtualLines {
         let mut handles = self.handles;
         handles.write().insert(index, el.clone());
         spawn(async move {
-            measure(heights, index, &el).await;
+            if let Ok(rect) = el.get_client_rect().await {
+                record_height(heights, index, rect.size.height);
+            }
         });
     }
 
@@ -263,6 +267,8 @@ fn ticker(period: Duration) -> futures_channel::mpsc::Receiver<()> {
                 }
             }
         })
-        .expect("spawn the editor's viewport poll thread");
+        // Without the thread the sender is gone and the stream ends: the
+        // viewport is not polled, and the lines first built stay built.
+        .ok();
     rx
 }

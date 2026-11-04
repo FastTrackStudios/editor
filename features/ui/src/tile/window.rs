@@ -1,4 +1,6 @@
-//! Which lines of a document the native renderer builds. The lines that
+//! Which lines of a document the native renderer builds.
+//!
+//! The lines that
 //! intersect the scroll viewport (plus an overscan margin on each side) are
 //! rendered; the lines above and below are stood in for by spacers of their
 //! total height, so the scroll container keeps its full height.
@@ -9,7 +11,9 @@
 
 use std::ops::Range;
 
-/// The height of a line that has not been measured, in pixels. Close to one
+/// The height of a line that has not been measured, in pixels.
+///
+/// Close to one
 /// body line at the editor's default size. An estimate only: a line's real
 /// height replaces it as soon as the line has been rendered.
 pub const ESTIMATED_LINE_PX: f64 = 28.0;
@@ -30,14 +34,16 @@ pub struct Window {
 impl Window {
     /// The rendered lines.
     #[must_use]
-    pub fn lines(&self) -> Range<usize> {
+    pub const fn lines(&self) -> Range<usize> {
         self.first..self.end
     }
 }
 
-/// The window for a document whose lines have `heights`, scrolled to
-/// `scroll_top` in a viewport `viewport` pixels tall. `overscan` pixels of
-/// lines are kept on each side, so a small scroll shows no blank gap.
+/// The window for a document whose lines have `heights`.
+///
+/// Scrolled to `scroll_top` in a viewport `viewport` pixels tall.
+/// `overscan` pixels of lines are kept on each side, so a small scroll shows
+/// no blank gap.
 #[must_use]
 pub fn window(heights: &[f64], scroll_top: f64, viewport: f64, overscan: f64) -> Window {
     let n = heights.len();
@@ -51,7 +57,7 @@ pub fn window(heights: &[f64], scroll_top: f64, viewport: f64, overscan: f64) ->
     }
 
     // Each line's top edge, and the document's total height.
-    let mut tops = Vec::with_capacity(n + 1);
+    let mut tops = Vec::with_capacity(n.saturating_add(1));
     let mut y = 0.0;
     for &h in heights {
         tops.push(y);
@@ -66,14 +72,16 @@ pub fn window(heights: &[f64], scroll_top: f64, viewport: f64, overscan: f64) ->
     let first = tops
         .partition_point(|&t| t <= top)
         .saturating_sub(1)
-        .min(n - 1);
-    let end = tops.partition_point(|&t| t < bottom).clamp(first + 1, n);
+        .min(n.saturating_sub(1));
+    let end = tops
+        .partition_point(|&t| t < bottom)
+        .clamp(first.saturating_add(1), n);
 
     Window {
         first,
         end,
-        top_pad: tops[first],
-        bottom_pad: y - tops[end],
+        top_pad: tops.get(first).copied().unwrap_or(0.0),
+        bottom_pad: y - tops.get(end).copied().unwrap_or(y),
     }
 }
 
@@ -106,13 +114,19 @@ mod tests {
         let w = window(&h, 10_000.0, 400.0, 0.0);
         // Lines 500..520 cover 10_000..10_400.
         assert_eq!(w.lines(), 500..520);
-        assert_eq!(w.top_pad, 10_000.0);
-        assert_eq!(w.bottom_pad, 20_000.0 - 10_400.0);
+        assert!((w.top_pad - 10_000.0).abs() < 1e-9, "{}", w.top_pad);
+        assert!(
+            (w.bottom_pad - (20_000.0 - 10_400.0)).abs() < 1e-9,
+            "{}",
+            w.bottom_pad
+        );
     }
 
     #[test]
     fn spacers_keep_the_full_document_height() {
-        let h: Vec<f64> = (0..300).map(|i| f64::from(i % 7) * 5.0 + 20.0).collect();
+        let h: Vec<f64> = (0..300)
+            .map(|i| f64::from(i % 7).mul_add(5.0, 20.0))
+            .collect();
         let full: f64 = h.iter().sum();
         for scroll in [0.0, 333.0, 2_000.0, 9_000.0] {
             let w = window(&h, scroll, 600.0, 120.0);
