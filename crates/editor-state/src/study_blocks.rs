@@ -540,8 +540,14 @@ mod tests {
         // Rome is west of Jerusalem: drawn to its left.
         let x = |name: &str| -> f64 {
             let i = html.find(&format!(">{name}</text>")).unwrap();
-            let c = html[..i].rfind("cx=\"").unwrap();
-            html[c + 4..].split('"').next().unwrap().parse().unwrap()
+            let c = html.get(..i).unwrap().rfind("cx=\"").unwrap();
+            html.get(c + 4..)
+                .unwrap()
+                .split('"')
+                .next()
+                .unwrap()
+                .parse()
+                .unwrap()
         };
         assert!(x("Rome") < x("Jerusalem"));
     }

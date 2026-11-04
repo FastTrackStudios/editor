@@ -171,6 +171,6 @@ mod tests {
     fn non_caret_selection_emits_nothing() {
         let mut s = EditorState::new("(foo)");
         s.selection = Selection::single(crate::selection::Range::new(0, 5));
-        assert!(bracket_match(&s).is_empty());
+        assert_eq!(bracket_match(&s), []);
     }
 }

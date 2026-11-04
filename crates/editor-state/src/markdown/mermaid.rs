@@ -6,7 +6,14 @@
 //! Each cache entry is `(source) → svg`. We don't key on a kind
 //! enum because the Mermaid renderer reads the diagram type
 //! (`flowchart`, `sequenceDiagram`, …) from the source itself.
-#![cfg_attr(not(feature = "mermaid"), allow(dead_code, unused_imports))]
+#![cfg_attr(
+    not(feature = "mermaid"),
+    allow(
+        dead_code,
+        unused_imports,
+        reason = "without the renderer only the cache model is used"
+    )
+)]
 
 use std::cell::Cell;
 
@@ -37,18 +44,16 @@ pub fn reset_compile_budget() {
 /// Render a Mermaid source string to SVG. Returns `None` on
 /// cache miss when the budget is exhausted (caller falls back
 /// to source) or when the renderer rejects the source.
+#[cfg(feature = "mermaid")]
 pub fn render_mermaid(body: &str) -> Option<String> {
-    #[cfg(feature = "mermaid")]
-    {
-        compile(body)
-    }
-    // Built without the renderer: the fence shows its source, as a
-    // failed render does.
-    #[cfg(not(feature = "mermaid"))]
-    {
-        let _ = body;
-        None
-    }
+    compile(body)
+}
+
+/// Built without the renderer: the fence shows its source, as a failed
+/// render does.
+#[cfg(not(feature = "mermaid"))]
+pub const fn render_mermaid(_body: &str) -> Option<String> {
+    None
 }
 
 #[cfg(feature = "mermaid")]

@@ -340,7 +340,7 @@ mod tests {
         assert_eq!(store.get(&uri()).len(), 1);
         // Versionless always accepted.
         assert!(store.apply(&published(None, vec![]), Some(9), &doc));
-        assert!(store.get(&uri()).is_empty());
+        assert_eq!(store.get(&uri()), []);
     }
 
     #[test]
@@ -375,7 +375,7 @@ mod tests {
         assert_eq!((store.get(&uri())[0].from, store.get(&uri())[0].to), (8, 9));
         // Delete the whole flagged range — the diagnostic drops.
         store.map_through(&uri(), &Changes::delete(7..10));
-        assert!(store.get(&uri()).is_empty());
+        assert_eq!(store.get(&uri()), []);
     }
 
     #[test]
@@ -384,7 +384,7 @@ mod tests {
         let mut store = DiagnosticsStore::new();
         store.apply(&published(None, vec![raw((0, 0), (0, 1), "m")]), None, &doc);
         store.remove(&uri());
-        assert!(store.get(&uri()).is_empty());
+        assert_eq!(store.get(&uri()), []);
     }
 
     #[test]

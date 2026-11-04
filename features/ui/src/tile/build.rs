@@ -646,7 +646,10 @@ mod tests {
         let (arena, doc) = build_tiles("ab\ncd", &decs);
         let l1 = arena.get(doc).children[0];
         let l2 = arena.get(doc).children[1];
-        assert!(crate::tile::line::line_extra_classes(arena.get(l1)).is_empty());
+        assert_eq!(
+            crate::tile::line::line_extra_classes(arena.get(l1)),
+            Vec::<String>::new()
+        );
         assert_eq!(
             crate::tile::line::line_extra_classes(arena.get(l2)),
             &["md-h1".to_string(), "active".to_string()]

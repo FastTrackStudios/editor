@@ -334,18 +334,22 @@ pub fn note_render_deferred() {
     RENDER_DEFERRED.with(|c| c.set(true));
 }
 
-/// Was a render deferred in this pass? Unlike [`take_render_deferred`] this
-/// leaves the flag set. A fence that failed while others were deferred may
-/// only be failing because it ran out of budget, so it is not an error yet.
+/// Was a render deferred in this pass?
+///
+/// Unlike [`take_render_deferred`] this leaves the flag set. A fence that
+/// failed while others were deferred may only be failing because it ran out
+/// of budget, so it is not an error yet.
 #[must_use]
 pub fn render_deferred_this_pass() -> bool {
     RENDER_DEFERRED.with(std::cell::Cell::get)
 }
 
-/// Should the host run the decoration pass again? True when the last pass
-/// deferred a render, for at most [`MAX_DEFERRED_PASSES`] passes in a row.
-/// Clears the flag. A view calls this after each pass and re-renders while it
-/// is true, so a static document converges on its fences.
+/// Should the host run the decoration pass again?
+///
+/// True when the last pass deferred a render, for at most
+/// [`MAX_DEFERRED_PASSES`] passes in a row. Clears the flag. A view calls this
+/// after each pass and re-renders while it is true, so a static document
+/// converges on its fences.
 #[must_use]
 pub fn take_render_deferred() -> bool {
     let deferred = RENDER_DEFERRED.with(|c| c.replace(false));
@@ -1798,28 +1802,20 @@ fn scripture_card(
     ])
 }
 
-/// Decorate the link family — `[text](url)`, `[[wikilink]]` and their vault
-/// resolutions (song strips, setlist cards, scripture chips, contact cards).
-///
-/// Runs after the embed and leaf handlers have declined the span. Split out of
-/// [`decorate_inline_spans`]' loop; the body is unchanged.
-fn decorate_link_span(
+/// A link span's destination and title: `[text](url "title")`, a reference
+/// link through its definition (none when the label is undefined), or the
+/// body itself for a wikilink or an autolink.
+fn link_href(
     span: &Span,
     text: &str,
-    primary: Range,
     defs: &std::collections::HashMap<String, (String, Option<String>)>,
-    vault: Option<&dyn VaultLookup>,
-    strip_runs: &mut Option<std::collections::HashMap<usize, StripRunCtx>>,
-    out: &mut Vec<DecoratedRange>,
-) -> bool {
-    let mut link_title: Option<String> = None;
-    let href = match span.class {
+) -> (Option<String>, Option<String>) {
+    match span.class {
         "md-link" => {
             let dest =
                 text.slice(span.body.end.saturating_add(2)..span.outer.end.saturating_sub(1));
             let (url, title) = split_destination(dest);
-            link_title = title;
-            Some(url)
+            (Some(url), title)
         }
         // `[text][label]`, `[text][]` and bare `[label]`. The
         // label is whatever sits in the second bracket pair, or
@@ -1834,21 +1830,34 @@ fn decorate_link_span(
             } else {
                 normalize_label(label)
             };
-            match defs.get(&key) {
-                Some((url, title)) => {
-                    link_title.clone_from(title);
-                    Some(url.clone())
-                }
-                None => None,
-            }
+            defs.get(&key).map_or((None, None), |(url, title)| {
+                (Some(url.clone()), title.clone())
+            })
         }
         // For both of these the body IS the destination — a page name
         // for a wikilink, a URL for an autolink. The autolink carries a
         // `data-href` for the same reason a `[text](url)` does: that is
         // what the HTML emitter turns into an anchor.
-        "md-wikilink" | "md-autolink" => Some(text.slice(span.body.clone()).to_string()),
-        _ => None,
-    };
+        "md-wikilink" | "md-autolink" => (Some(text.slice(span.body.clone()).to_string()), None),
+        _ => (None, None),
+    }
+}
+
+/// Decorate the link family — `[text](url)`, `[[wikilink]]` and their vault
+/// resolutions (song strips, setlist cards, scripture chips, contact cards).
+///
+/// Runs after the embed and leaf handlers have declined the span. Split out of
+/// [`decorate_inline_spans`]' loop; the body is unchanged.
+fn decorate_link_span(
+    span: &Span,
+    text: &str,
+    primary: Range,
+    defs: &std::collections::HashMap<String, (String, Option<String>)>,
+    vault: Option<&dyn VaultLookup>,
+    strip_runs: &mut Option<std::collections::HashMap<usize, StripRunCtx>>,
+    out: &mut Vec<DecoratedRange>,
+) -> bool {
+    let (href, link_title) = link_href(span, text, defs);
     // An unmatched reference label is literal text — no styling,
     // and the brackets stay visible.
     if span.class == "md-reflink" && href.is_none() {
@@ -3435,9 +3444,7 @@ fn scan_blocks(
     // raw when caret is on them, in case the user wants to
     // collapse the block by deleting them.
     let frontmatter_range = parse_frontmatter(text).map(|fm| fm.outer);
-    if let Some(fm_range) = emit_frontmatter_widget(text, primary, out) {
-        fenced_ranges.push(fm_range);
-    }
+    fenced_ranges.extend(emit_frontmatter_widget(text, primary, out));
 
     // Fence-tracking state:
     //   - `Some((open_line_end, marker_char, marker_len))` while
@@ -4215,7 +4222,7 @@ fn parse_task_marker(line: &str) -> Option<(usize, u8)> {
 
 /// The glyph a task checkbox shows for its status byte (Obsidian Tasks
 /// conventions). Unknown statuses draw as an empty box, as they always did.
-fn task_glyph(status: u8) -> &'static str {
+const fn task_glyph(status: u8) -> &'static str {
     match status {
         b'x' | b'X' => "✓",
         b'/' => "◐",

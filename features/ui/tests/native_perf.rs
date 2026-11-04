@@ -2,8 +2,10 @@
 //! formatting document: the decoration pass, mounting (layout included), and a
 //! keystroke. Run in release for numbers that mean something:
 //!
-//!   cargo test -p editor-view --no-default-features --features native \
-//!     --release --test native_perf -- --nocapture --test-threads=1
+//! ```text
+//! cargo test -p editor-view --no-default-features --features native \
+//!   --release --test native_perf -- --nocapture --test-threads=1
+//! ```
 #![cfg(feature = "native")]
 
 mod common;

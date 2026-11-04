@@ -1,7 +1,9 @@
 //! Where a native keystroke's time goes, split by stage. Timing only.
 //!
-//!   cargo test -p editor-view --no-default-features --features native \
-//!     --release --test native_perf_split -- --ignored --nocapture
+//! ```text
+//! cargo test -p editor-view --no-default-features --features native \
+//!   --release --test native_perf_split -- --ignored --nocapture
+//! ```
 #![cfg(feature = "native")]
 mod common;
 
