@@ -16,8 +16,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use dioxus::prelude::*;
-use futures_util::StreamExt as _;
 use editor_state::EditorState;
+use futures_util::StreamExt as _;
 
 use crate::tile::window::{ESTIMATED_LINE_PX, Window, window};
 

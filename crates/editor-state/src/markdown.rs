@@ -350,7 +350,11 @@ pub fn render_deferred_this_pass() -> bool {
 pub fn take_render_deferred() -> bool {
     let deferred = RENDER_DEFERRED.with(|c| c.replace(false));
     DEFERRED_STREAK.with(|c| {
-        let streak = if deferred { c.get().saturating_add(1) } else { 0 };
+        let streak = if deferred {
+            c.get().saturating_add(1)
+        } else {
+            0
+        };
         c.set(streak);
         deferred && streak <= MAX_DEFERRED_PASSES
     })
@@ -2569,7 +2573,11 @@ fn emit_block_line(
         // directly and clicks/motions land on real text.
         // Every status gets its own glyph (`[/]` in progress, `[-]`
         // cancelled, …), keyed by `data-status` for the stylesheet.
-        let class = if checked { "md-task-checkbox checked" } else { "md-task-checkbox" };
+        let class = if checked {
+            "md-task-checkbox checked"
+        } else {
+            "md-task-checkbox"
+        };
         let html = format!(
             r#"<span class="{class}" data-task-pos="{line_from}" data-status="{}">{}</span>"#,
             char::from(status),
@@ -6374,7 +6382,10 @@ mod tests {
                 })
                 .count();
         }
-        assert_eq!(widgets, 3, "every formula away from the caret should render");
+        assert_eq!(
+            widgets, 3,
+            "every formula away from the caret should render"
+        );
     }
 
     #[cfg(feature = "typst")]
@@ -6394,14 +6405,21 @@ mod tests {
                 .collect();
         }
         let broken = text.find("#nosuchfn").expect("the broken formula");
-        assert_eq!(error_marks.len(), 1, "exactly the broken formula is marked: {error_marks:?}");
+        assert_eq!(
+            error_marks.len(),
+            1,
+            "exactly the broken formula is marked: {error_marks:?}"
+        );
         assert!(error_marks[0] <= broken && broken < error_marks[0] + 20);
     }
 
     #[test]
     fn deferred_render_is_reported_once_then_drained() {
         note_render_deferred();
-        assert!(take_render_deferred(), "a deferral should ask for another pass");
+        assert!(
+            take_render_deferred(),
+            "a deferral should ask for another pass"
+        );
         assert!(!take_render_deferred(), "the flag clears once taken");
     }
 
@@ -6415,7 +6433,10 @@ mod tests {
             crate::decoration::DecorationKind::Widget { html }
                 if html.contains("md-properties"))
         });
-        assert!(!has_widget, "the properties widget should yield to the source");
+        assert!(
+            !has_widget,
+            "the properties widget should yield to the source"
+        );
     }
 
     #[test]
