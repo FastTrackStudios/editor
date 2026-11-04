@@ -76,6 +76,16 @@ in
     # WebKitGTK's accelerated compositing fails on NixOS (GBM buffer error,
     # white window). https://github.com/NixOS/nixpkgs/issues/32580
     WEBKIT_DISABLE_COMPOSITING_MODE = "1";
+  }
+  // lib.optionalAttrs pkgs.stdenv.isDarwin {
+    # devenv-fleet's dioxus module takes the wasm C compiler's builtin
+    # headers from the wrapped clang-18's resource-root. That wrapper pulls
+    # compiler-rt 18, which the binary cache does not carry for darwin and
+    # which does not build against this nixpkgs' libc++ 21, so the shell
+    # fails to build on a Mac. The resource-root's include/ is a link to
+    # these headers; take them straight from clang's lib output.
+    CFLAGS_wasm32_unknown_unknown = lib.mkForce
+      "-isystem ${pkgs.llvmPackages_18.clang-unwrapped.lib}/lib/clang/18/include";
   };
 
   enterShell = ''
