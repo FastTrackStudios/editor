@@ -20,6 +20,12 @@ uuid = { version = "1", features = ["v7", "js"] }
 # `&ropey::Rope`, so we name the type directly here.
 ropey = { workspace = true }
 
+# The native viewport poll's tick channel (see `virtual_lines::ticker`).
+# Not target-gated: both build on wasm, where a build with `native` on
+# (keyflow's wasm check unifies features) would otherwise miss them.
+futures-channel = { version = "0.3", optional = true }
+futures-util = { version = "0.3", default-features = false, features = ["std"], optional = true }
+
 # Renderer seam. `web` (default) is the contenteditable + `document::eval`
 # bridge path that drives both the wasm browser build and the desktop
 # webview — a real DOM does the text editing and our JS bridge observes
@@ -41,10 +47,7 @@ native = ["dep:futures-channel", "dep:futures-util"]
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3", features = ["Window", "Performance", "Document", "Element", "HtmlElement", "DomStringMap", "MediaQueryList"] }
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-# The native viewport poll's tick channel (see `virtual_lines::ticker`).
-futures-channel = { version = "0.3", optional = true }
-futures-util = { version = "0.3", default-features = false, features = ["std"], optional = true }
+
 
 [dev-dependencies]
 # Wheel events for the scroll tests (a Blitz UiEvent, as the window shell sends).
