@@ -3142,7 +3142,7 @@ pub fn Editor(
         let on_click = {
             let click_deco = decorations.clone();
             let click_sink = on_transaction;
-            let mut click_state = state;
+            let click_state = state;
             Callback::new(move |pos: usize| {
                 // A click in the content is user intent to edit here —
                 // count it as focus (Blitz won't fire focusin for it).
@@ -3151,14 +3151,7 @@ pub fn Editor(
                     focused.set(true);
                 }
                 let cur = click_state.read().clone();
-                push_selection(
-                    &mut click_state,
-                    &cur,
-                    click_deco.as_ref(),
-                    click_sink,
-                    pos,
-                    pos,
-                );
+                place_caret(&click_state, &cur, click_deco.as_ref(), click_sink, pos);
             })
         };
         // Only the lines near the viewport are built (see `virtual_lines`);
@@ -3454,6 +3447,39 @@ pub fn push_selection(
         cur,
         TransactionSpec::new()
             .selection(new_sel)
+            .annotate("origin", "input"),
+        sink,
+    );
+}
+
+/// Puts the caret at `pos`, where the person clicked (the native
+/// renderer's click-to-position), snapped off atomic ranges as
+/// [`push_selection`] does. None of that function's guards apply: they
+/// read a DOM selection the browser may have clamped or orphaned, and a
+/// click is the person's own — a click at the document's start goes
+/// there.
+pub fn place_caret(
+    state: &Signal<EditorState>,
+    cur: &EditorState,
+    deco_source: Option<&DecorationSource>,
+    sink: Option<Callback<crate::TransactionEvent>>,
+    pos: usize,
+) {
+    let mut pos = pos.min(cur.doc.len());
+    if let Some(src) = deco_source {
+        editor_state::set_deco_phase(editor_state::DecoPhase::Structural);
+        pos = editor_state::decoration::skip_atomic(&src.run(cur), pos);
+    }
+    let primary = cur.selection.primary();
+    if primary.anchor == pos && primary.head == pos {
+        return;
+    }
+    tracing::trace!(old_head = primary.head, new_head = pos, "editor.click");
+    crate::event::apply_tx(
+        *state,
+        cur,
+        TransactionSpec::new()
+            .selection(Selection::single(Range::new(pos, pos)))
             .annotate("origin", "input"),
         sink,
     );

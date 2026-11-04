@@ -14,7 +14,8 @@
 //! `onmousedown` that reports that offset to `on_click` — Blitz
 //! has no contenteditable to place the caret, so click-to-
 //! position is wired here at render time: clicking an element
-//! drops the caret at the element's start. (Character-precise
+//! drops the caret at the element's start, and clicking a line past
+//! its text drops it at the line's end. (Character-precise
 //! within-element placement needs layout geometry — Blitz's
 //! `find_text_position` or a non-stubbed `element_coordinates` —
 //! and is a follow-up; this lands the caret at the clicked
@@ -143,8 +144,12 @@ fn render_line_el(
     // honors `1lh`. (The web path emits a `<br>` here so the
     // browser caret can land in the empty contenteditable line;
     // Blitz needs no such placeholder, and a `<br>` there renders
-    // several line-heights tall.) A click anywhere on the row
-    // lands the caret at the line start.
+    // several line-heights tall.)
+    //
+    // The line's own press is one no text took (each span stops its
+    // own): past the end of the text, or anywhere on an empty row. It
+    // lands the caret at the line's end, as a text editor does.
+    let end = crate::tile::pos::pos_at_end(arena, tile);
     let on_mounted = move |e: Event<MountedData>| {
         if let Some((index, report)) = mount {
             report.call((index, e.data()));
@@ -156,7 +161,7 @@ fn render_line_el(
                 class: "{class}",
                 "data-tile-id": "{tid}",
                 "data-tile-pos": "{pos}",
-                onmousedown: move |_e: Event<MouseData>| on_click.call(pos),
+                onmousedown: move |_e: Event<MouseData>| on_click.call(end),
                 onmounted: on_mounted,
             }
         }
@@ -166,7 +171,7 @@ fn render_line_el(
                 class: "{class}",
                 "data-tile-id": "{tid}",
                 "data-tile-pos": "{pos}",
-                onmousedown: move |_e: Event<MouseData>| on_click.call(pos),
+                onmousedown: move |_e: Event<MouseData>| on_click.call(end),
                 onmounted: on_mounted,
                 for &child in &t.children {
                     {render_tile(arena, child, on_click)}
