@@ -2589,10 +2589,14 @@ dependencies = [
 name = "editor-view"
 version = "0.1.0"
 dependencies = [
+ "blitz-traits",
  "dioxus",
  "dioxus-test",
  "editor-state",
  "editor-vim",
+ "futures-channel",
+ "futures-util",
+ "png 0.17.16",
  "ropey",
  "serde",
  "serde_json",
