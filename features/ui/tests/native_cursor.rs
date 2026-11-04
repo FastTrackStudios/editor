@@ -111,3 +111,53 @@ async fn click_positions_caret_on_line() {
         "click on line 2 should put caret in 6..=11, got {head}"
     );
 }
+
+#[tokio::test]
+async fn click_past_the_end_of_a_line_puts_the_caret_at_its_end() {
+    let t = mount(Setup::text("hello\nworld").caret(8));
+    // Past the last glyph of line 1, on the line's own box: no text is
+    // under the pointer, so the line itself is pressed.
+    let line = t.query_all(".cm-line").immediately();
+    assert!(line.len() >= 2, "expected 2 rendered lines");
+    let (right, mid) = (line[0].upper_right(), line[0].center());
+    t.click_at(right.page().x as f32 - 4.0, mid.page().y as f32);
+    t.pump().await.ok();
+    let head: usize = t
+        .query(dioxus_test::by_testid("head"))
+        .immediately()
+        .unwrap()
+        .inner_html()
+        .trim()
+        .parse()
+        .expect("head probe should be a number");
+    assert_eq!(
+        head, 5,
+        "a click past the end of line 1 puts the caret at its end"
+    );
+}
+
+#[tokio::test]
+async fn click_on_the_first_word_of_the_document_moves_the_caret_there() {
+    let long = "hellohellohellohellohellohellohellohellohellohellohellohello\nworld";
+    let t = mount(Setup::text(long).caret(62));
+    // Line 1 is one span from the document's start, wider than half the
+    // line: a click at its centre presses that span, a click at 0, which
+    // the DOM-selection bridge would take for an orphaned selection.
+    let line = t.query_all(".cm-line").immediately();
+    assert!(line.len() >= 2, "expected 2 rendered lines");
+    let c = line[0].center();
+    t.click_at(c.page().x as f32, c.page().y as f32);
+    t.pump().await.ok();
+    let head: usize = t
+        .query(dioxus_test::by_testid("head"))
+        .immediately()
+        .unwrap()
+        .inner_html()
+        .trim()
+        .parse()
+        .expect("head probe should be a number");
+    assert_eq!(
+        head, 0,
+        "a click on the document's first word puts the caret at 0"
+    );
+}

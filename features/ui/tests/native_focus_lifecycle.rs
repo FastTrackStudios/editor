@@ -17,9 +17,10 @@ async fn click_then_type_edits_the_doc() {
     let line = t.query(".cm-line").immediately().unwrap();
     let c = line.center();
     t.click_at(c.page().x as f32, c.page().y as f32);
-    // Caret lands at the clicked span's start (offset 0); type there.
+    // The line's centre is past "ac": the caret lands at the line's end;
+    // type there.
     t.type_text("Z");
-    expect_probe(&t, "doc", "Zac").await;
+    expect_probe(&t, "doc", "acZ").await;
 }
 
 #[tokio::test]
