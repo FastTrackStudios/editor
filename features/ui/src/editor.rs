@@ -40,6 +40,7 @@
               not do, and a false positive here costs one redundant re-render"
 )]
 
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -339,6 +340,18 @@ pub fn Editor(
     /// callback fires) or walk into it with the arrow keys.
     #[props(default)]
     on_link_click: Option<Callback<String>>,
+    /// The editor's focus flag, for a host that reads it. The editor writes
+    /// it (focusin/focusout, and a click into the content); the host only
+    /// reads. Absent, the editor keeps its own. A host's signal must start
+    /// at the value the editor starts at: `true` on native, where autofocus
+    /// claims focus on mount.
+    #[props(default)]
+    focused: Option<Signal<bool>>,
+    /// Moves keyboard focus into the editor each time it is bumped. The host
+    /// owns the counter and the editor only reads it; the value at mount
+    /// (zero) does nothing.
+    #[props(default)]
+    focus_request: Option<Signal<u64>>,
 ) -> Element {
     // True when a decoration widget cell currently has focus
     // (frontmatter property contenteditable, chip-add box, etc.).
@@ -364,7 +377,17 @@ pub fn Editor(
     // false forever and no caret would ever paint (Blitz also only
     // moves focus on click for text INPUTS, so clicking the editor
     // fires no focusin either). Web keeps the event-driven default.
-    let editor_focused = use_signal(|| cfg!(feature = "native"));
+    let own_focused = use_signal(|| cfg!(feature = "native"));
+    let editor_focused = focused.unwrap_or(own_focused);
+    // Native: the IME composition in progress, if any (see
+    // `crate::native::Composition`). Held here, beside the state, so a
+    // re-render neither drops nor commits it.
+    #[cfg(feature = "native")]
+    let composition = use_signal(|| None::<crate::native::Composition>);
+    // Native only: the line virtualization state (scroll container, measured
+    // viewport and line heights). Only the lines near the viewport are built.
+    #[cfg(feature = "native")]
+    let vlines = crate::virtual_lines::use_virtual_lines(state);
     // Trigger-autocomplete open state (`[[` / `#`). Owned by the
     // editor (unlike `palette`, which the host threads in) because the
     // host's only contract is the candidate source prop.
@@ -402,6 +425,25 @@ pub fn Editor(
     let editor_id = use_hook(|| {
         let n = EDITOR_INSTANCE.fetch_add(1, Ordering::Relaxed);
         format!("editor-{n}")
+    });
+
+    // The root's mounted handle, kept so a focus request can reach it. A
+    // request is the host asking, so it runs from an effect, not an event.
+    let root = use_hook(|| Rc::new(RefCell::new(None::<Rc<MountedData>>)));
+    let mounted_root = root.clone();
+    use_effect({
+        let root = root.clone();
+        move || {
+            let Some(request) = focus_request else { return };
+            if request() == 0 {
+                return;
+            }
+            if let Some(el) = root.borrow().clone() {
+                spawn(async move {
+                    let _ = el.set_focus(true).await;
+                });
+            }
+        }
     });
 
     // ── DOM → state: MutationObserver + selection bridge ─────────
@@ -2330,6 +2372,13 @@ pub fn Editor(
         if widget_focused_dom() || *widget_focus_for_keys.peek() {
             return;
         }
+        // An IME composition owns the keyboard until it commits or
+        // cancels: a key the IME passes through mid-composition must not
+        // edit or move the caret under the preedit.
+        #[cfg(feature = "native")]
+        if composition.peek().is_some() {
+            return;
+        }
         let mods = evt.modifiers();
         let mut key_str = match evt.key() {
             Key::Character(c) => c,
@@ -2895,8 +2944,13 @@ pub fn Editor(
         // (Signal is Copy; `.set()` needs a mutable binding).
         let mut prev_line_hashes = prev_line_hashes;
         let mut force_full_patch = force_full_patch;
+        // Bumped when a pass deferred a compile, so the effect runs again and
+        // a static document converges on its math and diagrams (see the
+        // native render below for why this is needed).
+        let mut repass = use_signal(|| 0_u32);
         use_effect(move || {
             let _span = tracing::debug_span!("editor.patch_effect").entered();
+            let _ = repass();
             let s = state.read();
             let doc_len = s.doc.len();
             // Ask sources for the full set once editing settles, and only
@@ -2913,6 +2967,9 @@ pub fn Editor(
                 let mut v = deco_source_patch
                     .as_ref()
                     .map_or_else(Vec::new, |src| src.run(&s));
+                if editor_state::markdown::take_render_deferred() {
+                    repass.with_mut(|n| *n = n.wrapping_add(1));
+                }
                 // Painted modal caret (block/underscore) — the native
                 // caret can't take these shapes everywhere (CSS
                 // `caret-shape` is Chromium-only as of 2026; Firefox
@@ -3049,6 +3106,13 @@ pub fn Editor(
             .as_ref()
             .map(|src| src.run(&s))
             .unwrap_or_default();
+        // A fence the compile budget refused is still source in this pass.
+        // Run the pass again, so a document that is only rendered once (a
+        // mounted page, not one being typed in) converges on its math and
+        // diagrams instead of staying as source until the next keystroke.
+        if editor_state::markdown::take_render_deferred() {
+            dioxus::dioxus_vdom::needs_update();
+        }
         // Selection highlight FIRST so the caret decoration paints on top.
         decos.extend(crate::native::native_selection_decoration(
             &s,
@@ -3056,6 +3120,14 @@ pub fn Editor(
             editor_focused,
         ));
         decos.extend(modal_caret_decoration(&s, vim, editor_focused));
+        // Preedit before the insert caret: both sit at the head, and the
+        // stable sort below keeps the caret after the composed text.
+        if editor_focused() {
+            decos.extend(crate::native::native_preedit_decoration(
+                &s,
+                composition.read().as_ref(),
+            ));
+        }
         decos.extend(crate::native::native_caret_decoration(
             &s,
             vim,
@@ -3089,7 +3161,24 @@ pub fn Editor(
                 );
             })
         };
-        crate::tile::render_dx::render_tile(&arena, root, on_click)
+        // Only the lines near the viewport are built (see `virtual_lines`);
+        // the caret's line is scrolled into view rather than built on its own.
+        let lines = arena.get(root).children.len();
+        let starts: Vec<usize> = arena
+            .get(root)
+            .children
+            .iter()
+            .map(|&child| crate::tile::pos::pos_at_start(&arena, child))
+            .collect();
+        vlines.record_line_starts(starts);
+        let win = vlines.window(lines);
+        let on_mounted = {
+            let vlines = vlines.clone();
+            Callback::new(move |(index, el): (usize, Rc<MountedData>)| {
+                vlines.line_mounted(index, el);
+            })
+        };
+        crate::tile::render_dx::render_window(&arena, root, &win, on_click, on_mounted)
     };
 
     // The root div differs by renderer: native emits the tile tree as rsx
@@ -3097,6 +3186,33 @@ pub fn Editor(
     // `#[cfg]` an individual child node, so the two variants are whole
     // blocks. Everything else (focus tracking, overlays) is identical.
     //
+    // IME: fold a composition event into the composition and the doc. Only
+    // where typing would insert text: an editable, non-reading editor, in
+    // vim's insert mode when vim is on.
+    #[cfg(feature = "native")]
+    let on_ime = move |event: crate::native::ImeEvent| {
+        if !editable || vim.is_some_and(|v| !v.peek().is_inserting()) {
+            return;
+        }
+        let cur = state.peek().clone();
+        if cur.reading_mode {
+            return;
+        }
+        let mut composition = composition;
+        let out = crate::native::ime_step(&cur, event);
+        if let Some(spec) = out.spec {
+            tracing::debug!("editor.native.ime");
+            crate::event::apply_tx(state, &cur, spec, on_transaction);
+        }
+        if *composition.peek() != out.composition {
+            composition.set(out.composition);
+        }
+    };
+    // `inputmode` is what makes the FTS Blitz fork turn the platform IME
+    // on when this div takes focus (it does so only for form inputs
+    // otherwise); `none` keeps it off where nothing can be typed.
+    #[cfg(feature = "native")]
+    let inputmode = if read_only { "none" } else { "text" };
     #[cfg(feature = "native")]
     let rendered = rsx! {
         div {
@@ -3108,6 +3224,19 @@ pub fn Editor(
             contenteditable: "{contenteditable}",
             spellcheck: "false",
             tabindex: "0",
+            // The root is the scroll container: its height comes from
+            // `--ed-scroll-height` (editor.css), and its position is polled.
+            // One handler: the virtualizer measures this scroll container, and
+            // the host's focus control (`focus_request`) holds the same node.
+            onmounted: {
+                let vlines = vlines.clone();
+                let mounted_root = mounted_root.clone();
+                move |e: Event<MountedData>| {
+                    let data = e.data();
+                    *mounted_root.borrow_mut() = Some(data.clone());
+                    vlines.attach(data);
+                }
+            },
             // Native: Blitz routes key events to the focused node, so the
             // editor must hold focus to be typable. `autofocus` claims it
             // on mount; the FTS blitz fork focuses the nearest focussable
@@ -3117,7 +3246,14 @@ pub fn Editor(
             // task is NOT an option: it re-borrows the doc RefCell during
             // the vdom poll and panics.)
             autofocus: "true",
+            "inputmode": "{inputmode}",
             onkeydown: on_keydown,
+            oncompositionupdate: move |e: Event<CompositionData>| {
+                on_ime(crate::native::ImeEvent::Preedit(e.data().data()));
+            },
+            oncompositionend: move |e: Event<CompositionData>| {
+                on_ime(crate::native::ImeEvent::Commit(e.data().data()));
+            },
             onfocusin: move |_| {
                 let mut focused = editor_focused;
                 if !*focused.peek() { focused.set(true); }
@@ -3125,6 +3261,10 @@ pub fn Editor(
             onfocusout: move |_| {
                 let mut focused = editor_focused;
                 if *focused.peek() { focused.set(false); }
+                // Losing focus ends a composition without committing it
+                // (the IME is switched off with it).
+                let mut composition = composition;
+                if composition.peek().is_some() { composition.set(None); }
             },
             // Rendered tile tree — the Dioxus reconciler diffs it against
             // Blitz's DOM (no JS patcher on native).
@@ -3152,6 +3292,7 @@ pub fn Editor(
             // Focusable so tab order is sane; the contenteditable is
             // already focusable, so this is harmless.
             tabindex: "0",
+            onmounted: move |e: Event<MountedData>| *mounted_root.borrow_mut() = Some(e.data()),
             onkeydown: on_keydown,
             // Focus tracking for the painted modal caret: like the
             // native caret, it must not render until the user

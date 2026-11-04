@@ -135,6 +135,7 @@ fn compile(kind: TypstKind, body: &str) -> Option<String> {
     }
     let budget = COMPILE_BUDGET.with(std::cell::Cell::get);
     if budget == 0 {
+        crate::markdown::note_render_deferred();
         return None;
     }
     COMPILE_BUDGET.with(|c| c.set(budget.saturating_sub(1)));

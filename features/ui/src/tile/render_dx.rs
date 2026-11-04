@@ -97,7 +97,7 @@ pub fn render_tile(arena: &Arena, tile: TileId, on_click: Callback<usize>) -> El
             }
         }
         TileKind::Widget => render_widget_el(arena, tile, t, tid, on_click),
-        TileKind::Line => render_line_el(arena, tile, t, tid, on_click),
+        TileKind::Line => render_line_el(arena, tile, t, tid, on_click, None),
         TileKind::BlockWrapper => {
             let pos = crate::tile::pos::pos_at_start(arena, tile);
             rsx! {
@@ -123,6 +123,7 @@ fn render_line_el(
     t: &Tile,
     tid: u32,
     on_click: Callback<usize>,
+    mount: Option<LineMount>,
 ) -> Element {
     let pos = crate::tile::pos::pos_at_start(arena, tile);
     // Line-level decoration classes (md-h1, md-blockquote,
@@ -144,6 +145,11 @@ fn render_line_el(
     // Blitz needs no such placeholder, and a `<br>` there renders
     // several line-heights tall.) A click anywhere on the row
     // lands the caret at the line start.
+    let on_mounted = move |e: Event<MountedData>| {
+        if let Some((index, report)) = mount {
+            report.call((index, e.data()));
+        }
+    };
     if t.children.is_empty() {
         rsx! {
             div {
@@ -151,6 +157,7 @@ fn render_line_el(
                 "data-tile-id": "{tid}",
                 "data-tile-pos": "{pos}",
                 onmousedown: move |_e: Event<MouseData>| on_click.call(pos),
+                onmounted: on_mounted,
             }
         }
     } else {
@@ -160,11 +167,56 @@ fn render_line_el(
                 "data-tile-id": "{tid}",
                 "data-tile-pos": "{pos}",
                 onmousedown: move |_e: Event<MouseData>| on_click.call(pos),
+                onmounted: on_mounted,
                 for &child in &t.children {
                     {render_tile(arena, child, on_click)}
                 }
             }
         }
+    }
+}
+
+/// Reports a rendered line's handle to the view: the line's index in the
+/// document, and a callback that receives its mounted element (for measuring).
+pub type LineMount = (usize, Callback<(usize, std::rc::Rc<MountedData>)>);
+
+/// Render only the lines of `win`, with spacers of the lines' total height
+/// above and below, so the scroll container keeps the whole document's
+/// height. Each rendered line reports its mounted element through
+/// `on_mounted`, so the view can measure it.
+///
+/// `win` comes from [`crate::tile::window::window`] over the same document
+/// `root` was built from.
+pub fn render_window(
+    arena: &Arena,
+    root: TileId,
+    win: &crate::tile::window::Window,
+    on_click: Callback<usize>,
+    on_mounted: Callback<(usize, std::rc::Rc<MountedData>)>,
+) -> Element {
+    let children = arena.get(root).children.clone();
+    let range = win.lines();
+    let lines: Vec<(usize, TileId)> = range
+        .clone()
+        .filter_map(|i| children.get(i).map(|&child| (i, child)))
+        .collect();
+    let top = win.top_pad;
+    let bottom = win.bottom_pad;
+    // Both spacers are always present, even at zero height: adding and removing
+    // them as the window moves churns the tree around the lines, which the
+    // layout must follow on every scroll step.
+    rsx! {
+        div { class: "ed-spacer", style: "height: {top}px;", "aria-hidden": "true" }
+        for (index, child) in lines {
+            Fragment {
+                key: "{index}",
+                {
+                    let t = arena.get(child);
+                    render_line_el(arena, child, t, child.0, on_click, Some((index, on_mounted)))
+                }
+            }
+        }
+        div { class: "ed-spacer", style: "height: {bottom}px;", "aria-hidden": "true" }
     }
 }
 

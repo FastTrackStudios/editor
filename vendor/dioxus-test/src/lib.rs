@@ -137,6 +137,7 @@
 mod condition;
 mod document;
 mod element;
+mod ime;
 mod keyboard;
 pub mod matchers;
 mod pointer;
@@ -145,6 +146,9 @@ mod screenshot;
 
 /// Re-exported for tests that build key events (FTS extension).
 pub use keyboard_types;
+
+/// Re-exported for tests that send IME events (FTS extension).
+pub use ime::BlitzImeEvent;
 
 pub use condition::{AllElementsCondition, ElementCondition, MAX_TRIES};
 pub use document::{DocumentTester, by_testid, render};
