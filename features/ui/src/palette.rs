@@ -594,9 +594,11 @@ fn intern(text: &str) -> &'static str {
     s
 }
 
-/// The rows extensions add to the menu, after the catalog's: each runs
-/// its action through the editor's `on_action` ([`CommandKind::Action`]).
-/// Replaces what was registered before; an empty list takes them away.
+/// The rows extensions add to the menu, after the catalog's.
+///
+/// Each runs its action through the editor's `on_action`
+/// ([`CommandKind::Action`]). Replaces what was registered before; an empty
+/// list takes them away.
 pub fn register_actions(entries: &[editor_state::ext::SlashEntry]) {
     let rows = entries
         .iter()

@@ -157,8 +157,10 @@ pub fn dispatch_spec(
 }
 
 /// Apply a transaction from **outside** the `<Editor>` subtree, recorded
-/// in `history` — the same history the editor was given (its `history`
-/// prop) — so it undoes in one step alongside the person's own edits.
+/// in `history`.
+///
+/// `history` is the same history the editor was given (its `history`
+/// prop), so the edit undoes in one step alongside the person's own edits.
 ///
 /// For a host that applies an extension's command
 /// (`editor_state::ext::transaction`) or any other edit of its own that
