@@ -309,6 +309,21 @@ fn render_widget_el(
                 {mounts.mount(&id)}
             }
         }
+    } else if let Some((class, text)) = editor_state::decoration::gutter_of(&html) {
+        // A gutter marker, drawn here: Blitz may have no HTML parser.
+        let pos = crate::tile::pos::pos_at_start(arena, tile);
+        rsx! {
+            span {
+                class: "editor-widget",
+                "data-tile-id": "{tid}",
+                "data-tile-pos": "{pos}",
+                onmousedown: move |e: Event<MouseData>| {
+                    e.stop_propagation();
+                    on_click.call(pos);
+                },
+                span { class: "{class}", "aria-hidden": "true", "{text}" }
+            }
+        }
     } else {
         let pos = crate::tile::pos::pos_at_start(arena, tile);
         rsx! {

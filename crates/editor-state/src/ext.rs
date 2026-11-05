@@ -162,13 +162,6 @@ pub fn mount_index(id: &str) -> Option<usize> {
     id.strip_prefix("ext-")?.parse().ok()
 }
 
-fn escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
 /// `specs` as the view's decorations, over `text`. A spec that does not
 /// fit `text` ([`DecorationSpec::checked`]) is left out. A widget's view
 /// is mounted by the host under [`mount_id`] of its index.
@@ -212,13 +205,10 @@ pub fn decorations(specs: &[DecorationSpec], text: &str) -> Vec<DecoratedRange> 
                     .and_then(|t| t.rfind('\n'))
                     .map_or(0, |n| n.saturating_add(1));
                 out.push(DecoratedRange::line(*at, "ext-gutter-line"));
-                out.push(DecoratedRange::widget(
+                out.push(DecoratedRange::gutter(
                     line_start,
-                    format!(
-                        "<span class=\"editor-gutter {}\" aria-hidden=\"true\">{}</span>",
-                        ext_classes(class),
-                        escape(mark)
-                    ),
+                    mark,
+                    &ext_classes(class),
                 ));
             }
             DecorationSpec::Widget { at, block, .. } => {
