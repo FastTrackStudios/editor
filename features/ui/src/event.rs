@@ -155,3 +155,35 @@ pub fn dispatch_spec(
     let cur = state.read().clone();
     apply_tx(state, &cur, spec, sink);
 }
+
+/// Apply a transaction from **outside** the `<Editor>` subtree, recorded
+/// in `history`.
+///
+/// `history` is the same history the editor was given (its `history`
+/// prop), so the edit undoes in one step alongside the person's own edits.
+///
+/// For a host that applies an extension's command
+/// (`editor_state::ext::transaction`) or any other edit of its own that
+/// the person should be able to undo. Emits through `sink` like an edit
+/// the editor made.
+pub fn dispatch_with_history(
+    mut state: Signal<EditorState>,
+    mut history: Signal<editor_state::History>,
+    spec: TransactionSpec,
+    sink: Option<Callback<TransactionEvent>>,
+) {
+    let cur = state.peek().clone();
+    history.write().record(&cur, &spec);
+    let next = cur.update(spec.clone());
+    let event = TransactionEvent {
+        changes: spec.changes,
+        user_event: spec.user_event,
+        annotations: spec.annotations,
+        doc_before: cur.doc,
+        doc_after: next.doc.clone(),
+    };
+    state.set(next);
+    if let Some(cb) = sink {
+        cb.call(event);
+    }
+}

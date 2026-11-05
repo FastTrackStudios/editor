@@ -52,6 +52,10 @@ pub fn CommandPalette(
     /// keyboard picks (which route via the editor's keydown handler).
     #[props(default)]
     on_transaction: Option<Callback<crate::TransactionEvent>>,
+    /// Called with an extension row's action once it is picked
+    /// ([`CommandKind::Action`]): pass the editor's `on_action`.
+    #[props(default)]
+    on_action: Option<Callback<String>>,
 ) -> Element {
     let snapshot = palette.read().clone();
     let Some(current) = snapshot else {
@@ -136,6 +140,9 @@ pub fn CommandPalette(
                                     crate::event::apply_tx(state_for_click, &cur, spec, sink_for_click);
                                 }
                                 palette_for_click.set(None);
+                                if let (CommandKind::Action(action), Some(cb)) = (entry_for_click.kind, on_action) {
+                                    cb.call(action.to_owned());
+                                }
                             },
                             div { class: "ed-menu-icon", "{entry.icon}" }
                             div { class: "ed-menu-body",
@@ -196,6 +203,10 @@ pub enum CommandKind {
     /// Add a UUID block id to the block at the caret (Logseq
     /// style) so it can be referenced via `((uuid))`.
     AddBlockId,
+    /// Run a host's action (an extension's slash entry,
+    /// [`register_actions`]): the trigger and query typed are taken out,
+    /// then the editor's `on_action` is called with it.
+    Action(&'static str),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -426,6 +437,12 @@ pub fn run_command(
                     .annotate("origin", "palette"),
             )
         }
+        CommandKind::Action(_) => Some(
+            TransactionSpec::new()
+                .changes(Changes::delete(slash_range.clone()))
+                .selection(Selection::caret(slash_range.start))
+                .annotate("origin", "palette"),
+        ),
         CommandKind::AddBlockId => {
             // Strip the palette first by reconstructing the line,
             // then run `add_block_id` on the result.
@@ -553,15 +570,70 @@ pub fn register_catalog(commands: Vec<CommandEntry>) {
     }
 }
 
-/// The full catalog: whatever the host registered, else markdown's.
+/// The host's action entries ([`register_actions`]).
+fn actions() -> &'static std::sync::RwLock<Vec<CommandEntry>> {
+    static ACTIONS: std::sync::OnceLock<std::sync::RwLock<Vec<CommandEntry>>> =
+        std::sync::OnceLock::new();
+    ACTIONS.get_or_init(|| std::sync::RwLock::new(Vec::new()))
+}
+
+/// `text` as a `&'static str`, kept once per distinct text: entries come
+/// and go with extensions, but their words are few and repeat.
+fn intern(text: &str) -> &'static str {
+    static SEEN: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<&'static str>>> =
+        std::sync::OnceLock::new();
+    let mut seen = SEEN
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(s) = seen.get(text) {
+        return s;
+    }
+    let s: &'static str = Box::leak(text.to_owned().into_boxed_str());
+    seen.insert(s);
+    s
+}
+
+/// The rows extensions add to the menu, after the catalog's.
+///
+/// Each runs its action through the editor's `on_action`
+/// ([`CommandKind::Action`]). Replaces what was registered before; an empty
+/// list takes them away.
+pub fn register_actions(entries: &[editor_state::ext::SlashEntry]) {
+    let rows = entries
+        .iter()
+        .map(|e| CommandEntry {
+            label: intern(&e.label),
+            group: intern(if e.group.is_empty() {
+                "Extensions"
+            } else {
+                &e.group
+            }),
+            desc: intern(&e.desc),
+            kind: CommandKind::Action(intern(&e.action)),
+            icon: intern(if e.icon.is_empty() { ">" } else { &e.icon }),
+        })
+        .collect();
+    if let Ok(mut slot) = actions().write() {
+        *slot = rows;
+    }
+}
+
+/// The full catalog: whatever the host registered, else markdown's; then
+/// the extensions' rows ([`register_actions`]).
 #[must_use]
 pub fn all_commands() -> Vec<CommandEntry> {
-    if let Ok(slot) = catalog().read()
+    let mut out = if let Ok(slot) = catalog().read()
         && let Some(custom) = slot.as_ref()
     {
-        return custom.clone();
+        custom.clone()
+    } else {
+        markdown_commands()
+    };
+    if let Ok(more) = actions().read() {
+        out.extend(more.iter().cloned());
     }
-    markdown_commands()
+    out
 }
 
 /// The built-in catalog, for a buffer that holds markdown.
@@ -1119,6 +1191,32 @@ mod tests {
         assert_eq!(d("and/or", 6, '/'), None);
         assert_eq!(d("https://x", 9, '/'), None);
         assert_eq!(d("4/4", 3, '/'), None);
+    }
+
+    /// An extension's row is in the menu after the catalog's; picking it
+    /// takes the trigger and query out and leaves the action to the host.
+    #[test]
+    fn an_extensions_slash_row_runs_its_action() {
+        super::register_actions(&[editor_state::ext::SlashEntry {
+            label: "Table".into(),
+            action: "LAB_OUTLINE_TABLE".into(),
+            ..Default::default()
+        }]);
+        let hits = super::filter_commands("tab");
+        let row = hits
+            .iter()
+            .find(|c| c.label == "Table" && c.group == "Extensions")
+            .expect("the extension's row");
+        assert_eq!(row.kind, super::CommandKind::Action("LAB_OUTLINE_TABLE"));
+        let state = editor_state::EditorState::new("a \\tab".to_string());
+        let spec = super::run_command(&state, 2..6, row.kind).expect("a spec");
+        assert_eq!(state.update(spec).doc.to_string(), "a ");
+        super::register_actions(&[]);
+        assert!(
+            !super::all_commands()
+                .iter()
+                .any(|c| c.label == "Table" && c.group == "Extensions")
+        );
     }
 
     /// `${field}` markers come out, and the first field is selected.

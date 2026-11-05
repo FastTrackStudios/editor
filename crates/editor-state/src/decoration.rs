@@ -95,6 +95,40 @@ impl DecoratedRange {
         }
     }
 
+    /// A point widget that a host **mounts** a view into, rather than
+    /// HTML: the native renderer asks the editor's widget mounts for the
+    /// element of `id` (`editor_view::WidgetMounts`); the web renderer
+    /// draws the empty placeholder (`<span data-editor-mount="id">`).
+    /// `block` puts it on a line of its own.
+    #[must_use]
+    pub fn mount(at: usize, id: &str, block: bool) -> Self {
+        let id: String = id
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':' | '/'))
+            .collect();
+        let kind = if block { "block" } else { "inline" };
+        Self::widget(
+            at,
+            format!("<span {MOUNT_ATTR}=\"{id}\" data-editor-mount-kind=\"{kind}\"></span>"),
+        )
+    }
+
+    /// A gutter marker: a short `text` before the line at `at` (pass the
+    /// line's start), class `class`. The web renderer draws its HTML; the
+    /// native renderer draws it itself ([`gutter_of`]), as Blitz may have
+    /// no HTML parser.
+    #[must_use]
+    pub fn gutter(at: usize, text: &str, class: &str) -> Self {
+        let text = escape_html(text);
+        let class = escape_html(class);
+        Self::widget(
+            at,
+            format!(
+                "<span class=\"editor-gutter {class}\" aria-hidden=\"true\" {GUTTER_ATTR}=\"{text}\">{text}</span>"
+            ),
+        )
+    }
+
     pub fn line(at: usize, class: impl Into<String>) -> Self {
         Self {
             from: at,
@@ -117,6 +151,50 @@ impl DecoratedRange {
     pub const fn byte_range(&self) -> std::ops::Range<usize> {
         self.from..self.to
     }
+}
+
+/// The attribute a mounted widget's placeholder carries its id in
+/// ([`DecoratedRange::mount`]).
+pub const MOUNT_ATTR: &str = "data-editor-mount";
+
+/// The attribute a gutter marker carries its text in
+/// ([`DecoratedRange::gutter`]).
+pub const GUTTER_ATTR: &str = "data-editor-gutter";
+
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn unescape_html(s: &str) -> String {
+    s.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&amp;", "&")
+}
+
+/// A gutter marker's class and text, from its widget HTML
+/// ([`DecoratedRange::gutter`]); `None` for any other widget.
+#[must_use]
+pub fn gutter_of(html: &str) -> Option<(String, String)> {
+    let rest = html.strip_prefix("<span class=\"")?;
+    let (class, rest) = rest.split_once('"')?;
+    let rest = rest.strip_prefix(" aria-hidden=\"true\" ")?;
+    let rest = rest.strip_prefix(GUTTER_ATTR)?.strip_prefix("=\"")?;
+    let (text, _) = rest.split_once('"')?;
+    Some((unescape_html(class), unescape_html(text)))
+}
+
+/// A mounted widget's id and whether it is a block, from its widget HTML
+/// ([`DecoratedRange::mount`]); `None` for any other widget.
+#[must_use]
+pub fn mount_of(html: &str) -> Option<(&str, bool)> {
+    let rest = html.strip_prefix("<span ")?.strip_prefix(MOUNT_ATTR)?;
+    let rest = rest.strip_prefix("=\"")?;
+    let (id, tail) = rest.split_once('"')?;
+    Some((id, tail.contains("data-editor-mount-kind=\"block\"")))
 }
 
 /// Snap `pos` out of any atomic range it lands strictly inside.

@@ -2951,3 +2951,21 @@
 .editor-root .ed-spacer {
     display: block;
 }
+
+/* ── Extensions' decorations (editor_state::ext) ──────────────────────
+   Marks, line and gutter classes are `ext-`-prefixed, so an extension's
+   classes never reach the editor's own; it styles them itself. These are
+   the defaults the editor gives the shapes. */
+.editor-root .ext-mark { border-radius: 2px; }
+.editor-root .editor-gutter {
+  display: inline-block;
+  width: 1.4em;
+  margin-left: -1.6em;
+  margin-right: 0.2em;
+  text-align: right;
+  opacity: 0.7;
+  font-size: 0.85em;
+  user-select: none;
+}
+.editor-root .editor-mount { display: inline-block; vertical-align: middle; }
+.editor-root .editor-mount-block { display: block; }

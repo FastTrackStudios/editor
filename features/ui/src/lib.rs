@@ -19,8 +19,9 @@ pub mod trigger;
 mod virtual_lines;
 
 pub use editor::{DecorationSource, Editor, coarse_pointer};
-pub use event::{TransactionEvent, dispatch_spec};
+pub use event::{TransactionEvent, dispatch_spec, dispatch_with_history};
 pub use hover::{HoverPopup, HoverTooltipView};
+pub use tile::render_dx::WidgetMounts;
 pub use trigger::{Candidate, CompletionKind, CompletionSource, CompletionState};
 
 /// The editor's stylesheet, as text.

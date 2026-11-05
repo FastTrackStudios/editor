@@ -21,6 +21,8 @@
 //! and is a follow-up; this lands the caret at the clicked
 //! span's start, which is word/mark-level precise.)
 
+use std::rc::Rc;
+
 use dioxus::prelude::*;
 
 use crate::tile::arena::{Arena, TileId};
@@ -229,6 +231,45 @@ pub fn render_window(
     }
 }
 
+/// What a host mounts into the editor's mounted widgets.
+///
+/// A mounted widget (`editor_state::DecoratedRange::mount`) is drawn as
+/// the element for its id (an extension's view,
+/// `editor_state::ext::mount_id`). Give it to the
+/// `Editor`'s `mounts` once, capturing signals rather than values; it is
+/// compared by identity.
+#[derive(Clone)]
+pub struct WidgetMounts(Rc<dyn Fn(&str) -> Element>);
+
+impl WidgetMounts {
+    /// Mounts what `f` gives for each id.
+    pub fn new(f: impl Fn(&str) -> Element + 'static) -> Self {
+        Self(Rc::new(f))
+    }
+
+    /// The element for `id`.
+    ///
+    /// # Errors
+    ///
+    /// The host's element failed to render.
+    #[must_use]
+    pub fn mount(&self, id: &str) -> Element {
+        (self.0)(id)
+    }
+}
+
+impl PartialEq for WidgetMounts {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl std::fmt::Debug for WidgetMounts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("WidgetMounts(..)")
+    }
+}
+
 /// The `<span class="editor-widget">` element for one widget tile.
 ///
 /// Split out of [`render_tile`]'s `match`; the body is unchanged.
@@ -245,6 +286,44 @@ fn render_widget_el(
     };
     if html.is_empty() {
         rsx! {}
+    } else if let Some((id, block)) = editor_state::decoration::mount_of(&html)
+        && let Some(mounts) = try_consume_context::<Option<WidgetMounts>>().flatten()
+    {
+        // A mounted widget: the host's view, not HTML. Its events are
+        // its own (a press does not move the caret).
+        let pos = crate::tile::pos::pos_at_start(arena, tile);
+        let id = id.to_owned();
+        let class = if block {
+            "editor-widget editor-mount editor-mount-block"
+        } else {
+            "editor-widget editor-mount"
+        };
+        rsx! {
+            span {
+                class,
+                "data-tile-id": "{tid}",
+                "data-tile-pos": "{pos}",
+                "data-editor-mount": "{id}",
+                contenteditable: "false",
+                onmousedown: move |e: Event<MouseData>| e.stop_propagation(),
+                {mounts.mount(&id)}
+            }
+        }
+    } else if let Some((class, text)) = editor_state::decoration::gutter_of(&html) {
+        // A gutter marker, drawn here: Blitz may have no HTML parser.
+        let pos = crate::tile::pos::pos_at_start(arena, tile);
+        rsx! {
+            span {
+                class: "editor-widget",
+                "data-tile-id": "{tid}",
+                "data-tile-pos": "{pos}",
+                onmousedown: move |e: Event<MouseData>| {
+                    e.stop_propagation();
+                    on_click.call(pos);
+                },
+                span { class: "{class}", "aria-hidden": "true", "{text}" }
+            }
+        }
     } else {
         let pos = crate::tile::pos::pos_at_start(arena, tile);
         rsx! {

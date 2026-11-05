@@ -110,6 +110,7 @@ uses shared references, signals where TS uses observers.
 | `editor-state` | Doc, transactions, selections, decorations, extensions. No DOM. Pure logic + tests. |
 | `editor-view`  | `<Editor>` Dioxus component. Renders the doc to a contenteditable, bridges DOM events back to transactions. |
 | `editor`       | Umbrella re-export. What downstream apps depend on. |
+| `editor-ext`   | The extension surface as data: snapshots, edit commands, keymaps, decorations, slash rows, for extensions out of process or sandboxed. serde only. See [docs/extensions.md](docs/extensions.md). |
 
 ## CRDT story (planned, not in v1)
 
