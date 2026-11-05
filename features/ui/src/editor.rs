@@ -352,6 +352,28 @@ pub fn Editor(
     /// (zero) does nothing.
     #[props(default)]
     focus_request: Option<Signal<u64>>,
+    /// The undo history, when the host keeps it: edits the host applies
+    /// itself (an extension's command, [`crate::dispatch_with_history`])
+    /// then undo in the same stack as the person's typing. Absent, the
+    /// editor keeps its own.
+    #[props(default)]
+    history: Option<Signal<editor_state::History>>,
+    /// Asked first with every keystroke the editor would handle (after an
+    /// open menu's own keys): `true` takes it — the editor does nothing
+    /// more with it and stops the browser's default. A host resolves an
+    /// extension's keymap here (`editor_state::ext::resolve_key`).
+    #[props(default)]
+    on_key: Option<Callback<KeySpec, bool>>,
+    /// The views that mounted widgets show
+    /// (`editor_state::DecoratedRange::mount`): native only; the web
+    /// renderer draws the empty placeholder. Create once, as
+    /// [`DecorationSource`].
+    #[props(default)]
+    mounts: Option<crate::WidgetMounts>,
+    /// Called with an extension's slash-menu action once its row is
+    /// picked (`palette::register_actions`).
+    #[props(default)]
+    on_action: Option<Callback<String>>,
 ) -> Element {
     // True when a decoration widget cell currently has focus
     // (frontmatter property contenteditable, chip-add box, etc.).
@@ -366,7 +388,11 @@ pub fn Editor(
     // single transaction choke point) can record every edit and
     // resolve the `"undo"`/`"redo"`-tagged specs vim and keymaps
     // emit — without threading a parameter through 25 call sites.
-    use_context_provider(|| Signal::new(editor_state::History::new()));
+    use_context_provider(move || {
+        history.unwrap_or_else(|| Signal::new(editor_state::History::new()))
+    });
+    // The host's mounted views, for the native renderer's widget tiles.
+    use_context_provider(move || mounts);
     // True while the editor root (or a descendant) holds DOM focus.
     // Gates the painted modal caret — like the native caret, it must
     // not render on an unfocused editor.
@@ -2501,6 +2527,11 @@ pub fn Editor(
                             ) {
                                 crate::event::apply_tx(state, &cur, spec, sink_for_keys);
                             }
+                            if let (crate::palette::CommandKind::Action(action), Some(cb)) =
+                                (entry.kind, on_action)
+                            {
+                                cb.call(action.to_owned());
+                            }
                         }
                         palette_sig.set(None);
                         evt.prevent_default();
@@ -2572,6 +2603,17 @@ pub fn Editor(
                     _ => {}
                 }
             }
+        }
+        // ── The host's keys (an extension's keymap) ──
+        //
+        // After the menus (their arrows and Enter are theirs while open),
+        // before vim and the keymap: a key the host takes is its own.
+        if let Some(cb) = on_key
+            && cb.call(press.clone())
+        {
+            evt.prevent_default();
+            tracing::debug!(?press, "editor.host_key.fire");
+            return;
         }
         if let Some(mut vim_sig) = vim_for_keys {
             // ── Visual-row h/j/k/l shortcut ──

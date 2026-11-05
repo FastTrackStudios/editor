@@ -30,6 +30,7 @@ resolver = "3"
 # move.
 members = [
     "crates/editor",
+    "crates/editor-ext",
     "crates/editor-state",
     "features/crdt",
     "features/lsp",
@@ -65,6 +66,7 @@ editor = { path = "crates/editor" }
 # opt-in for crates that depend on the core directly (an app that only
 # edits plain or keyflow text should not build a Typst compiler). The
 # `editor` umbrella turns both back on by default.
+editor-ext = { path = "crates/editor-ext" }
 editor-state = { path = "crates/editor-state", default-features = false }
 editor-crdt = { path = "features/crdt" }
 editor-lsp = { path = "features/lsp" }

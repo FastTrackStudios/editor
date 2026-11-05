@@ -14,6 +14,7 @@ pub mod commands;
 pub mod decoration;
 pub mod doc;
 pub mod emoji;
+pub mod ext;
 pub mod fence_renderer;
 pub mod history;
 pub mod hover;

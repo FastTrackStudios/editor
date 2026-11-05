@@ -1,0 +1,18 @@
+[package]
+name = "editor-ext"
+description = "The editor's extension surface as data: snapshots, edit commands, keymaps, decorations and slash entries that out-of-process and sandboxed runtimes send and receive."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+# Deliberately tiny: serde and nothing else, so a host that only speaks to
+# extensions (and not to the editor) can depend on it without the editor's
+# document model, syntax trees or renderers.
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
