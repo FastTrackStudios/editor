@@ -270,6 +270,43 @@ impl std::fmt::Debug for WidgetMounts {
     }
 }
 
+/// What pressing a task's checkbox does: toggle the task whose line starts
+/// at the offset (the editor provides it). The web renderer's checkbox
+/// sends `task-toggle` through its JS bridge instead.
+#[derive(Clone, Copy)]
+pub struct TaskToggle(pub Callback<usize>);
+
+/// A task checkbox widget's parts (`editor_state::markdown`'s
+/// `<span class="md-task-checkbox…" data-task-pos=… data-status="x">✓</span>`).
+struct TaskBox {
+    class: String,
+    status: String,
+    glyph: String,
+}
+
+fn task_box_of(html: &str) -> Option<TaskBox> {
+    let rest = html.strip_prefix("<span class=\"")?;
+    let (class, rest) = rest.split_once('"')?;
+    if !class.split(' ').any(|c| c == "md-task-checkbox") {
+        return None;
+    }
+    let status = rest
+        .split_once("data-status=\"")
+        .and_then(|(_, r)| r.split_once('"'))
+        .map_or("", |(s, _)| s);
+    let (_, inner) = rest.split_once('>')?;
+    let glyph = inner.strip_suffix("</span>")?;
+    // The glyph is plain text; anything else is not this shape.
+    if glyph.contains('<') {
+        return None;
+    }
+    Some(TaskBox {
+        class: class.to_owned(),
+        status: status.replace("&quot;", "\""),
+        glyph: glyph.to_owned(),
+    })
+}
+
 /// The `<span class="editor-widget">` element for one widget tile.
 ///
 /// Split out of [`render_tile`]'s `match`; the body is unchanged.
@@ -322,6 +359,52 @@ fn render_widget_el(
                     on_click.call(pos);
                 },
                 span { class: "{class}", "aria-hidden": "true", "{text}" }
+            }
+        }
+    } else if let Some(task) = task_box_of(&html)
+        && let Some(TaskToggle(toggle)) = try_consume_context::<TaskToggle>()
+    {
+        // A task's checkbox, drawn here rather than as HTML, its press
+        // toggling the task (the web renderer's goes through the bridge).
+        let pos = crate::tile::pos::pos_at_start(arena, tile);
+        rsx! {
+            span {
+                class: "editor-widget",
+                "data-tile-id": "{tid}",
+                "data-tile-pos": "{pos}",
+                span {
+                    class: "{task.class}",
+                    style: "position: relative;",
+                    "data-task-pos": "{pos}",
+                    "data-status": "{task.status}",
+                    onmousedown: move |e: Event<MouseData>| {
+                        e.stop_propagation();
+                        toggle.call(pos);
+                    },
+                    // Done: a tick drawn, not the `✓` character. Blitz's
+                    // inline hit test gives a press on anything in the
+                    // box's inline flow to the line (the caret went to its
+                    // end): what the box holds is placed out of it.
+                    if task.status.eq_ignore_ascii_case("x") {
+                        svg {
+                            style: "position: absolute; left: 15%; top: 15%; width: 70%; height: 70%;",
+                            view_box: "0 0 24 24",
+                            fill: "none",
+                            stroke: "currentColor",
+                            stroke_width: "3.5",
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            path { d: "M20 6 9 17l-5-5" }
+                        }
+                    } else if !task.glyph.is_empty() {
+                        // Out of the inline flow, like the tick, so a press
+                        // on it is the box's.
+                        span {
+                            style: "position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;",
+                            "{task.glyph}"
+                        }
+                    }
+                }
             }
         }
     } else {

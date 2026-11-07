@@ -393,6 +393,15 @@ pub fn Editor(
     });
     // The host's mounted views, for the native renderer's widget tiles.
     use_context_provider(move || mounts);
+    // A task checkbox pressed on the native renderer, which has no JS
+    // bridge to send `task-toggle` (its widgets read this context).
+    use_context_provider(move || {
+        crate::tile::render_dx::TaskToggle(Callback::new(move |pos: usize| {
+            if editable {
+                crate::bridge::toggle_task_at(state, on_transaction, pos);
+            }
+        }))
+    });
     // True while the editor root (or a descendant) holds DOM focus.
     // Gates the painted modal caret — like the native caret, it must
     // not render on an unfocused editor.
