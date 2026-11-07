@@ -641,14 +641,47 @@ fn handle_task_toggle(
             .unwrap_or(0),
     )
     .unwrap_or(0);
+    toggle_task_at(state, sink, pos);
+}
+
+/// The status byte of the task whose line starts at `line`, and what a
+/// toggle writes there: `- [ ]` ↔ `- [x]`, indented or not, any list
+/// marker (`-`, `*`, `+`, `1.`). `None` when the line holds no open or
+/// done task.
+#[must_use]
+pub fn task_status_at(doc: &str, line: usize) -> Option<(usize, &'static str)> {
+    let rest = doc.get(line..)?;
+    let rest = rest.split('\n').next().unwrap_or(rest);
+    let open = rest.find('[')?;
+    // Only the marker before it: indent, a bullet or a number, a space.
+    let before = rest.get(..open)?.trim_start();
+    let bullet = before.strip_suffix(' ').is_some_and(|b| {
+        matches!(b, "-" | "*" | "+")
+            || b.strip_suffix(['.', ')'])
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|c| c.is_ascii_digit()))
+    });
+    if !bullet {
+        return None;
+    }
+    let at = line.checked_add(open)?.checked_add(1)?;
+    match doc.as_bytes().get(at) {
+        Some(b' ') => Some((at, "x")),
+        Some(b'x' | b'X') => Some((at, " ")),
+        _ => None,
+    }
+}
+
+/// Toggles the task whose line starts at `pos` (a checkbox pressed), one
+/// undo step, the selection kept.
+pub fn toggle_task_at(
+    state: Signal<EditorState>,
+    sink: Option<Callback<TransactionEvent>>,
+    pos: usize,
+) {
     let cur = state.read().clone();
     let doc = cur.doc.to_string();
-    let bracket_idx = pos.saturating_add(3);
-    let next_char = doc.as_bytes().get(bracket_idx).copied();
-    let new_char = match next_char {
-        Some(b' ') => "x",
-        Some(b'x' | b'X') => " ",
-        _ => return,
+    let Some((bracket_idx, new_char)) = task_status_at(&doc, pos) else {
+        return;
     };
     let changes = Changes::replace(bracket_idx..bracket_idx.saturating_add(1), new_char);
     let prev_sel = cur.selection.clone();
@@ -835,6 +868,18 @@ mod tests {
     fn visible(doc: &str) -> VisibleText {
         let (arena, root) = build_tiles(doc, &[]);
         VisibleText::from_arena(&arena, root)
+    }
+
+    /// A task's status byte is found behind any list marker and indent;
+    /// a line that is no task has none.
+    #[test]
+    fn a_tasks_status_is_found_behind_its_marker() {
+        let doc = "- [ ] a\n  * [x] b\n12. [X] c\nnot [ ] a task\n- [/] doing";
+        assert_eq!(task_status_at(doc, 0), Some((3, "x")));
+        assert_eq!(task_status_at(doc, 8), Some((13, " ")));
+        assert_eq!(task_status_at(doc, 18), Some((23, " ")));
+        assert_eq!(task_status_at(doc, 28), None);
+        assert_eq!(task_status_at(doc, 43), None, "only open or done toggles");
     }
 
     /// Typing into a run of repeated characters: every position in the
