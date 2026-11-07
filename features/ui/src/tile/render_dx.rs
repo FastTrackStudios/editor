@@ -72,6 +72,19 @@ pub fn render_tile(arena: &Arena, tile: TileId, on_click: Callback<usize>) -> El
             let spec = mark_spec_of(t).cloned().unwrap_or_default();
             let class = spec.class;
             let pos = crate::tile::pos::pos_at_start(arena, tile);
+            // A link (`data-href`: a link's URL, a wikilink's body): a
+            // press anywhere in it follows it, as the web renderer's
+            // `link-clicked` does; the arrow keys walk into it to edit.
+            let href = spec
+                .attrs
+                .iter()
+                .find(|(k, _)| k == "data-href")
+                .map(|(_, v)| v.clone());
+            let follow = href.and_then(|href| {
+                let LinkClick(go) = try_consume_context::<Option<LinkClick>>().flatten()?;
+                Some(Callback::new(move |_: usize| go.call(href.clone())))
+            });
+            let press = follow.unwrap_or(on_click);
             rsx! {
                 span {
                     class: "{class}",
@@ -79,10 +92,10 @@ pub fn render_tile(arena: &Arena, tile: TileId, on_click: Callback<usize>) -> El
                     "data-tile-pos": "{pos}",
                     onmousedown: move |e: Event<MouseData>| {
                         e.stop_propagation();
-                        on_click.call(pos);
+                        press.call(pos);
                     },
                     for &child in &t.children {
-                        {render_tile(arena, child, on_click)}
+                        {render_tile(arena, child, press)}
                     }
                 }
             }
@@ -269,6 +282,11 @@ impl std::fmt::Debug for WidgetMounts {
         f.write_str("WidgetMounts(..)")
     }
 }
+
+/// What pressing a link does: the host's `on_link_click`, given the link's
+/// `data-href` (the editor provides it when the host set one).
+#[derive(Clone, Copy)]
+pub struct LinkClick(pub Callback<String>);
 
 /// What pressing a task's checkbox does: toggle the task whose line starts
 /// at the offset (the editor provides it). The web renderer's checkbox
