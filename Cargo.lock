@@ -2574,6 +2574,7 @@ version = "0.1.0"
 dependencies = [
  "arborium",
  "arborium-theme",
+ "arborium-toml",
  "arborium-tree-sitter",
 ]
 

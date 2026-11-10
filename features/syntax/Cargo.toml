@@ -12,6 +12,11 @@ arborium = { workspace = true }
 arborium-tree-sitter = { workspace = true }
 arborium-theme = { workspace = true }
 
+[dev-dependencies]
+# A grammar this crate does not compile in: the host-language tests run it
+# the way a host would.
+arborium-toml = { workspace = true }
+
 [features]
 # A highlighter with no grammars compiled in can only return empty token
 # lists, and every consumer already opted into `default-langs`. Making it
