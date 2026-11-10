@@ -162,7 +162,11 @@ mod tests {
         );
         let ranges: Vec<_> = decs.iter().map(|d| (d.from, d.to)).collect();
         assert_eq!(ranges, vec![(3, 4), (8, 10), (9, 10)]);
-        assert!(to_decorations(&[Diagnostic::new(0..0, Severity::Hint, "x")], 0).is_empty());
+        assert_eq!(
+            to_decorations(&[Diagnostic::new(0..0, Severity::Hint, "x")], 0),
+            Vec::new(),
+            "nothing to underline in an empty document"
+        );
     }
 
     #[test]

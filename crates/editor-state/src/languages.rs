@@ -124,6 +124,10 @@ pub fn register_language(entry: LanguageEntry) {
 /// Remove the registered language `id`. Returns whether one was there.
 /// Its fences and files fall back to the built-in table (or to plain
 /// text).
+#[expect(
+    clippy::must_use_candidate,
+    reason = "a host withdraws for the effect; whether it was there is optional"
+)]
 pub fn withdraw_language(id: &str) -> bool {
     let removed = registry().write().is_ok_and(|mut entries| {
         let before = entries.len();

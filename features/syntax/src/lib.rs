@@ -175,15 +175,23 @@ impl Lang {
 
     /// The grammar and its shipped query, compiled once per process.
     fn compiled(self) -> Option<Arc<HostLanguage>> {
-        static CACHE: OnceLock<std::sync::Mutex<Vec<(Lang, Arc<HostLanguage>)>>> = OnceLock::new();
+        type Compiled = std::sync::Mutex<Vec<(Lang, Arc<HostLanguage>)>>;
+        static CACHE: OnceLock<Compiled> = OnceLock::new();
         let cache = CACHE.get_or_init(Default::default);
-        let mut entries = cache.lock().ok()?;
-        if let Some((_, hit)) = entries.iter().find(|(l, _)| *l == self) {
-            return Some(Arc::clone(hit));
+        let hit = cache
+            .lock()
+            .ok()?
+            .iter()
+            .find(|(l, _)| *l == self)
+            .map(|(_, hit)| Arc::clone(hit));
+        if hit.is_some() {
+            return hit;
         }
+        // Compiled outside the lock; two threads racing here both compile
+        // and one entry wins, which is harmless.
         let compiled =
             Arc::new(HostLanguage::new(self.name(), self.grammar(), self.highlights_query()).ok()?);
-        entries.push((self, Arc::clone(&compiled)));
+        cache.lock().ok()?.push((self, Arc::clone(&compiled)));
         Some(compiled)
     }
 }

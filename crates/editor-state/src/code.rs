@@ -80,10 +80,11 @@ pub fn syntax_marks(syntax: &Syntax, text: &str) -> Vec<DecoratedRange> {
         .collect()
 }
 
-/// One gutter marker per line: its number (when `line_numbers`), marked
-/// with the worst severity of the diagnostics that start on it
-/// (`code-ln code-ln-error`). Without line numbers only lines with a
-/// diagnostic get a marker, a dot.
+/// One gutter marker per line, numbered when `line_numbers`.
+///
+/// A line where diagnostics start is marked with the worst severity among
+/// them (`code-ln code-ln-error`). Without line numbers only those lines
+/// get a marker, a dot.
 #[must_use]
 pub fn gutter(text: &str, diagnostics: &[Diagnostic], line_numbers: bool) -> Vec<DecoratedRange> {
     let starts = line_starts(text);
@@ -196,10 +197,18 @@ pub fn dedent(state: &EditorState) -> Option<TransactionSpec> {
     indent_less(state).or_else(|| Some(TransactionSpec::new()))
 }
 
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "a keymap Command returns an Option"
+)]
 fn undo(_: &EditorState) -> Option<TransactionSpec> {
     Some(TransactionSpec::new().user_event("undo"))
 }
 
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "a keymap Command returns an Option"
+)]
 fn redo(_: &EditorState) -> Option<TransactionSpec> {
     Some(TransactionSpec::new().user_event("redo"))
 }

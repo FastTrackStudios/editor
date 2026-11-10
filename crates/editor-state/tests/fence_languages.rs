@@ -8,6 +8,10 @@
 use editor_state::languages::{self, HostLanguage, Lang, LanguageEntry};
 use editor_state::{DecorationKind, EditorState, Selection};
 
+#[expect(
+    clippy::expect_used,
+    reason = "a test fixture; the grammar ships with its query"
+)]
 fn toml() -> HostLanguage {
     HostLanguage::new(
         "toml",

@@ -94,8 +94,9 @@ fn prev_char_boundary(doc: &Doc, at: usize) -> usize {
     rope.char_to_byte(rope.byte_to_char(at).saturating_sub(1))
 }
 
-/// Map resolved diagnostics to view decorations
-/// ([`editor_state::diagnostic::to_decorations`]): a mark per diagnostic
+/// Map resolved diagnostics to view decorations.
+///
+/// See [`editor_state::diagnostic::to_decorations`]: a mark per diagnostic
 /// with the severity class plus a shared `cm-lsp-diagnostic` class, the
 /// message in `data-lsp-message` and `title`.
 #[must_use]
