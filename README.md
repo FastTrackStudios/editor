@@ -55,6 +55,15 @@ fences via the Keyflow parser and Engraver. Nothing registered is not an
 error: an unrenderable fence falls back to showing its source, which is
 what the editor already does for any language it does not know.
 
+### Languages are installed by the host
+
+Highlighting works the same way. A host registers a tree-sitter grammar
+plus a highlights query (`editor_syntax::HostLanguage`) in
+`editor_state::languages`, giving the fence tags and file extensions it
+answers to. Fences and `CodeEditor` buffers ask that registry before the
+built-in table, and `withdraw_language` takes a language away again. See
+[docs/languages.md](docs/languages.md).
+
 ## Build
 
 ```bash
@@ -108,7 +117,7 @@ uses shared references, signals where TS uses observers.
 | Crate | What it does |
 |---|---|
 | `editor-state` | Doc, transactions, selections, decorations, extensions. No DOM. Pure logic + tests. |
-| `editor-view`  | `<Editor>` Dioxus component. Renders the doc to a contenteditable, bridges DOM events back to transactions. |
+| `editor-view`  | `<Editor>` Dioxus component (prose and markdown; also named `TextEditor`). Renders the doc to a contenteditable, bridges DOM events back to transactions. `<CodeEditor>` is the same component set up for a source file: whole-buffer language, line numbers, bracket matching, indentation, diagnostics. See [docs/languages.md](docs/languages.md). |
 | `editor`       | Umbrella re-export. What downstream apps depend on. |
 | `editor-ext`   | The extension surface as data: snapshots, edit commands, keymaps, decorations, slash rows, for extensions out of process or sandboxed. serde only. See [docs/extensions.md](docs/extensions.md). |
 
