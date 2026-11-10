@@ -3164,8 +3164,10 @@ fn open_fence_at_line(
             );
             out.push(Decoration::widget(line_from, header_html));
         }
-        if let Some(lang) = editor_syntax::Lang::from_fence_tag(info) {
-            emit_fence_tokens(text, content_start, mc, mlen, lang, out);
+        // Asked of the language registry first (a host's installed
+        // languages), then the built-in table.
+        if let Some(syntax) = crate::languages::language_for_fence(info) {
+            emit_fence_tokens(text, content_start, mc, mlen, &syntax, out);
         }
         // ```typst — render the body as a Typst document
         // and emit a single SVG widget on the closing fence
@@ -4330,7 +4332,7 @@ fn emit_fence_tokens(
     content_start: usize,
     marker_char: u8,
     marker_len: usize,
-    lang: editor_syntax::Lang,
+    lang: &editor_syntax::Syntax,
     out: &mut Vec<DecoratedRange>,
 ) {
     let t_find = now_ms_native();
@@ -4344,7 +4346,7 @@ fn emit_fence_tokens(
     let cached = with_fence_cache(|cache| cache.get(lang, body));
     let was_cached = cached.is_some();
     let tokens = cached.unwrap_or_else(|| {
-        let toks = editor_syntax::highlight(lang, body);
+        let toks = lang.highlight(body);
         with_fence_cache(|cache| cache.put(lang, body.to_string(), toks.clone()));
         toks
     });
@@ -4369,7 +4371,7 @@ fn emit_fence_tokens(
 /// the common case of a handful of fences in a doc. Tree-sitter
 /// parses are the per-keystroke cost we want to avoid.
 struct FenceCache {
-    entries: Vec<(editor_syntax::Lang, String, Vec<editor_syntax::Token>)>,
+    entries: Vec<(editor_syntax::Syntax, String, Vec<editor_syntax::Token>)>,
     cap: usize,
 }
 
@@ -4380,22 +4382,26 @@ impl FenceCache {
             cap,
         }
     }
-    fn get(&mut self, lang: editor_syntax::Lang, body: &str) -> Option<Vec<editor_syntax::Token>> {
+    fn get(
+        &mut self,
+        lang: &editor_syntax::Syntax,
+        body: &str,
+    ) -> Option<Vec<editor_syntax::Token>> {
         let idx = self
             .entries
             .iter()
-            .position(|(l, b, _)| *l == lang && b == body)?;
+            .position(|(l, b, _)| l == lang && b == body)?;
         // Move to back so this entry is "freshest".
         let hit = self.entries.remove(idx);
         let toks = hit.2.clone();
         self.entries.push(hit);
         Some(toks)
     }
-    fn put(&mut self, lang: editor_syntax::Lang, body: String, toks: Vec<editor_syntax::Token>) {
+    fn put(&mut self, lang: &editor_syntax::Syntax, body: String, toks: Vec<editor_syntax::Token>) {
         if self.entries.len() >= self.cap {
             self.entries.remove(0);
         }
-        self.entries.push((lang, body, toks));
+        self.entries.push((lang.clone(), body, toks));
     }
 }
 

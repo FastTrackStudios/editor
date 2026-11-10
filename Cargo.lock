@@ -2554,6 +2554,7 @@ dependencies = [
 name = "editor-state"
 version = "0.1.0"
 dependencies = [
+ "arborium-toml",
  "editor-ext",
  "editor-mermaid",
  "editor-syntax",
@@ -2574,6 +2575,7 @@ version = "0.1.0"
 dependencies = [
  "arborium",
  "arborium-theme",
+ "arborium-toml",
  "arborium-tree-sitter",
 ]
 
@@ -2599,6 +2601,7 @@ dependencies = [
 name = "editor-view"
 version = "0.1.0"
 dependencies = [
+ "arborium-toml",
  "blitz-traits",
  "dioxus",
  "dioxus-test",

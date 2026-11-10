@@ -7,6 +7,7 @@
 pub use editor_state;
 
 mod bridge;
+pub mod code;
 mod editor;
 mod event;
 pub mod hover;
@@ -18,6 +19,7 @@ pub mod trigger;
 #[cfg(feature = "native")]
 mod virtual_lines;
 
+pub use code::{CODE_EDITOR_CLASS, CodeEditor, TextEditor};
 pub use editor::{DecorationSource, Editor, coarse_pointer};
 pub use event::{TransactionEvent, dispatch_spec, dispatch_with_history};
 pub use hover::{HoverPopup, HoverTooltipView};

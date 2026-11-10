@@ -2,7 +2,7 @@
 //! the state + view surface from one place.
 
 pub use editor_state::*;
-pub use editor_view::{self, Editor, TransactionEvent, dispatch_spec};
+pub use editor_view::{self, CodeEditor, Editor, TextEditor, TransactionEvent, dispatch_spec};
 pub use editor_vim;
 
 /// Built-in commands. Re-exported as `editor::commands::*`.

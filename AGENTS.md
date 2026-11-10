@@ -54,13 +54,16 @@ and downstream `use editor_vim::…` is unaffected by where it sits.
 crates/
   editor              the facade — re-exports the common surface
   editor-state        document model, transactions, the markdown pass,
-                      decorations, the fence registry; `ext` joins
-                      editor-ext to them
+                      decorations, the fence registry, the language
+                      registry (`languages`), `code` and `diagnostic`
+                      for the code editor; `ext` joins editor-ext to them
+                      — docs/languages.md
   editor-ext          the extension surface as data (serde only):
                       Snapshot, EditCommand, KeymapEntry, DecorationSpec,
                       SlashEntry — docs/extensions.md
 features/
-  ui                  editor-view — the Dioxus component
+  ui                  editor-view — the Dioxus components (Editor/TextEditor,
+                      CodeEditor)
   vim                 editor-vim — vim bindings
   syntax              editor-syntax — tree-sitter highlighting (arborium)
   crdt                editor-crdt — collaborative editing

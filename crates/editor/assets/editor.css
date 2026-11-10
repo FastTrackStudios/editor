@@ -2969,3 +2969,52 @@
 }
 .editor-root .editor-mount { display: inline-block; vertical-align: middle; }
 .editor-root .editor-mount-block { display: block; }
+
+/* ── The code editor (editor_view::CodeEditor) ─────────────────────────
+   A source file: monospace, no wrapping, line numbers as gutter markers
+   (editor_state::code::gutter) in place of the counter above, so both
+   renderers draw the same numbers and a diagnostic can colour its line's.
+   Diagnostics (editor_state::diagnostic) are underlined by severity. */
+.editor-code .editor-root {
+    font-family: var(--ed-mono);
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre;
+    word-wrap: normal;
+    overflow-x: auto;
+    tab-size: 4;
+}
+.editor-code .editor-root .cm-line::before { content: none; }
+.editor-code .editor-root .editor-gutter.code-ln {
+    position: absolute;
+    left: -52px;
+    top: 0;
+    width: 36px;
+    margin: 0;
+    text-align: right;
+    color: var(--ed-text-dim);
+    opacity: 1;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.editor-code:not(.editor-code-numbered) .editor-root { padding-left: 24px; }
+.editor-code:not(.editor-code-numbered) .editor-root .editor-gutter.code-ln {
+    left: -18px;
+    width: 12px;
+}
+.editor-root .editor-gutter.code-ln-error { color: var(--ed-danger); font-weight: 700; }
+.editor-root .editor-gutter.code-ln-warning { color: var(--ed-warn); font-weight: 700; }
+.editor-root .editor-gutter.code-ln-info { color: var(--ed-link); }
+.editor-root .editor-gutter.code-ln-hint { color: var(--ed-text-dim); }
+.editor-root .cm-lsp-diagnostic {
+    text-decoration-line: underline;
+    text-decoration-style: wavy;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+}
+.editor-root .cm-lsp-error { text-decoration-color: var(--ed-danger); }
+.editor-root .cm-lsp-warning { text-decoration-color: var(--ed-warn); }
+.editor-root .cm-lsp-info { text-decoration-color: var(--ed-link); }
+.editor-root .cm-lsp-hint { text-decoration-color: var(--ed-text-dim); text-decoration-style: dotted; }

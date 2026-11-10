@@ -9,9 +9,11 @@
 pub mod bracket_match;
 pub mod callout_icon;
 pub mod change;
+pub mod code;
 pub mod command;
 pub mod commands;
 pub mod decoration;
+pub mod diagnostic;
 pub mod doc;
 pub mod emoji;
 pub mod ext;
@@ -19,6 +21,7 @@ pub mod fence_renderer;
 pub mod history;
 pub mod hover;
 pub mod html;
+pub mod languages;
 pub mod markdown;
 pub mod plugin;
 pub mod selection;
@@ -33,6 +36,7 @@ pub use decoration::{
     DecoPhase, DecoRangeSet, DecoratedRange, Decoration, DecorationKind, DecorationSet, deco_phase,
     set_deco_phase,
 };
+pub use diagnostic::{Diagnostic, Severity};
 pub use doc::Doc;
 pub use history::History;
 pub use hover::{HoverSource, HoverTooltip};

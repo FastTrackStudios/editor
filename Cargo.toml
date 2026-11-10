@@ -108,6 +108,9 @@ peniko = "0.6"
 arborium = { version = "2.16.0", default-features = false }
 arborium-theme = "2.16.0"
 arborium-tree-sitter = "2.16.0"
+# A grammar outside `editor_syntax::Lang`, for the tests of host-supplied
+# languages (dev-dependency only).
+arborium-toml = "2.16.0"
 ropey = "1.6"
 
 # ── Async runtime ─────────────────────────────────────────────────────

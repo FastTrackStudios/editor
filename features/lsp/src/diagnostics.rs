@@ -19,7 +19,7 @@
 use std::collections::HashMap;
 
 use editor_state::change::Assoc;
-use editor_state::{Changes, DecoratedRange, Decoration, Doc};
+use editor_state::{Changes, DecoratedRange, Doc};
 use lsp_types::{NumberOrString, Uri};
 
 use crate::pos::range_to_byte_range;
@@ -39,56 +39,20 @@ pub struct PublishedDiagnostics {
     pub diagnostics: Vec<lsp_types::Diagnostic>,
 }
 
-/// Severity, ordered most→least severe. Plain enum so hosts don't
-/// need lsp-types to consume diagnostics.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Severity {
-    Error,
-    Warning,
-    Information,
-    Hint,
-}
+/// The diagnostic types are `editor-state`'s, so the code editor takes
+/// what [`resolve`] returns as it is.
+pub use editor_state::diagnostic::{Diagnostic, Severity};
 
-impl Severity {
-    const fn from_lsp(sev: Option<lsp_types::DiagnosticSeverity>) -> Self {
-        match sev {
-            Some(lsp_types::DiagnosticSeverity::WARNING) => Self::Warning,
-            Some(lsp_types::DiagnosticSeverity::INFORMATION) => Self::Information,
-            Some(lsp_types::DiagnosticSeverity::HINT) => Self::Hint,
-            // Spec: clients should treat missing severity as Error.
-            _ => Self::Error,
-        }
+/// An LSP severity as a [`Severity`]; a missing one is an error, as the
+/// spec says.
+#[must_use]
+pub const fn severity_from_lsp(sev: Option<lsp_types::DiagnosticSeverity>) -> Severity {
+    match sev {
+        Some(lsp_types::DiagnosticSeverity::WARNING) => Severity::Warning,
+        Some(lsp_types::DiagnosticSeverity::INFORMATION) => Severity::Information,
+        Some(lsp_types::DiagnosticSeverity::HINT) => Severity::Hint,
+        _ => Severity::Error,
     }
-
-    /// CSS class the view layer styles (squiggle color etc.).
-    #[must_use]
-    pub const fn css_class(self) -> &'static str {
-        match self {
-            Self::Error => "cm-lsp-error",
-            Self::Warning => "cm-lsp-warning",
-            Self::Information => "cm-lsp-info",
-            Self::Hint => "cm-lsp-hint",
-        }
-    }
-}
-
-/// One resolved diagnostic: a byte range into the current document
-/// plus display data. Pure data — no lsp-types in the host's face.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Diagnostic {
-    /// Byte range into the document the diagnostic was resolved
-    /// against. `from == to` never occurs — zero-width server ranges
-    /// are widened to the following character (or the preceding one
-    /// at doc end) so a squiggle has something to sit under, matching
-    /// what CM6's lint package renders for empty ranges.
-    pub from: usize,
-    pub to: usize,
-    pub severity: Severity,
-    pub message: String,
-    /// Producer name (`"rustc"`, `"rust-analyzer"`, …).
-    pub source: Option<String>,
-    /// Diagnostic code (`"E0308"`, `"unused_variables"`, …).
-    pub code: Option<String>,
 }
 
 /// Resolve one raw LSP diagnostic against the current document.
@@ -107,7 +71,7 @@ pub fn resolve(doc: &Doc, raw: &lsp_types::Diagnostic) -> Diagnostic {
     Diagnostic {
         from,
         to,
-        severity: Severity::from_lsp(raw.severity),
+        severity: severity_from_lsp(raw.severity),
         message: raw.message.clone(),
         source: raw.source.clone(),
         code: raw.code.as_ref().map(|c| match c {
@@ -130,24 +94,14 @@ fn prev_char_boundary(doc: &Doc, at: usize) -> usize {
     rope.char_to_byte(rope.byte_to_char(at).saturating_sub(1))
 }
 
-/// Map resolved diagnostics to view decorations: a [`Decoration::mark`]
-/// per diagnostic with the severity class plus a shared
-/// `cm-lsp-diagnostic` class.
+/// Map resolved diagnostics to view decorations.
 ///
-/// The message is carried in a
-/// `data-lsp-message` attribute for tooltip/hover use.
+/// See [`editor_state::diagnostic::to_decorations`]: a mark per diagnostic
+/// with the severity class plus a shared `cm-lsp-diagnostic` class, the
+/// message in `data-lsp-message` and `title`.
 #[must_use]
 pub fn to_decorations(diagnostics: &[Diagnostic]) -> Vec<DecoratedRange> {
-    diagnostics
-        .iter()
-        .map(|d| {
-            Decoration::mark_with_attrs(
-                d.from..d.to,
-                format!("cm-lsp-diagnostic {}", d.severity.css_class()),
-                vec![("data-lsp-message".to_owned(), d.message.clone())],
-            )
-        })
-        .collect()
+    editor_state::diagnostic::to_decorations(diagnostics, usize::MAX)
 }
 
 /// Per-document diagnostic state: the latest accepted publish, keyed
@@ -424,13 +378,13 @@ mod tests {
     #[test]
     fn severity_from_lsp_and_ordering() {
         use lsp_types::DiagnosticSeverity as S;
-        assert_eq!(Severity::from_lsp(Some(S::ERROR)), Severity::Error);
-        assert_eq!(Severity::from_lsp(Some(S::WARNING)), Severity::Warning);
+        assert_eq!(severity_from_lsp(Some(S::ERROR)), Severity::Error);
+        assert_eq!(severity_from_lsp(Some(S::WARNING)), Severity::Warning);
         assert_eq!(
-            Severity::from_lsp(Some(S::INFORMATION)),
+            severity_from_lsp(Some(S::INFORMATION)),
             Severity::Information
         );
-        assert_eq!(Severity::from_lsp(Some(S::HINT)), Severity::Hint);
+        assert_eq!(severity_from_lsp(Some(S::HINT)), Severity::Hint);
         assert!(Severity::Error < Severity::Warning);
     }
 }

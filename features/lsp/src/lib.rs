@@ -36,7 +36,7 @@ pub mod transport;
 
 pub use client::{Error, LspClient, ServerMessage};
 pub use diagnostics::{
-    Diagnostic, DiagnosticsStore, PublishedDiagnostics, Severity, to_decorations,
+    Diagnostic, DiagnosticsStore, PublishedDiagnostics, Severity, severity_from_lsp, to_decorations,
 };
 pub use pos::{byte_to_position, changes_to_content_changes, position_to_byte};
 pub use transport::Transport;
