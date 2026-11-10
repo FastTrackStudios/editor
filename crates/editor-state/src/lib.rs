@@ -19,6 +19,7 @@ pub mod fence_renderer;
 pub mod history;
 pub mod hover;
 pub mod html;
+pub mod languages;
 pub mod markdown;
 pub mod plugin;
 pub mod selection;
