@@ -126,9 +126,10 @@ fn line_starts(text: &str) -> Vec<usize> {
 
 const OPENERS: &[(u8, u8)] = &[(b'{', b'}'), (b'(', b')'), (b'[', b']')];
 
-/// Enter in code: a newline that keeps the current line's indent, adds
-/// one [`INDENT_UNIT`] after an opening bracket, and puts a closing
-/// bracket right after the caret on a line of its own (`{|}` →
+/// Enter in code: a newline that keeps the current line's indent.
+///
+/// It adds one [`INDENT_UNIT`] after an opening bracket, and puts a
+/// closing bracket right after the caret on a line of its own (`{|}` →
 /// `{\n  |\n}`).
 #[must_use]
 pub fn newline_and_indent(state: &EditorState) -> Option<TransactionSpec> {
