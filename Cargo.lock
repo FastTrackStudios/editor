@@ -2601,6 +2601,7 @@ dependencies = [
 name = "editor-view"
 version = "0.1.0"
 dependencies = [
+ "arborium-toml",
  "blitz-traits",
  "dioxus",
  "dioxus-test",

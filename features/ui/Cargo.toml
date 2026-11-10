@@ -63,6 +63,8 @@ editor-state = { workspace = true, features = ["typst", "mermaid"] }
 # Decodes the PNGs `DocumentTester::render_png` writes, so the caret tests
 # can check what is painted, not only what the DOM says is there.
 png = "0.17"
+# A grammar outside the built-in table, for the CodeEditor's host-language test.
+arborium-toml = { workspace = true }
 
 [lints]
 workspace = true
