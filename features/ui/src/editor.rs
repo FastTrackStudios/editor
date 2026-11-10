@@ -2871,6 +2871,9 @@ pub fn Editor(
             evt.prevent_default();
             tracing::debug!(?press, "editor.keymap.fire");
             crate::event::apply_tx(state, &cur, spec, sink_for_keys);
+            // Taken: the native fallthrough below would act on the same
+            // key again, against the state from before the command.
+            return;
         }
         // ── Native default-input fallthrough ─────────────────────────
         //
